@@ -35,6 +35,7 @@ import {
 import { MetricCards } from "../components/MetricCards";
 import { SidebarFilters, FiltrosState } from "../components/SidebarFilters";
 import { MapBrasil } from "../components/MapBrasil";
+import { MapMunicipios } from "../components/MapMunicipios";
 import {
   Menu,
   Download,
@@ -160,19 +161,25 @@ export default function Home() {
     async function carregarBaseInicial() {
       try {
         setLoading(true);
-        // Tenta carregar tabelaFaturamento.csv da pasta public/data
-        const resp = await fetch("/data/tabelaFaturamento.csv");
-        if (!resp.ok) {
-          throw new Error("Não foi possível carregar a base padrão /data/tabelaFaturamento.csv");
+        // A base salva pelo usuário tem prioridade sobre a base embarcada.
+        const baseSalva = localStorage.getItem("cemag_base_padrao");
+        const nomeSalvo = localStorage.getItem("cemag_base_padrao_nome");
+        if (baseSalva) {
+          const rows = JSON.parse(baseSalva);
+          if (Array.isArray(rows) && rows.length) {
+            setBaseOriginal(rows);
+            setNomeArquivoBase(nomeSalvo || "base_padrao_local.csv");
+            return;
+          }
         }
+        const resp = await fetch("/data/tabelaFaturamento.csv");
+        if (!resp.ok) throw new Error("Não foi possível carregar a base padrão /data/tabelaFaturamento.csv");
         const text = await resp.text();
         const parsed = Papa.parse(text, { header: true, skipEmptyLines: true });
         if (parsed.data && parsed.data.length > 0) {
           setBaseOriginal(parsed.data);
           setNomeArquivoBase("tabelaFaturamento.csv");
-        } else {
-          throw new Error("Arquivo vazio");
-        }
+        } else throw new Error("Arquivo vazio");
       } catch (err: any) {
         setErroCarregamento(err.message || "Erro ao carregar dados iniciais.");
       } finally {
@@ -338,6 +345,8 @@ export default function Home() {
           if (json && json.length) {
             setBaseOriginal(json);
             setNomeArquivoBase(file.name);
+            localStorage.setItem("cemag_base_padrao", JSON.stringify(json));
+            localStorage.setItem("cemag_base_padrao_nome", file.name);
           }
         } catch (err: any) {
           alert("Erro ao ler arquivo Excel: " + err.message);
@@ -352,6 +361,8 @@ export default function Home() {
           if (parsed.data && parsed.data.length) {
             setBaseOriginal(parsed.data);
             setNomeArquivoBase(file.name);
+            localStorage.setItem("cemag_base_padrao", JSON.stringify(parsed.data));
+            localStorage.setItem("cemag_base_padrao_nome", file.name);
           }
         } catch (err: any) {
           alert("Erro ao processar CSV: " + err.message);
@@ -545,6 +556,11 @@ export default function Home() {
       info.clientes = new Set(itemsUf.map((d) => d.cliente)).size;
     }
     return res;
+  }, [dadosFiltrados]);
+
+  const dadosMunicipios = useMemo(() => {
+    const grupos = agregar(dadosFiltrados, ["cidade", "uf"]);
+    return grupos.map((row: any) => ({ cidade: row.cidade, uf: row.uf, faturamento: row.faturamento, quantidade: row.quantidade, pedidos: row.pedidos, clientes: row.clientes }));
   }, [dadosFiltrados]);
 
   // Formas de venda texto para exibição
@@ -1573,6 +1589,7 @@ export default function Home() {
                 <div className="space-y-6">
                   {/* Mapa do Brasil */}
                   <MapBrasil dadosUf={dadosPorUf} />
+                  <MapMunicipios dadosMunicipios={dadosMunicipios} />
 
                   {/* Gráficos Regionais */}
                   <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">

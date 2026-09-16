@@ -15,3 +15,9 @@ A Central de Exportações também foi aberta no browser e exibiu os modos Tabel
 ## Metas mensais
 
 Foi adicionada a aba **Metas mensais** com importação de CSV histórico (`mes;ano;meta`, aceitando também vírgula, nomes de meses e valores brasileiros), download de modelo, meta manual do mês vigente e persistência via `localStorage`. A meta manual tem prioridade sobre a meta importada para o mesmo mês. A análise mostra meta vigente, realizado, atingimento, projeção do mês e tabela mensal com diferença e status (`Atingida`, `Em andamento` ou `Não atingida`). A nova interface foi validada no browser; `pnpm check` e `pnpm build` passaram.
+
+## Base padrão e mapa municipal
+
+A aplicação agora verifica primeiro `localStorage` por uma base salva pelo usuário (`cemag_base_padrao`); se não existir, carrega `tabelaFaturamento.csv` embarcada. Todo CSV/XLSX enviado pelo controle **Substituir Planilha** passa a ser salvo automaticamente como a nova base padrão do navegador e será reutilizado na próxima abertura, até outro arquivo ser enviado.
+
+A aba **Regiões** recebeu o **Mapa municipal de faturamento**, com bolhas dimensionadas pelo faturamento, posicionamento aproximado por UF, tooltip de faturamento/quantidade/pedidos/clientes e ranking dos municípios. A renderização foi validada no browser: `hasMap=true` e `hasRanking=true`. `pnpm check` e `pnpm build` passaram.
