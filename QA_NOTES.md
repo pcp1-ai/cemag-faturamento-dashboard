@@ -25,3 +25,7 @@ A aba **Regiões** recebeu o **Mapa municipal de faturamento**, com bolhas dimen
 ## Mapa municipal territorial
 
 O mapa municipal esquemático foi substituído por um mapa coroplético baseado em GeoJSON real dos municípios brasileiros, com 5.570 geometrias carregadas offline. Os limites municipais ficam visíveis, municípios com vendas são coloridos conforme o faturamento, e o hover mostra município, UF, faturamento, quantidade, pedidos e clientes. A validação no browser confirmou `map=true` e `geojson=true`; `pnpm check` e `pnpm build` passaram.
+
+## Mapa estadual territorial
+
+O mapa dos estados também foi substituído pelo mapa coroplético baseado no GeoJSON estadual real. Os 27 estados possuem suas demarcações territoriais, preenchimento proporcional ao faturamento, tooltip com indicadores e ranking lateral. Validação no browser confirmou a renderização de `Distribuição territorial por estado`; `pnpm check` e `pnpm build` passaram.
