@@ -33,3 +33,7 @@ O mapa dos estados também foi substituído pelo mapa coroplético baseado no Ge
 ## Foco do mapa municipal
 
 O mapa municipal deixou de exibir o Brasil inteiro por padrão. Agora calcula automaticamente os estados que possuem vendas no filtro atual, mantém todos os municípios desses estados com suas demarcações e ajusta o enquadramento/escala ao bounding box da área relevante. A validação confirmou `hasMap=true`, `focused=true` e nenhum erro de pilha; `pnpm check` e `pnpm build` passaram.
+
+## Drill-down estado → municípios
+
+O mapa estadual agora aceita clique em cada polígono. Ao selecionar um estado, o painel municipal mostra somente os municípios daquele estado, ajusta o enquadramento territorial, mantém demarcações, cores, tooltip e ranking, e oferece o botão **Voltar aos estados**. Sem seleção, o painel municipal fica em estado vazio orientando o usuário a clicar em um estado. Teste no browser confirmou `detail=true`, `back=true` e `empty=false`; `pnpm check` e `pnpm build` passaram.

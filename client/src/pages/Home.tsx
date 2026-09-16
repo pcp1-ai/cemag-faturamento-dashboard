@@ -132,6 +132,7 @@ export default function Home() {
   const [baseOriginal, setBaseOriginal] = useState<any[]>([]);
   const [nomeArquivoBase, setNomeArquivoBase] = useState<string>("data/tabelaFaturamento.csv");
   const [abaAtiva, setAbaAtiva] = useState<string>("visao_geral");
+  const [ufMapaSelecionada, setUfMapaSelecionada] = useState<string | null>(null);
   const [isMobileMenuOpen, setIsMobileMenuOpen] = useState<boolean>(false);
 
   // Filtros Globais
@@ -1588,8 +1589,8 @@ export default function Home() {
               {abaAtiva === "regioes" && (
                 <div className="space-y-6">
                   {/* Mapa do Brasil */}
-                  <MapBrasil dadosUf={dadosPorUf} />
-                  <MapMunicipios dadosMunicipios={dadosMunicipios} />
+                  <MapBrasil dadosUf={dadosPorUf} onSelectUf={setUfMapaSelecionada} />
+                  <MapMunicipios dadosMunicipios={dadosMunicipios} selectedUf={ufMapaSelecionada} onClearSelection={() => setUfMapaSelecionada(null)} />
 
                   {/* Gráficos Regionais */}
                   <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
