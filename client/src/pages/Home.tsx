@@ -1,25 +1,1768 @@
-import { Button } from "@/components/ui/button";
-import { Loader2 } from "lucide-react";
-import { Streamdown } from 'streamdown';
+import React, { useState, useEffect, useMemo } from "react";
+import Papa from "papaparse";
+import * as XLSX from "xlsx";
+import {
+  TransacaoTratada,
+  prepararDados,
+  formatarMoeda,
+  formatarInteiro,
+  formatarPercentual,
+  valorResumido,
+  valorCompactoMapa,
+  agregar,
+  curvaAbc,
+  classificarCarteiraClientes,
+  dreAproximada,
+  compararPeriodos,
+  gerarAlertasComerciais,
+  concentracaoTop,
+  mixClientes,
+  oportunidadesCrossSell,
+  paresCompradosJuntos,
+  precoMedioPorItem,
+  desviosPreco,
+  resumoDiarioInteligencia,
+  painelRepresentantesInteligencia,
+  fechamentoMensalInteligencia,
+  tabelaExportacaoPronta,
+  gerarExportacaoPersonalizada,
+  exportarTabelaExcel,
+  exportarTabelaCsv,
+  CLIENTE_INFO_OVERRIDE,
+  UF_NOME,
+  MESES,
+} from "../lib/faturamento";
+import { MetricCards } from "../components/MetricCards";
+import { SidebarFilters, FiltrosState } from "../components/SidebarFilters";
+import { MapBrasil } from "../components/MapBrasil";
+import {
+  Menu,
+  Download,
+  FileSpreadsheet,
+  RefreshCw,
+  Search,
+  Sliders,
+  ChevronDown,
+  ChevronUp,
+  AlertTriangle,
+  Info,
+  CheckCircle,
+  Eye,
+  Tv,
+} from "lucide-react";
+import {
+  ResponsiveContainer,
+  LineChart,
+  Line,
+  BarChart,
+  Bar,
+  XAxis,
+  YAxis,
+  Tooltip as RechartsTooltip,
+  CartesianGrid,
+  Legend,
+  Cell,
+} from "recharts";
 
-/**
- * All content in this page are only for example, replace with your own feature implementation
- * When building pages, remember your instructions in Frontend Best Practices, Design Guide and Common Pitfalls
- */
+const CEMAG_ORANGE = "#F97316";
+const CEMAG_ORANGE_SOFT = "#FB923C";
+const CEMAG_BLUE = "#7DD3FC";
+const CEMAG_GREEN = "#22C55E";
+const CEMAG_RED = "#EF4444";
+const CEMAG_MUTED = "#64748B";
+
+const metricKey = (label: string): string => ({
+  "Faturamento": "faturamento",
+  "Quantidade": "quantidade",
+  "Pedidos": "pedidos",
+  "Clientes": "clientes",
+  "Ticket unitário": "ticket_unitario_calc",
+  "Valor médio por pedido": "valor_medio_pedido",
+}[label] || "faturamento");
+
+const metricFormat = (value: number, label: string) =>
+  ["Faturamento", "Ticket unitário", "Valor médio por pedido"].includes(label) ? formatarMoeda(value) : formatarInteiro(value);
+
+const ABAS = [
+  { id: "visao_geral", label: "🏠 Visão geral" },
+  { id: "modo_apresentacao", label: "📺 Modo apresentação" },
+  { id: "ano_ano", label: "📅 Ano x ano" },
+  { id: "mes_mes", label: "🗓️ Mês x mês" },
+  { id: "produtos", label: "🚜 Produtos e carretas" },
+  { id: "clientes", label: "👥 Clientes" },
+  { id: "inteligencia", label: "🧠 Inteligência comercial" },
+  { id: "regioes", label: "🗺️ Regiões" },
+  { id: "representantes", label: "🤝 Representantes" },
+  { id: "tipos", label: "🏷️ Tipos e categorias" },
+  { id: "base_tratada", label: "📄 Base tratada" },
+  { id: "exportacoes", label: "📤 Exportações" },
+];
+
+const DataTable: React.FC<{ rows: any[]; columns: string[] }> = ({ rows, columns }) => (
+  <div className="max-h-80 overflow-auto border border-slate-800 rounded-lg">
+    <table className="w-full text-left text-xs text-slate-300">
+      <thead className="bg-slate-950 sticky top-0 text-[10px] uppercase text-slate-400">
+        <tr>{columns.map((c) => <th key={c} className="p-2 whitespace-nowrap">{c}</th>)}</tr>
+      </thead>
+      <tbody className="divide-y divide-slate-800/60">
+        {rows.slice(0, 300).map((r, i) => (
+          <tr key={i} className="hover:bg-slate-800/40">
+            {columns.map((c) => {
+              const value = r[c];
+              const normalized = String(c).toLowerCase();
+              const isNumber = typeof value === "number";
+              const isPercent = normalized.includes("pct") || normalized.includes("participacao");
+              const isMoney = normalized.includes("faturamento") || normalized.includes("preco") || normalized.includes("resultado") || normalized.includes("receita") || normalized.includes("valor");
+              const display = isNumber ? (isPercent ? formatarPercentual(value) : isMoney ? formatarMoeda(value) : formatarInteiro(value)) : String(value ?? "-");
+              return <td key={c} className="p-2 max-w-[220px] truncate">{display}</td>;
+            })}
+          </tr>
+        ))}
+      </tbody>
+    </table>
+    {rows.length > 300 && <div className="p-2 text-[10px] text-slate-500 text-center">Prévia com 300 de {rows.length} linhas.</div>}
+  </div>
+);
+
 export default function Home() {
-  // If theme is switchable in App.tsx, we can implement theme toggling like this:
-  // const { theme, toggleTheme } = useTheme();
+  const [loading, setLoading] = useState<boolean>(true);
+  const [erroCarregamento, setErroCarregamento] = useState<string | null>(null);
+  const [baseOriginal, setBaseOriginal] = useState<any[]>([]);
+  const [nomeArquivoBase, setNomeArquivoBase] = useState<string>("data/tabelaFaturamento.csv");
+  const [abaAtiva, setAbaAtiva] = useState<string>("visao_geral");
+  const [isMobileMenuOpen, setIsMobileMenuOpen] = useState<boolean>(false);
+
+  // Filtros Globais
+  const [filtros, setFiltros] = useState<FiltrosState>({
+    dataInicio: "",
+    dataFim: "",
+    considerarTodasFormas: false,
+    tiposVendaSelecionados: ["V ProdPrópria p Consumo"],
+    familiasExcluidas: [],
+    anos: [],
+    regioes: [],
+    ufs: [],
+    cidades: [],
+    representantes: [],
+    listasPreco: [],
+    clientes: [],
+    clientesBase: [],
+    categorias: [],
+    descricoesGenericas: [],
+    gruposModelo: [],
+    familias: [],
+    buscaProduto: "",
+  });
+
+  // Carregar base inicial padrão
+  useEffect(() => {
+    async function carregarBaseInicial() {
+      try {
+        setLoading(true);
+        // Tenta carregar tabelaFaturamento.csv da pasta public/data
+        const resp = await fetch("/data/tabelaFaturamento.csv");
+        if (!resp.ok) {
+          throw new Error("Não foi possível carregar a base padrão /data/tabelaFaturamento.csv");
+        }
+        const text = await resp.text();
+        const parsed = Papa.parse(text, { header: true, skipEmptyLines: true });
+        if (parsed.data && parsed.data.length > 0) {
+          setBaseOriginal(parsed.data);
+          setNomeArquivoBase("tabelaFaturamento.csv");
+        } else {
+          throw new Error("Arquivo vazio");
+        }
+      } catch (err: any) {
+        setErroCarregamento(err.message || "Erro ao carregar dados iniciais.");
+      } finally {
+        setLoading(false);
+      }
+    }
+    carregarBaseInicial();
+  }, []);
+
+  // Preparar os dados tratados com as regras CEMAG
+  const { dados, meta } = useMemo(() => {
+    if (!baseOriginal.length) return { dados: [], meta: { linhas_validas: 0 } };
+    return prepararDados(baseOriginal, CLIENTE_INFO_OVERRIDE);
+  }, [baseOriginal]);
+
+  // Inicializar datas de período quando a base for carregada
+  useEffect(() => {
+    if (meta?.data_min && meta?.data_max && !filtros.dataInicio && !filtros.dataFim) {
+      const minStr = meta.data_min.toISOString().slice(0, 10);
+      const maxStr = meta.data_max.toISOString().slice(0, 10);
+      setFiltros((prev) => ({
+        ...prev,
+        dataInicio: minStr,
+        dataFim: maxStr,
+      }));
+    }
+  }, [meta]);
+
+  // Opções para a barra lateral
+  const opcoesFiltros = useMemo(() => {
+    if (!dados.length) {
+      return {
+        tiposVenda: [],
+        familias: [],
+        anos: [],
+        regioes: [],
+        ufs: [],
+        cidades: [],
+        representantes: [],
+        listasPreco: [],
+        clientes: [],
+        clientesBase: [],
+        categorias: [],
+        descricoes: [],
+        gruposModelo: [],
+      };
+    }
+    const setOf = (key: keyof TransacaoTratada) =>
+      Array.from(new Set(dados.map((d) => d[key]))).filter(Boolean).sort();
+
+    return {
+      tiposVenda: setOf("tipo_venda") as string[],
+      familias: setOf("familia") as string[],
+      anos: (setOf("ano") as number[]).sort((a, b) => b - a),
+      regioes: setOf("regiao") as string[],
+      ufs: setOf("uf") as string[],
+      cidades: setOf("cidade") as string[],
+      representantes: setOf("representante") as string[],
+      listasPreco: setOf("lista_preco_uf") as string[],
+      clientes: setOf("cliente") as string[],
+      clientesBase: setOf("cliente_base") as string[],
+      categorias: setOf("categoria_produto") as string[],
+      descricoes: setOf("descricao_generica") as string[],
+      gruposModelo: setOf("grupo_modelo") as string[],
+    };
+  }, [dados]);
+
+  // Aplicação estrita de todos os filtros
+  const dadosFiltrados = useMemo(() => {
+    if (!dados.length) return [];
+
+    return dados.filter((d) => {
+      // Período
+      if (filtros.dataInicio) {
+        const dIni = new Date(filtros.dataInicio + "T00:00:00");
+        if (d.data_emissao < dIni) return false;
+      }
+      if (filtros.dataFim) {
+        const dFim = new Date(filtros.dataFim + "T23:59:59");
+        if (d.data_emissao > dFim) return false;
+      }
+
+      // Forma de Venda
+      if (!filtros.considerarTodasFormas) {
+        if (filtros.tiposVendaSelecionados.length > 0) {
+          if (!filtros.tiposVendaSelecionados.includes(d.tipo_venda)) return false;
+        } else {
+          return false;
+        }
+      }
+
+      // Exclusões de famílias
+      if (filtros.familiasExcluidas.length > 0 && filtros.familiasExcluidas.includes(d.familia)) {
+        return false;
+      }
+
+      // Multiselects
+      if (filtros.anos.length > 0 && !filtros.anos.includes(d.ano)) return false;
+      if (filtros.regioes.length > 0 && !filtros.regioes.includes(d.regiao)) return false;
+      if (filtros.ufs.length > 0 && !filtros.ufs.includes(d.uf)) return false;
+      if (filtros.cidades.length > 0 && !filtros.cidades.includes(d.cidade)) return false;
+      if (filtros.representantes.length > 0 && !filtros.representantes.includes(d.representante)) return false;
+      if (filtros.listasPreco.length > 0 && !filtros.listasPreco.includes(d.lista_preco_uf)) return false;
+      if (filtros.clientes.length > 0 && !filtros.clientes.includes(d.cliente)) return false;
+      if (filtros.clientesBase.length > 0 && !filtros.clientesBase.includes(d.cliente_base)) return false;
+      if (filtros.categorias.length > 0 && !filtros.categorias.includes(d.categoria_produto)) return false;
+      if (filtros.descricoesGenericas.length > 0 && !filtros.descricoesGenericas.includes(d.descricao_generica)) return false;
+      if (filtros.gruposModelo.length > 0 && !filtros.gruposModelo.includes(d.grupo_modelo)) return false;
+      if (filtros.familias.length > 0 && !filtros.familias.includes(d.familia)) return false;
+
+      // Busca textual
+      if (filtros.buscaProduto.trim()) {
+        const termo = filtros.buscaProduto.trim().toLowerCase();
+        if (!d.produto.toLowerCase().includes(termo)) return false;
+      }
+
+      return true;
+    });
+  }, [dados, filtros]);
+
+  // KPIs agregados do topo
+  const kpis = useMemo(() => {
+    let faturamento = 0;
+    let quantidade = 0;
+    const pedidos = new Set<string>();
+    const clientes = new Set<string>();
+
+    for (const d of dadosFiltrados) {
+      faturamento += d.faturamento;
+      quantidade += d.quantidade;
+      if (d.pedido) pedidos.add(d.pedido);
+      if (d.cliente) clientes.add(d.cliente);
+    }
+
+    const totalPedidos = pedidos.size;
+    const totalClientes = clientes.size;
+    const ticketUnitario = quantidade > 0 ? faturamento / quantidade : 0;
+    const valorMedioPedido = totalPedidos > 0 ? faturamento / totalPedidos : 0;
+
+    return {
+      faturamento,
+      quantidade,
+      pedidos: totalPedidos,
+      clientes: totalClientes,
+      ticketUnitario,
+      valorMedioPedido,
+    };
+  }, [dadosFiltrados]);
+
+  // Handler de upload de novo arquivo
+  const handleUploadArquivo = (file: File) => {
+    const nome = file.name.toLowerCase();
+    const reader = new FileReader();
+
+    if (nome.endsWith(".xlsx") || nome.endsWith(".xls")) {
+      reader.onload = (e) => {
+        try {
+          const data = new Uint8Array(e.target?.result as ArrayBuffer);
+          const workbook = XLSX.read(data, { type: "array" });
+          const firstSheet = workbook.SheetNames[0];
+          const sheet = workbook.Sheets[firstSheet];
+          const json = XLSX.utils.sheet_to_json(sheet);
+          if (json && json.length) {
+            setBaseOriginal(json);
+            setNomeArquivoBase(file.name);
+          }
+        } catch (err: any) {
+          alert("Erro ao ler arquivo Excel: " + err.message);
+        }
+      };
+      reader.readAsArrayBuffer(file);
+    } else {
+      reader.onload = (e) => {
+        try {
+          const text = e.target?.result as string;
+          const parsed = Papa.parse(text, { header: true, skipEmptyLines: true });
+          if (parsed.data && parsed.data.length) {
+            setBaseOriginal(parsed.data);
+            setNomeArquivoBase(file.name);
+          }
+        } catch (err: any) {
+          alert("Erro ao processar CSV: " + err.message);
+        }
+      };
+      reader.readAsText(file);
+    }
+  };
+
+  const handleResetFiltros = () => {
+    if (meta?.data_min && meta?.data_max) {
+      setFiltros({
+        dataInicio: meta.data_min.toISOString().slice(0, 10),
+        dataFim: meta.data_max.toISOString().slice(0, 10),
+        considerarTodasFormas: false,
+        tiposVendaSelecionados: ["V ProdPrópria p Consumo"],
+        familiasExcluidas: [],
+        anos: [],
+        regioes: [],
+        ufs: [],
+        cidades: [],
+        representantes: [],
+        listasPreco: [],
+        clientes: [],
+        clientesBase: [],
+        categorias: [],
+        descricoesGenericas: [],
+        gruposModelo: [],
+        familias: [],
+        buscaProduto: "",
+      });
+    }
+  };
+
+  // --------------------------------------------------------------------------
+  // ESTADOS ESPECÍFICOS DE ABAS
+  // --------------------------------------------------------------------------
+
+  // Visão Geral: métrica escolhida
+  const [metricaVisao, setMetricaVisao] = useState<string>("Faturamento");
+
+  // Modo Apresentação: tema, métrica, topN
+  const [temaApresentacao, setTemaApresentacao] = useState<"Escuro" | "Claro">("Escuro");
+  const [metricaApresentacao, setMetricaApresentacao] = useState<string>("Faturamento");
+  const [topNApresentacao, setTopNApresentacao] = useState<number>(8);
+  const [apresentacaoBlocoExtra, setApresentacaoBlocoExtra] = useState<boolean>(false);
+
+  // Ano x Ano
+  const anosDisponiveisYoY = useMemo(() => {
+    return Array.from(new Set(dadosFiltrados.map((d) => d.ano))).sort((a, b) => b - a);
+  }, [dadosFiltrados]);
+  const [anoBaseYoY, setAnoBaseYoY] = useState<number>(2024);
+  const [anoCompYoY, setAnoCompYoY] = useState<number>(2025);
+  const [yoyMesesEquiv, setYoyMesesEquiv] = useState<boolean>(true);
+
+  // Mês x Mês
+  const [metricaMoM, setMetricaMoM] = useState<string>("Faturamento");
+
+  // Produtos
+  const [metricaProd, setMetricaProd] = useState<string>("Faturamento");
+  const [agrupamentoProd, setAgrupamentoProd] = useState<string>("produto");
+  const [topNProd, setTopNProd] = useState<number>(20);
+
+  // Clientes
+  const [metricaCli, setMetricaCli] = useState<string>("Faturamento");
+  const [agrupCliente, setAgrupCliente] = useState<"cliente" | "cliente_base">("cliente");
+
+  // Inteligência Comercial: sub-área
+  const [subInteligencia, setSubInteligencia] = useState<string>("comparador");
+  const [intelCompDim, setIntelCompDim] = useState<string>("cliente");
+  const [intelCompMet, setIntelCompMet] = useState<string>("faturamento");
+  const [intelDreDim, setIntelDreDim] = useState<string>("familia");
+  const [intelCrossCliente, setIntelCrossCliente] = useState<string>("");
+
+  // Regiões
+  const [metricaGeo, setMetricaGeo] = useState<string>("Faturamento");
+
+  // Representantes
+  const [metricaRep, setMetricaRep] = useState<string>("Faturamento");
+  const [repEscolhido, setRepEscolhido] = useState<string>("");
+
+  // Base tratada: colunas visíveis
+  const [colunasBaseTratada, setColunasBaseTratada] = useState<string[]>([
+    "pedido", "data_str", "cliente", "cidade", "uf", "representante",
+    "produto", "familia", "quantidade", "faturamento", "tipo_venda"
+  ]);
+
+  // Exportações
+  const [exportGranularidade, setExportGranularidade] = useState<string>("Mensal");
+  const [exportMetrica, setExportMetrica] = useState<string>("Faturamento");
+  const [exportDimensao, setExportDimensao] = useState<string>("Nenhum");
+  const [exportModo, setExportModo] = useState<string>("prontas");
+  const [exportTipo, setExportTipo] = useState<string>("Resumo mensal");
+
+  // --------------------------------------------------------------------------
+  // CÁLCULOS DERIVADOS POR ABA
+  // --------------------------------------------------------------------------
+
+  // Dados agregados por mês para gráficos de linha
+  const dadosMensais = useMemo(() => {
+    const agg = agregar(dadosFiltrados, ["ano_mes", "ano_mes_data", "ano", "mes_num", "mes"]);
+    agg.sort((a, b) => a.ano_mes_data.localeCompare(b.ano_mes_data));
+    return agg;
+  }, [dadosFiltrados]);
+
+  // Mapa de UF para componente MapBrasil
+  const dadosPorUf = useMemo(() => {
+    const res: Record<string, { faturamento: number; quantidade: number; pedidos: number; clientes: number }> = {};
+    for (const d of dadosFiltrados) {
+      if (!res[d.uf]) res[d.uf] = { faturamento: 0, quantidade: 0, pedidos: 0, clientes: 0 };
+      res[d.uf].faturamento += d.faturamento;
+      res[d.uf].quantidade += d.quantidade;
+    }
+    // Pedidos e clientes únicos por UF
+    for (const [uf, info] of Object.entries(res)) {
+      const itemsUf = dadosFiltrados.filter((d) => d.uf === uf);
+      info.pedidos = new Set(itemsUf.map((d) => d.pedido)).size;
+      info.clientes = new Set(itemsUf.map((d) => d.cliente)).size;
+    }
+    return res;
+  }, [dadosFiltrados]);
+
+  // Formas de venda texto para exibição
+  const formasVendaTexto = filtros.considerarTodasFormas
+    ? "Todas"
+    : filtros.tiposVendaSelecionados.join(", ") || "Nenhuma";
+  const familiasExcluidasTexto = filtros.familiasExcluidas.length
+    ? filtros.familiasExcluidas.join(", ")
+    : "Nenhuma";
+
+  if (loading) {
+    return (
+      <div className="min-h-screen bg-[#0E1117] text-white flex flex-col items-center justify-center p-6">
+        <RefreshCw className="w-10 h-10 text-orange-500 animate-spin mb-4" />
+        <h2 className="text-xl font-bold">Carregando painel analítico...</h2>
+        <p className="text-sm text-slate-400 mt-2">Processando regras de faturamento, regiões e clientes.</p>
+      </div>
+    );
+  }
 
   return (
-    <div className="min-h-screen flex flex-col">
-      <main>
-        {/* Example: lucide-react for icons */}
-        <Loader2 className="animate-spin" />
-        Example Page
-        {/* Example: Streamdown for markdown rendering */}
-        <Streamdown>Any **markdown** content</Streamdown>
-        <Button variant="default">Example Button</Button>
-      </main>
+    <div className="min-h-screen bg-[#0E1117] text-slate-100 flex flex-col font-sans">
+      {/* Top Header CEMAG */}
+      <header className="bg-[#111827] border-b border-slate-800 px-4 py-3 sticky top-0 z-30 shadow-md">
+        <div className="max-w-[1700px] mx-auto flex items-center justify-between gap-4">
+          <div className="flex items-center gap-3">
+            <button
+              onClick={() => setIsMobileMenuOpen(true)}
+              className="p-1.5 rounded bg-slate-800 hover:bg-slate-700 text-slate-200 lg:hidden"
+            >
+              <Menu className="w-5 h-5" />
+            </button>
+            <div className="flex items-center gap-2">
+              <span className="text-2xl">📊</span>
+              <div>
+                <h1 className="text-base md:text-lg font-bold text-white tracking-tight flex items-center gap-2">
+                  <span>Análise de Faturamento</span>
+                  <span className="text-xs px-2 py-0.5 rounded bg-orange-500/20 text-orange-400 border border-orange-500/30">
+                    Carretas CEMAG
+                  </span>
+                </h1>
+                <p className="text-[11px] text-slate-400 hidden md:block">
+                  Painel de inteligência de faturamento, clientes, regiões e mix de carretas
+                </p>
+              </div>
+            </div>
+          </div>
+
+          <div className="flex items-center gap-3">
+            <button
+              onClick={handleResetFiltros}
+              className="flex items-center gap-1.5 text-xs bg-slate-800 hover:bg-slate-700 text-slate-200 px-3 py-1.5 rounded-lg border border-slate-700 transition-colors shadow-sm"
+              title="Restaurar parâmetros padrão"
+            >
+              <RefreshCw className="w-3.5 h-3.5 text-orange-400" />
+              <span className="hidden sm:inline">Restaurar Padrões</span>
+            </button>
+            <button
+              onClick={() => setAbaAtiva("exportacoes")}
+              className="flex items-center gap-1.5 text-xs bg-orange-600 hover:bg-orange-500 text-white font-semibold px-3.5 py-1.5 rounded-lg transition-colors shadow-sm"
+            >
+              <Download className="w-3.5 h-3.5" />
+              <span>Exportar</span>
+            </button>
+          </div>
+        </div>
+
+        {/* Resumo compacto de filtros ativos */}
+        <div className="max-w-[1700px] mx-auto mt-2 pt-2 border-t border-slate-800/80 flex flex-wrap items-center justify-between text-[11px] text-slate-400 gap-2">
+          <div className="flex flex-wrap items-center gap-x-3 gap-y-1">
+            <span>Fonte: <strong className="text-slate-200">{nomeArquivoBase}</strong></span>
+            <span>•</span>
+            <span>Formas de venda: <strong className="text-amber-400">{formasVendaTexto}</strong></span>
+            <span>•</span>
+            <span>Famílias excluídas: <strong className="text-slate-200">{familiasExcluidasTexto}</strong></span>
+          </div>
+          <div>
+            <span>Linhas no filtro: <strong className="text-orange-400">{dadosFiltrados.length.toLocaleString("pt-BR")}</strong> de {meta?.linhas_validas?.toLocaleString("pt-BR")}</span>
+          </div>
+        </div>
+      </header>
+
+      {/* Conteúdo com Sidebar fixa na esquerda */}
+      <div className="flex-1 flex max-w-[1700px] w-full mx-auto">
+        <SidebarFilters
+          filtros={filtros}
+          setFiltros={setFiltros}
+          opcoesFiltros={opcoesFiltros}
+          nomeArquivoBase={nomeArquivoBase}
+          onUploadArquivo={handleUploadArquivo}
+          onResetFiltros={handleResetFiltros}
+          linhasFiltradas={dadosFiltrados.length}
+          totalLinhasValidas={meta?.linhas_validas || 0}
+          isOpenMobile={isMobileMenuOpen}
+          onCloseMobile={() => setIsMobileMenuOpen(false)}
+        />
+
+        {/* Área Central Principal */}
+        <main className="flex-1 p-4 md:p-6 overflow-x-hidden">
+          {/* Navegação Superior de Abas (Idêntica ao st.radio PAGINAS) */}
+          <div className="mb-5 overflow-x-auto pb-1 scrollbar-thin">
+            <div className="flex items-center gap-1.5 min-w-max bg-slate-900/80 p-1.5 rounded-xl border border-slate-800">
+              {ABAS.map((aba) => {
+                const isSelected = abaAtiva === aba.id;
+                return (
+                  <button
+                    key={aba.id}
+                    onClick={() => setAbaAtiva(aba.id)}
+                    className={`px-3 py-1.5 rounded-lg text-xs font-semibold transition-all whitespace-nowrap ${
+                      isSelected
+                        ? "bg-orange-500 text-white shadow-md"
+                        : "text-slate-300 hover:text-white hover:bg-slate-800/80"
+                    }`}
+                  >
+                    {aba.label}
+                  </button>
+                );
+              })}
+            </div>
+          </div>
+
+          {/* Cards Executivos de Topo (visíveis em todas as abas, exceto Modo Apresentação que tem cards próprios) */}
+          {abaAtiva !== "modo_apresentacao" && (
+            <MetricCards
+              faturamento={kpis.faturamento}
+              quantidade={kpis.quantidade}
+              pedidos={kpis.pedidos}
+              clientes={kpis.clientes}
+              ticketUnitario={kpis.ticketUnitario}
+              valorMedioPedido={kpis.valorMedioPedido}
+            />
+          )}
+
+          {dadosFiltrados.length === 0 ? (
+            <div className="bg-amber-950/30 border border-amber-800/60 rounded-xl p-8 text-center my-6">
+              <AlertTriangle className="w-10 h-10 text-amber-500 mx-auto mb-3" />
+              <h3 className="text-lg font-bold text-amber-300">Nenhum registro encontrado</h3>
+              <p className="text-sm text-slate-300 mt-1">
+                Tente ajustar os filtros na barra lateral ou selecionar outra forma de venda.
+              </p>
+              <button
+                onClick={handleResetFiltros}
+                className="mt-4 px-4 py-2 bg-orange-600 hover:bg-orange-500 text-white text-xs font-semibold rounded-lg"
+              >
+                Restaurar Filtros Padrão
+              </button>
+            </div>
+          ) : (
+            <>
+              {/* ========================================================= */}
+              {/* ABA 1: VISÃO GERAL */}
+              {/* ========================================================= */}
+              {abaAtiva === "visao_geral" && (
+                <div className="space-y-6">
+                  <div className="flex flex-wrap items-center justify-between gap-4 bg-slate-900/60 p-4 rounded-xl border border-slate-800">
+                    <div>
+                      <h2 className="text-lg font-bold text-white">Visão Geral</h2>
+                      <p className="text-xs text-slate-400">
+                        Resumo executivo do período filtrado com foco nos principais movimentos comerciais.
+                      </p>
+                    </div>
+                    <div className="flex items-center gap-2">
+                      <span className="text-xs text-slate-300">Métrica principal:</span>
+                      <select
+                        value={metricaVisao}
+                        onChange={(e) => setMetricaVisao(e.target.value)}
+                        className="bg-slate-800 border border-slate-700 text-white rounded px-2.5 py-1 text-xs focus:ring-1 focus:ring-orange-500"
+                      >
+                        <option value="Faturamento">Faturamento</option>
+                        <option value="Quantidade">Quantidade</option>
+                        <option value="Pedidos">Pedidos</option>
+                        <option value="Ticket unitário">Ticket unitário</option>
+                        <option value="Valor médio por pedido">Valor médio por pedido</option>
+                      </select>
+                    </div>
+                  </div>
+
+                  {/* 4 Destaques Líderes */}
+                  {(() => {
+                    const topCli = agregar(dadosFiltrados, ["cliente"]).sort((a, b) => b.faturamento - a.faturamento)[0];
+                    const topProd = agregar(dadosFiltrados, ["produto"]).sort((a, b) => b.faturamento - a.faturamento)[0];
+                    const topReg = agregar(dadosFiltrados, ["regiao"]).sort((a, b) => b.faturamento - a.faturamento)[0];
+                    const topRep = agregar(dadosFiltrados, ["representante"]).sort((a, b) => b.faturamento - a.faturamento)[0];
+
+                    return (
+                      <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-3">
+                        <div className="bg-slate-900/80 border border-slate-800 p-3.5 rounded-xl">
+                          <span className="text-xs text-slate-400">Cliente líder</span>
+                          <div className="text-sm font-bold text-white truncate mt-1">{topCli?.cliente || "-"}</div>
+                          <div className="text-xs font-semibold text-orange-400 mt-0.5">{formatarMoeda(topCli?.faturamento)}</div>
+                        </div>
+                        <div className="bg-slate-900/80 border border-slate-800 p-3.5 rounded-xl">
+                          <span className="text-xs text-slate-400">Produto líder</span>
+                          <div className="text-sm font-bold text-white truncate mt-1">{topProd?.produto || "-"}</div>
+                          <div className="text-xs font-semibold text-orange-400 mt-0.5">{formatarMoeda(topProd?.faturamento)}</div>
+                        </div>
+                        <div className="bg-slate-900/80 border border-slate-800 p-3.5 rounded-xl">
+                          <span className="text-xs text-slate-400">Região líder</span>
+                          <div className="text-sm font-bold text-white truncate mt-1">{topReg?.regiao || "-"}</div>
+                          <div className="text-xs font-semibold text-orange-400 mt-0.5">{formatarMoeda(topReg?.faturamento)}</div>
+                        </div>
+                        <div className="bg-slate-900/80 border border-slate-800 p-3.5 rounded-xl">
+                          <span className="text-xs text-slate-400">Representante líder</span>
+                          <div className="text-sm font-bold text-white truncate mt-1">{topRep?.representante || "-"}</div>
+                          <div className="text-xs font-semibold text-orange-400 mt-0.5">{formatarMoeda(topRep?.faturamento)}</div>
+                        </div>
+                      </div>
+                    );
+                  })()}
+
+                  {/* Gráfico de Evolução Mensal */}
+                  <div className="bg-slate-900/80 border border-slate-800 p-4 rounded-xl shadow-lg">
+                    <h3 className="text-sm font-bold text-white mb-3">
+                      Evolução mensal - {metricaVisao}
+                    </h3>
+                    <div className="h-72 w-full">
+                      <ResponsiveContainer width="100%" height="100%">
+                        <LineChart data={dadosMensais} margin={{ top: 10, right: 20, left: 20, bottom: 20 }}>
+                          <CartesianGrid strokeDasharray="3 3" stroke="#334155" opacity={0.5} />
+                          <XAxis dataKey="ano_mes" stroke="#94A3B8" fontSize={11} />
+                          <YAxis
+                            stroke="#94A3B8"
+                            fontSize={11}
+                            tickFormatter={(v) => valorResumido(v, metricaVisao === "Faturamento")}
+                          />
+                          <RechartsTooltip
+                            contentStyle={{ backgroundColor: "#0F172A", borderColor: "#334155", borderRadius: "8px" }}
+                            formatter={(v: any) => [
+                              metricaVisao === "Faturamento" ? formatarMoeda(v) : formatarInteiro(v),
+                              metricaVisao,
+                            ]}
+                          />
+                          <Line
+                            type="monotone"
+                            dataKey={metricaVisao === "Quantidade" ? "quantidade" : "faturamento"}
+                            stroke={CEMAG_ORANGE}
+                            strokeWidth={3}
+                            dot={{ fill: CEMAG_ORANGE_SOFT, r: 4 }}
+                          />
+                        </LineChart>
+                      </ResponsiveContainer>
+                    </div>
+                  </div>
+
+                  {/* Top 8 Produtos e Top 8 Clientes */}
+                  <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
+                    {/* Top 8 Produtos */}
+                    <div className="bg-slate-900/80 border border-slate-800 p-4 rounded-xl">
+                      <h3 className="text-sm font-bold text-white mb-3">Top 8 carretas / produtos</h3>
+                      {(() => {
+                        const topProds = agregar(dadosFiltrados, ["produto"])
+                          .sort((a, b) => b.faturamento - a.faturamento)
+                          .slice(0, 8);
+                        return (
+                          <div className="h-64 w-full">
+                            <ResponsiveContainer width="100%" height="100%">
+                              <BarChart data={topProds} layout="vertical" margin={{ top: 5, right: 30, left: 80, bottom: 5 }}>
+                                <CartesianGrid strokeDasharray="3 3" stroke="#334155" opacity={0.5} />
+                                <XAxis type="number" stroke="#94A3B8" tickFormatter={(v) => valorResumido(v, true)} fontSize={10} />
+                                <YAxis dataKey="produto" type="category" stroke="#CBD5E1" fontSize={10} width={90} />
+                                <RechartsTooltip
+                                  contentStyle={{ backgroundColor: "#0F172A", borderColor: "#334155" }}
+                                  formatter={(v: any) => [formatarMoeda(v), "Faturamento"]}
+                                />
+                                <Bar dataKey="faturamento" fill={CEMAG_ORANGE} radius={[0, 4, 4, 0]} />
+                              </BarChart>
+                            </ResponsiveContainer>
+                          </div>
+                        );
+                      })()}
+                    </div>
+
+                    {/* Top 8 Clientes */}
+                    <div className="bg-slate-900/80 border border-slate-800 p-4 rounded-xl">
+                      <h3 className="text-sm font-bold text-white mb-3">Top 8 clientes</h3>
+                      {(() => {
+                        const topClis = agregar(dadosFiltrados, ["cliente"])
+                          .sort((a, b) => b.faturamento - a.faturamento)
+                          .slice(0, 8);
+                        return (
+                          <div className="h-64 w-full">
+                            <ResponsiveContainer width="100%" height="100%">
+                              <BarChart data={topClis} layout="vertical" margin={{ top: 5, right: 30, left: 90, bottom: 5 }}>
+                                <CartesianGrid strokeDasharray="3 3" stroke="#334155" opacity={0.5} />
+                                <XAxis type="number" stroke="#94A3B8" tickFormatter={(v) => valorResumido(v, true)} fontSize={10} />
+                                <YAxis dataKey="cliente" type="category" stroke="#CBD5E1" fontSize={10} width={100} />
+                                <RechartsTooltip
+                                  contentStyle={{ backgroundColor: "#0F172A", borderColor: "#334155" }}
+                                  formatter={(v: any) => [formatarMoeda(v), "Faturamento"]}
+                                />
+                                <Bar dataKey="faturamento" fill={CEMAG_BLUE} radius={[0, 4, 4, 0]} />
+                              </BarChart>
+                            </ResponsiveContainer>
+                          </div>
+                        );
+                      })()}
+                    </div>
+                  </div>
+                </div>
+              )}
+
+              {/* ========================================================= */}
+              {/* ABA 2: MODO APRESENTAÇÃO */}
+              {/* ========================================================= */}
+              {abaAtiva === "modo_apresentacao" && (
+                <div
+                  className={`p-6 rounded-2xl border transition-colors ${
+                    temaApresentacao === "Claro"
+                      ? "bg-[#F8FAFC] text-slate-900 border-slate-300"
+                      : "bg-[#07111F] text-slate-100 border-[#20314B]"
+                  }`}
+                >
+                  {/* Barra de controle da apresentação */}
+                  <div className="flex flex-wrap items-center justify-between gap-4 mb-6 pb-4 border-b border-slate-700/40">
+                    <div>
+                      <h2 className="text-2xl font-black tracking-tight flex items-center gap-2">
+                        <Tv className="w-6 h-6 text-orange-500" />
+                        <span>Painel Executivo para Projeção</span>
+                      </h2>
+                      <p className="text-xs opacity-75">
+                        Layout otimizado para reunião de diretoria, telões e apresentações.
+                      </p>
+                    </div>
+
+                    <div className="flex flex-wrap items-center gap-4 text-xs">
+                      <div className="flex items-center gap-1 bg-black/20 p-1 rounded-lg">
+                        <button
+                          onClick={() => setTemaApresentacao("Escuro")}
+                          className={`px-3 py-1 rounded ${
+                            temaApresentacao === "Escuro" ? "bg-orange-600 text-white" : "opacity-70"
+                          }`}
+                        >
+                          Escuro
+                        </button>
+                        <button
+                          onClick={() => setTemaApresentacao("Claro")}
+                          className={`px-3 py-1 rounded ${
+                            temaApresentacao === "Claro" ? "bg-orange-600 text-white" : "opacity-70"
+                          }`}
+                        >
+                          Claro
+                        </button>
+                      </div>
+
+                      <div className="flex items-center gap-2">
+                        <span>Métrica:</span>
+                        <select
+                          value={metricaApresentacao}
+                          onChange={(e) => setMetricaApresentacao(e.target.value)}
+                          className="bg-black/20 border border-current/20 rounded px-2.5 py-1"
+                        >
+                          <option value="Faturamento">Faturamento</option>
+                          <option value="Quantidade">Quantidade</option>
+                          <option value="Pedidos">Pedidos</option>
+                          <option value="Ticket unitário">Ticket unitário</option>
+                        </select>
+                      </div>
+
+                      <div className="flex items-center gap-2">
+                        <span>Top itens:</span>
+                        <input
+                          type="range"
+                          min={5}
+                          max={12}
+                          value={topNApresentacao}
+                          onChange={(e) => setTopNApresentacao(parseInt(e.target.value, 10))}
+                          className="w-20"
+                        />
+                        <span className="font-bold">{topNApresentacao}</span>
+                      </div>
+                    </div>
+                  </div>
+
+                  {/* Cards Gigantes de Apresentação */}
+                  <div className="grid grid-cols-2 md:grid-cols-5 gap-4 mb-6">
+                    <div className="p-4 rounded-xl border border-current/20 bg-current/5 border-l-4 border-l-orange-500">
+                      <div className="text-xs opacity-70">Faturamento Total</div>
+                      <div className="text-2xl lg:text-3xl font-extrabold mt-1">{formatarMoeda(kpis.faturamento)}</div>
+                      <div className="text-[10px] opacity-60 mt-1">Visão geral do período</div>
+                    </div>
+                    <div className="p-4 rounded-xl border border-current/20 bg-current/5 border-l-4 border-l-orange-400">
+                      <div className="text-xs opacity-70">Quantidade</div>
+                      <div className="text-2xl lg:text-3xl font-extrabold mt-1">{formatarInteiro(kpis.quantidade)}</div>
+                      <div className="text-[10px] opacity-60 mt-1">Carretas entregues</div>
+                    </div>
+                    <div className="p-4 rounded-xl border border-current/20 bg-current/5 border-l-4 border-l-blue-400">
+                      <div className="text-xs opacity-70">Pedidos / Notas</div>
+                      <div className="text-2xl lg:text-3xl font-extrabold mt-1">{formatarInteiro(kpis.pedidos)}</div>
+                      <div className="text-[10px] opacity-60 mt-1">Operações únicas</div>
+                    </div>
+                    <div className="p-4 rounded-xl border border-current/20 bg-current/5 border-l-4 border-l-sky-400">
+                      <div className="text-xs opacity-70">Clientes Ativos</div>
+                      <div className="text-2xl lg:text-3xl font-extrabold mt-1">{formatarInteiro(kpis.clientes)}</div>
+                      <div className="text-[10px] opacity-60 mt-1">Na carteira filtrada</div>
+                    </div>
+                    <div className="p-4 rounded-xl border border-current/20 bg-current/5 border-l-4 border-l-green-500">
+                      <div className="text-xs opacity-70">Ticket Médio</div>
+                      <div className="text-2xl lg:text-3xl font-extrabold mt-1">{formatarMoeda(kpis.ticketUnitario)}</div>
+                      <div className="text-[10px] opacity-60 mt-1">Por produto faturado</div>
+                    </div>
+                  </div>
+
+                  {/* Gráfico de Linha Executivo */}
+                  <div className="p-5 rounded-xl border border-current/20 bg-current/5 mb-6">
+                    <h3 className="text-base font-bold mb-4">Evolução Mensal - {metricaApresentacao}</h3>
+                    <div className="h-80 w-full">
+                      <ResponsiveContainer width="100%" height="100%">
+                        <LineChart data={dadosMensais} margin={{ top: 10, right: 30, left: 30, bottom: 20 }}>
+                          <CartesianGrid strokeDasharray="3 3" opacity={0.3} />
+                          <XAxis dataKey="ano_mes" fontSize={12} stroke="currentColor" />
+                          <YAxis fontSize={12} stroke="currentColor" tickFormatter={(v) => valorResumido(v, true)} />
+                          <RechartsTooltip
+                            contentStyle={{ backgroundColor: "#0F172A", color: "#FFF", borderRadius: "8px" }}
+                            formatter={(v: any) => [formatarMoeda(v), metricaApresentacao]}
+                          />
+                          <Line
+                            type="monotone"
+                            dataKey="faturamento"
+                            stroke={temaApresentacao === "Claro" ? "#EA580C" : "#7DD3FC"}
+                            strokeWidth={4}
+                            dot={{ r: 6 }}
+                          />
+                        </LineChart>
+                      </ResponsiveContainer>
+                    </div>
+                  </div>
+
+                  {/* Dois Rankings Principais */}
+                  <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
+                    <div className="p-5 rounded-xl border border-current/20 bg-current/5">
+                      <h4 className="text-sm font-bold mb-3">Top {topNApresentacao} Carretas / Produtos</h4>
+                      {(() => {
+                        const topP = agregar(dadosFiltrados, ["produto"])
+                          .sort((a, b) => b.faturamento - a.faturamento)
+                          .slice(0, topNApresentacao);
+                        return (
+                          <div className="space-y-2.5">
+                            {topP.map((item, idx) => (
+                              <div key={item.produto} className="flex items-center justify-between text-xs p-2 rounded bg-black/10">
+                                <span className="font-bold flex items-center gap-2 truncate">
+                                  <span className="opacity-50">#{idx + 1}</span>
+                                  <span className="truncate">{item.produto}</span>
+                                </span>
+                                <span className="font-extrabold text-orange-400 ml-2">{formatarMoeda(item.faturamento)}</span>
+                              </div>
+                            ))}
+                          </div>
+                        );
+                      })()}
+                    </div>
+
+                    <div className="p-5 rounded-xl border border-current/20 bg-current/5">
+                      <h4 className="text-sm font-bold mb-3">Top {topNApresentacao} Clientes</h4>
+                      {(() => {
+                        const topC = agregar(dadosFiltrados, ["cliente"])
+                          .sort((a, b) => b.faturamento - a.faturamento)
+                          .slice(0, topNApresentacao);
+                        return (
+                          <div className="space-y-2.5">
+                            {topC.map((item, idx) => (
+                              <div key={item.cliente} className="flex items-center justify-between text-xs p-2 rounded bg-black/10">
+                                <span className="font-bold flex items-center gap-2 truncate">
+                                  <span className="opacity-50">#{idx + 1}</span>
+                                  <span className="truncate">{item.cliente}</span>
+                                </span>
+                                <span className="font-extrabold text-sky-400 ml-2">{formatarMoeda(item.faturamento)}</span>
+                              </div>
+                            ))}
+                          </div>
+                        );
+                      })()}
+                    </div>
+                  </div>
+                </div>
+              )}
+
+              {/* ========================================================= */}
+              {/* ABA 3: ANO X ANO */}
+              {/* ========================================================= */}
+              {abaAtiva === "ano_ano" && (
+                <div className="space-y-6">
+                  <div className="flex flex-wrap items-center justify-between gap-4 bg-slate-900/60 p-4 rounded-xl border border-slate-800">
+                    <div>
+                      <h2 className="text-lg font-bold text-white">Comparativo Ano x Ano (YoY)</h2>
+                      <p className="text-xs text-slate-400">
+                        Compare dois exercícios para avaliar crescimento real, meses equivalentes e produtos de maior tração.
+                      </p>
+                    </div>
+
+                    <div className="flex flex-wrap items-center gap-3 text-xs">
+                      <div className="flex items-center gap-1.5">
+                        <span className="text-slate-400">Ano base:</span>
+                        <select
+                          value={anoBaseYoY}
+                          onChange={(e) => setAnoBaseYoY(parseInt(e.target.value, 10))}
+                          className="bg-slate-800 border border-slate-700 text-white rounded px-2 py-1"
+                        >
+                          {anosDisponiveisYoY.map((ano) => (
+                            <option key={ano} value={ano}>{ano}</option>
+                          ))}
+                        </select>
+                      </div>
+
+                      <div className="flex items-center gap-1.5">
+                        <span className="text-slate-400">Ano comparação:</span>
+                        <select
+                          value={anoCompYoY}
+                          onChange={(e) => setAnoCompYoY(parseInt(e.target.value, 10))}
+                          className="bg-slate-800 border border-slate-700 text-white rounded px-2 py-1"
+                        >
+                          {anosDisponiveisYoY.map((ano) => (
+                            <option key={ano} value={ano}>{ano}</option>
+                          ))}
+                        </select>
+                      </div>
+
+                      <label className="flex items-center gap-1.5 cursor-pointer select-none">
+                        <input
+                          type="checkbox"
+                          checked={yoyMesesEquiv}
+                          onChange={(e) => setYoyMesesEquiv(e.target.checked)}
+                          className="rounded text-orange-500"
+                        />
+                        <span className="text-slate-300">Somente meses equivalentes</span>
+                      </label>
+                    </div>
+                  </div>
+
+                  {(() => {
+                    const dadosAnoBase = dadosFiltrados.filter((d) => d.ano === anoBaseYoY);
+                    const dadosAnoComp = dadosFiltrados.filter((d) => d.ano === anoCompYoY);
+
+                    let mesesConsiderados = [1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12];
+                    if (yoyMesesEquiv) {
+                      const mBase = new Set(dadosAnoBase.map((d) => d.mes_num));
+                      const mComp = new Set(dadosAnoComp.map((d) => d.mes_num));
+                      mesesConsiderados = Array.from(mBase).filter((m) => mComp.has(m)).sort((a, b) => a - b);
+                    }
+
+                    const baseFiltradaM = dadosAnoBase.filter((d) => mesesConsiderados.includes(d.mes_num));
+                    const compFiltradaM = dadosAnoComp.filter((d) => mesesConsiderados.includes(d.mes_num));
+
+                    const fatBase = baseFiltradaM.reduce((s, d) => s + d.faturamento, 0);
+                    const fatComp = compFiltradaM.reduce((s, d) => s + d.faturamento, 0);
+                    const varAbs = fatComp - fatBase;
+                    const varPct = fatBase > 0 ? varAbs / fatBase : 0;
+
+                    const comparativoMensal = mesesConsiderados.map((m) => {
+                      const fBaseM = baseFiltradaM.filter((d) => d.mes_num === m).reduce((s, d) => s + d.faturamento, 0);
+                      const fCompM = compFiltradaM.filter((d) => d.mes_num === m).reduce((s, d) => s + d.faturamento, 0);
+                      return {
+                        mes: MESES[m] || `M${m}`,
+                        [String(anoBaseYoY)]: fBaseM,
+                        [String(anoCompYoY)]: fCompM,
+                      };
+                    });
+
+                    return (
+                      <>
+                        <div className="grid grid-cols-1 sm:grid-cols-4 gap-4">
+                          <div className="bg-slate-900 border border-slate-800 p-4 rounded-xl">
+                            <span className="text-xs text-slate-400">Faturamento {anoBaseYoY}</span>
+                            <div className="text-xl font-bold text-white mt-1">{formatarMoeda(fatBase)}</div>
+                          </div>
+                          <div className="bg-slate-900 border border-slate-800 p-4 rounded-xl">
+                            <span className="text-xs text-slate-400">Faturamento {anoCompYoY}</span>
+                            <div className="text-xl font-bold text-orange-400 mt-1">{formatarMoeda(fatComp)}</div>
+                          </div>
+                          <div className="bg-slate-900 border border-slate-800 p-4 rounded-xl">
+                            <span className="text-xs text-slate-400">Variação no Período</span>
+                            <div className={`text-xl font-bold mt-1 ${varAbs >= 0 ? "text-green-400" : "text-red-400"}`}>
+                              {formatarMoeda(varAbs)} ({formatarPercentual(varPct)})
+                            </div>
+                          </div>
+                          <div className="bg-slate-900 border border-slate-800 p-4 rounded-xl">
+                            <span className="text-xs text-slate-400">Meses comparados</span>
+                            <div className="text-xl font-bold text-sky-400 mt-1">{mesesConsiderados.length} meses</div>
+                          </div>
+                        </div>
+
+                        {/* Gráfico comparativo de barras lado a lado */}
+                        <div className="bg-slate-900/80 border border-slate-800 p-5 rounded-xl">
+                          <h3 className="text-sm font-bold text-white mb-4">
+                            Evolução mensal - {anoBaseYoY} vs {anoCompYoY}
+                          </h3>
+                          <div className="h-72 w-full">
+                            <ResponsiveContainer width="100%" height="100%">
+                              <BarChart data={comparativoMensal} margin={{ top: 10, right: 30, left: 30, bottom: 20 }}>
+                                <CartesianGrid strokeDasharray="3 3" stroke="#334155" opacity={0.5} />
+                                <XAxis dataKey="mes" stroke="#94A3B8" fontSize={11} />
+                                <YAxis stroke="#94A3B8" fontSize={11} tickFormatter={(v) => valorResumido(v, true)} />
+                                <RechartsTooltip
+                                  contentStyle={{ backgroundColor: "#0F172A", borderColor: "#334155" }}
+                                  formatter={(v: any) => [formatarMoeda(v), "Faturamento"]}
+                                />
+                                <Legend />
+                                <Bar dataKey={String(anoBaseYoY)} fill={CEMAG_BLUE} radius={[4, 4, 0, 0]} />
+                                <Bar dataKey={String(anoCompYoY)} fill={CEMAG_ORANGE} radius={[4, 4, 0, 0]} />
+                              </BarChart>
+                            </ResponsiveContainer>
+                          </div>
+                        </div>
+                      </>
+                    );
+                  })()}
+                </div>
+              )}
+
+              {/* ========================================================= */}
+              {/* ABA 4: MÊS X MÊS */}
+              {/* ========================================================= */}
+              {abaAtiva === "mes_mes" && (
+                <div className="space-y-6">
+                  <div className="flex flex-wrap items-center justify-between gap-4 bg-slate-900/60 p-4 rounded-xl border border-slate-800">
+                    <div>
+                      <h2 className="text-lg font-bold text-white">Evolução Mês a Mês (MoM)</h2>
+                      <p className="text-xs text-slate-400">
+                        Acompanhe oscilações mensais, ritmo recente e produtos com maiores aumentos e quedas.
+                      </p>
+                    </div>
+                  </div>
+
+                  <div className="bg-slate-900/80 border border-slate-800 p-5 rounded-xl">
+                    <h3 className="text-sm font-bold text-white mb-4">Faturamento mensal e variações recentes</h3>
+                    <div className="h-72 w-full">
+                      <ResponsiveContainer width="100%" height="100%">
+                        <BarChart data={dadosMensais} margin={{ top: 10, right: 30, left: 30, bottom: 20 }}>
+                          <CartesianGrid strokeDasharray="3 3" stroke="#334155" opacity={0.5} />
+                          <XAxis dataKey="ano_mes" stroke="#94A3B8" fontSize={11} />
+                          <YAxis stroke="#94A3B8" fontSize={11} tickFormatter={(v) => valorResumido(v, true)} />
+                          <RechartsTooltip
+                            contentStyle={{ backgroundColor: "#0F172A", borderColor: "#334155" }}
+                            formatter={(v: any) => [formatarMoeda(v), "Faturamento"]}
+                          />
+                          <Bar dataKey="faturamento" fill={CEMAG_ORANGE} radius={[4, 4, 0, 0]} />
+                        </BarChart>
+                      </ResponsiveContainer>
+                    </div>
+                  </div>
+                </div>
+              )}
+
+              {/* ========================================================= */}
+              {/* ABA 5: PRODUTOS E CARRETAS */}
+              {/* ========================================================= */}
+              {abaAtiva === "produtos" && (
+                <div className="space-y-6">
+                  <div className="flex flex-wrap items-center justify-between gap-4 bg-slate-900/60 p-4 rounded-xl border border-slate-800">
+                    <div>
+                      <h2 className="text-lg font-bold text-white">Produtos, Carretas e Mix de Vendas</h2>
+                      <p className="text-xs text-slate-400">
+                        Análise de concentração, curva de Pareto e penetração dos modelos no faturamento global.
+                      </p>
+                    </div>
+
+                    <div className="flex flex-wrap items-center gap-3 text-xs">
+                      <div className="flex items-center gap-2">
+                        <span className="text-slate-400">Agrupar por:</span>
+                        <select
+                          value={agrupamentoProd}
+                          onChange={(e) => setAgrupamentoProd(e.target.value)}
+                          className="bg-slate-800 border border-slate-700 text-white rounded px-2.5 py-1"
+                        >
+                          <option value="produto">Produto exato</option>
+                          <option value="familia">Família</option>
+                          <option value="grupo_modelo">Grupo / Modelo</option>
+                          <option value="categoria_produto">Categoria</option>
+                          <option value="descricao_generica">Descrição Genérica</option>
+                        </select>
+                      </div>
+
+                      <div className="flex items-center gap-2">
+                        <span className="text-slate-400">Top:</span>
+                        <select
+                          value={topNProd}
+                          onChange={(e) => setTopNProd(parseInt(e.target.value, 10))}
+                          className="bg-slate-800 border border-slate-700 text-white rounded px-2.5 py-1"
+                        >
+                          <option value={10}>10</option>
+                          <option value={20}>20</option>
+                          <option value={50}>50</option>
+                          <option value={100}>100</option>
+                        </select>
+                      </div>
+                    </div>
+                  </div>
+
+                  {/* Tabela e Gráfico de Produtos */}
+                  {(() => {
+                    const prodAgg = agregar(dadosFiltrados, [agrupamentoProd])
+                      .sort((a, b) => b.faturamento - a.faturamento)
+                      .slice(0, topNProd);
+
+                    const totalFat = dadosFiltrados.reduce((s, d) => s + d.faturamento, 0);
+                    let acum = 0;
+                    const prodComPareto = prodAgg.map((p) => {
+                      const pct = totalFat > 0 ? p.faturamento / totalFat : 0;
+                      acum += pct;
+                      return {
+                        ...p,
+                        participacao: pct,
+                        participacao_acumulada: acum,
+                      };
+                    });
+
+                    return (
+                      <>
+                        <div className="bg-slate-900/80 border border-slate-800 p-5 rounded-xl">
+                          <h3 className="text-sm font-bold text-white mb-4">
+                            Ranking de {agrupamentoProd} - Top {topNProd}
+                          </h3>
+                          <div className="h-80 w-full">
+                            <ResponsiveContainer width="100%" height="100%">
+                              <BarChart data={prodComPareto.slice(0, 15)} layout="vertical" margin={{ top: 5, right: 30, left: 100, bottom: 5 }}>
+                                <CartesianGrid strokeDasharray="3 3" stroke="#334155" opacity={0.5} />
+                                <XAxis type="number" stroke="#94A3B8" tickFormatter={(v) => valorResumido(v, true)} fontSize={10} />
+                                <YAxis dataKey={agrupamentoProd} type="category" stroke="#CBD5E1" fontSize={10} width={110} />
+                                <RechartsTooltip
+                                  contentStyle={{ backgroundColor: "#0F172A", borderColor: "#334155" }}
+                                  formatter={(v: any) => [formatarMoeda(v), "Faturamento"]}
+                                />
+                                <Bar dataKey="faturamento" fill={CEMAG_ORANGE} radius={[0, 4, 4, 0]} />
+                              </BarChart>
+                            </ResponsiveContainer>
+                          </div>
+                        </div>
+
+                        {/* Tabela de Produtos */}
+                        <div className="bg-slate-900/80 border border-slate-800 rounded-xl overflow-hidden shadow-lg">
+                          <div className="p-4 border-b border-slate-800 flex justify-between items-center">
+                            <h4 className="text-sm font-bold text-white">Detalhamento de Itens</h4>
+                            <button
+                              onClick={() => exportarTabelaExcel(prodComPareto, "ranking_produtos.xlsx", "Produtos")}
+                              className="text-xs flex items-center gap-1.5 bg-slate-800 hover:bg-slate-700 text-slate-200 px-3 py-1.5 rounded border border-slate-700"
+                            >
+                              <FileSpreadsheet className="w-3.5 h-3.5 text-green-400" />
+                              <span>Baixar Excel</span>
+                            </button>
+                          </div>
+                          <div className="max-h-96 overflow-y-auto">
+                            <table className="w-full text-left text-xs text-slate-300">
+                              <thead className="bg-slate-950/80 sticky top-0 text-[11px] uppercase tracking-wider text-slate-400 border-b border-slate-800">
+                                <tr>
+                                  <th className="py-2.5 px-4">Item</th>
+                                  <th className="py-2.5 px-4 text-right">Faturamento</th>
+                                  <th className="py-2.5 px-4 text-right">Participação</th>
+                                  <th className="py-2.5 px-4 text-right">Acumulado</th>
+                                  <th className="py-2.5 px-4 text-right">Quantidade</th>
+                                  <th className="py-2.5 px-4 text-right">Preço Médio</th>
+                                  <th className="py-2.5 px-4 text-right">Pedidos</th>
+                                </tr>
+                              </thead>
+                              <tbody className="divide-y divide-slate-800/60 font-mono text-[11px]">
+                                {prodComPareto.map((item, idx) => (
+                                  <tr key={idx} className="hover:bg-slate-800/40">
+                                    <td className="py-2 px-4 font-sans font-medium text-white truncate max-w-xs">
+                                      {(item as any)[agrupamentoProd]}
+                                    </td>
+                                    <td className="py-2 px-4 text-right font-bold text-orange-400">
+                                      {formatarMoeda(item.faturamento)}
+                                    </td>
+                                    <td className="py-2 px-4 text-right text-slate-300">
+                                      {formatarPercentual(item.participacao)}
+                                    </td>
+                                    <td className="py-2 px-4 text-right text-sky-400">
+                                      {formatarPercentual(item.participacao_acumulada)}
+                                    </td>
+                                    <td className="py-2 px-4 text-right text-slate-300">
+                                      {formatarInteiro(item.quantidade)}
+                                    </td>
+                                    <td className="py-2 px-4 text-right text-slate-300">
+                                      {formatarMoeda(item.ticket_unitario_calc)}
+                                    </td>
+                                    <td className="py-2 px-4 text-right text-slate-400">
+                                      {formatarInteiro(item.pedidos)}
+                                    </td>
+                                  </tr>
+                                ))}
+                              </tbody>
+                            </table>
+                          </div>
+                        </div>
+                      </>
+                    );
+                  })()}
+                </div>
+              )}
+
+              {/* ========================================================= */}
+              {/* ABA 6: CLIENTES */}
+              {/* ========================================================= */}
+              {abaAtiva === "clientes" && (
+                <div className="space-y-6">
+                  <div className="flex flex-wrap items-center justify-between gap-4 bg-slate-900/60 p-4 rounded-xl border border-slate-800">
+                    <div>
+                      <h2 className="text-lg font-bold text-white">Clientes & Gestão de Carteira</h2>
+                      <p className="text-xs text-slate-400">
+                        Curva ABC, retenção comercial, dias sem compra e classificação de risco da carteira.
+                      </p>
+                    </div>
+
+                    <div className="flex items-center gap-2 text-xs">
+                      <span className="text-slate-400">Visão:</span>
+                      <select
+                        value={agrupCliente}
+                        onChange={(e) => setAgrupCliente(e.target.value as any)}
+                        className="bg-slate-800 border border-slate-700 text-white rounded px-2.5 py-1"
+                      >
+                        <option value="cliente">Cliente completo</option>
+                        <option value="cliente_base">Cliente base unificado</option>
+                      </select>
+                    </div>
+                  </div>
+
+                  {(() => {
+                    const abc = curvaAbc(dadosFiltrados, agrupCliente, "faturamento");
+                    const carteira = classificarCarteiraClientes(dadosFiltrados);
+
+                    const qtdA = abc.filter((c) => c.classe_abc === "A").length;
+                    const qtdB = abc.filter((c) => c.classe_abc === "B").length;
+                    const qtdC = abc.filter((c) => c.classe_abc === "C").length;
+
+                    const statusAtivo = carteira.filter((c) => c.status === "Recorrente" || c.status === "Novo").length;
+                    const statusAtencao = carteira.filter((c) => c.status === "Em atenção").length;
+                    const statusInativo = carteira.filter((c) => c.status === "Inativo").length;
+
+                    return (
+                      <>
+                        <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
+                          <div className="bg-slate-900 border border-slate-800 p-4 rounded-xl">
+                            <span className="text-xs text-slate-400">Clientes Classe A (80%)</span>
+                            <div className="text-xl font-bold text-orange-400 mt-1">{qtdA} clientes</div>
+                            <span className="text-[10px] text-slate-500">80% do faturamento</span>
+                          </div>
+                          <div className="bg-slate-900 border border-slate-800 p-4 rounded-xl">
+                            <span className="text-xs text-slate-400">Clientes em Atenção</span>
+                            <div className="text-xl font-bold text-amber-400 mt-1">{statusAtencao} clientes</div>
+                            <span className="text-[10px] text-slate-500">Gaps de compra acima da média</span>
+                          </div>
+                          <div className="bg-slate-900 border border-slate-800 p-4 rounded-xl">
+                            <span className="text-xs text-slate-400">Clientes Inativos</span>
+                            <div className="text-xl font-bold text-red-400 mt-1">{statusInativo} clientes</div>
+                            <span className="text-[10px] text-slate-500">Mais de 90 dias sem comprar</span>
+                          </div>
+                          <div className="bg-slate-900 border border-slate-800 p-4 rounded-xl">
+                            <span className="text-xs text-slate-400">Concentração Top 10</span>
+                            <div className="text-xl font-bold text-sky-400 mt-1">
+                              {formatarPercentual(
+                                abc.slice(0, 10).reduce((s, c) => s + c.faturamento, 0) /
+                                  (kpis.faturamento || 1)
+                              )}
+                            </div>
+                            <span className="text-[10px] text-slate-500">Parcela dos 10 maiores</span>
+                          </div>
+                        </div>
+
+                        {/* Tabela da Carteira de Clientes */}
+                        <div className="bg-slate-900/80 border border-slate-800 rounded-xl overflow-hidden shadow-lg">
+                          <div className="p-4 border-b border-slate-800 flex justify-between items-center">
+                            <h4 className="text-sm font-bold text-white">Carteira de Clientes e RFM</h4>
+                            <button
+                              onClick={() => exportarTabelaExcel(carteira, "carteira_clientes.xlsx", "Clientes")}
+                              className="text-xs flex items-center gap-1.5 bg-slate-800 hover:bg-slate-700 text-slate-200 px-3 py-1.5 rounded border border-slate-700"
+                            >
+                              <FileSpreadsheet className="w-3.5 h-3.5 text-green-400" />
+                              <span>Baixar Excel</span>
+                            </button>
+                          </div>
+                          <div className="max-h-96 overflow-y-auto">
+                            <table className="w-full text-left text-xs text-slate-300">
+                              <thead className="bg-slate-950/80 sticky top-0 text-[11px] uppercase tracking-wider text-slate-400 border-b border-slate-800">
+                                <tr>
+                                  <th className="py-2.5 px-4">Cliente</th>
+                                  <th className="py-2.5 px-4">UF</th>
+                                  <th className="py-2.5 px-4">Representante</th>
+                                  <th className="py-2.5 px-4 text-right">Faturamento</th>
+                                  <th className="py-2.5 px-4 text-right">Pedidos</th>
+                                  <th className="py-2.5 px-4 text-right">Última Compra</th>
+                                  <th className="py-2.5 px-4 text-right">Dias sem Comprar</th>
+                                  <th className="py-2.5 px-4 text-center">Status</th>
+                                </tr>
+                              </thead>
+                              <tbody className="divide-y divide-slate-800/60 font-mono text-[11px]">
+                                {carteira.slice(0, 50).map((c, idx) => (
+                                  <tr key={idx} className="hover:bg-slate-800/40">
+                                    <td className="py-2 px-4 font-sans font-medium text-white truncate max-w-xs">{c.cliente}</td>
+                                    <td className="py-2 px-4 text-slate-300">{c.uf}</td>
+                                    <td className="py-2 px-4 text-slate-300">{c.representante}</td>
+                                    <td className="py-2 px-4 text-right font-bold text-orange-400">{formatarMoeda(c.faturamento)}</td>
+                                    <td className="py-2 px-4 text-right text-slate-300">{c.pedidos}</td>
+                                    <td className="py-2 px-4 text-right text-slate-300">{c.ultima_compra}</td>
+                                    <td className="py-2 px-4 text-right text-slate-300 font-bold">{c.dias_sem_compra} d</td>
+                                    <td className="py-2 px-4 text-center">
+                                      <span
+                                        className={`px-2 py-0.5 rounded text-[10px] font-bold ${
+                                          c.status === "Inativo"
+                                            ? "bg-red-500/20 text-red-400 border border-red-500/30"
+                                            : c.status === "Em atenção"
+                                            ? "bg-amber-500/20 text-amber-400 border border-amber-500/30"
+                                            : "bg-green-500/20 text-green-400 border border-green-500/30"
+                                        }`}
+                                      >
+                                        {c.status}
+                                      </span>
+                                    </td>
+                                  </tr>
+                                ))}
+                              </tbody>
+                            </table>
+                          </div>
+                        </div>
+                      </>
+                    );
+                  })()}
+                </div>
+              )}
+
+              {/* ========================================================= */}
+              {/* ABA 7: INTELIGÊNCIA COMERCIAL */}
+              {/* ========================================================= */}
+              {abaAtiva === "inteligencia" && (
+                <div className="space-y-6">
+                  {/* Seletor de Sub-Áreas */}
+                  <div className="flex flex-wrap items-center gap-2 bg-slate-900/80 p-2 rounded-xl border border-slate-800">
+                    {[
+                      { id: "comparador", label: "📊 Comparador & O que mudou" },
+                      { id: "carteira_risco", label: "👥 Carteira & risco" },
+                      { id: "abc", label: "📈 ABC, Pareto & concentração" },
+                      { id: "mix", label: "🧩 Mix & venda cruzada" },
+                      { id: "preco_dre", label: "💵 Preço, margem & DRE" },
+                      { id: "calendario", label: "🗓️ Calendário & ritmo" },
+                      { id: "rep_alertas", label: "🤝 Representantes & alertas" },
+                      { id: "fechamento", label: "📌 Fechamento mensal" },
+                    ].map((sub) => (
+                      <button key={sub.id} onClick={() => setSubInteligencia(sub.id)} className={`px-3 py-1.5 rounded-lg text-xs font-semibold transition-colors ${subInteligencia === sub.id ? "bg-orange-600 text-white" : "text-slate-300 hover:bg-slate-800"}`}>
+                        {sub.label}
+                      </button>
+                    ))}
+                  </div>
+
+                  {subInteligencia === "comparador" && (
+                    <div className="space-y-4 bg-slate-900/60 p-5 rounded-xl border border-slate-800">
+                      <div className="flex flex-wrap items-center justify-between gap-3">
+                        <div><h3 className="text-base font-bold text-white">Comparador livre de períodos</h3><p className="text-xs text-slate-400">Explique a variação por cliente, família, produto, representante, região ou UF.</p></div>
+                        <div className="flex items-center gap-2 text-xs"><span className="text-slate-400">Dimensão:</span><select value={intelCompDim} onChange={(e) => setIntelCompDim(e.target.value)} className="bg-slate-800 border border-slate-700 text-white rounded px-2 py-1"><option value="cliente">Cliente</option><option value="familia">Família</option><option value="produto">Produto/carreta</option><option value="representante">Representante</option><option value="regiao">Região</option><option value="uf">UF</option></select></div>
+                      </div>
+                      {(() => { const sorted=[...dadosFiltrados].sort((a,b)=>a.data_emissao.getTime()-b.data_emissao.getTime()); const split=sorted[Math.floor(sorted.length/2)]?.data_emissao || new Date(); const ini=sorted[0]?.data_emissao || new Date(); const fim=sorted[sorted.length-1]?.data_emissao || new Date(); const r=compararPeriodos(sorted,ini,split,split,fim,intelCompDim,"faturamento"); return <div className="space-y-4"><div className="grid grid-cols-2 md:grid-cols-4 gap-3">{[["Período A",r.resumo.valor_a], ["Período B",r.resumo.valor_b], ["Variação absoluta",r.resumo.variacao_abs], ["Variação %",r.resumo.variacao_pct]].map(([label,value]:any)=><div key={label} className="bg-slate-900 border border-slate-800 p-3 rounded-lg"><span className="text-xs text-slate-400">{label}</span><div className={`text-base font-bold mt-1 ${label === "Variação %" || label === "Variação absoluta" ? (value >= 0 ? "text-green-400" : "text-red-400") : "text-white"}`}>{label === "Variação %" ? formatarPercentual(value) : formatarMoeda(value)}</div></div>)}</div><DataTable rows={r.detalhe} columns={[intelCompDim,"valor_a","valor_b","variacao_abs","variacao_pct","contribuicao_variacao"]} /></div>; })()}
+                    </div>
+                  )}
+
+                  {subInteligencia === "carteira_risco" && (
+                    <div className="space-y-4 bg-slate-900/60 p-5 rounded-xl border border-slate-800">
+                      <div><h3 className="text-base font-bold text-white">Carteira & risco</h3><p className="text-xs text-slate-400">Status histórico por recência, frequência e faturamento relevante.</p></div>
+                      {(() => { const c=classificarCarteiraClientes(dadosFiltrados); const cont=Object.fromEntries(["Novo","Recuperado","Recorrente","Compra única","Em atenção","Inativo"].map(x=>[x,c.filter(y=>y.status===x).length])); return <><div className="grid grid-cols-2 md:grid-cols-4 gap-3">{[["Ativos",c.filter(x=>!['Em atenção','Inativo'].includes(x.status)).length],['Em atenção',cont['Em atenção']],['Inativos',cont.Inativo],['Recuperados',cont.Recuperado]].map(([l,v]:any)=><div key={l} className="bg-slate-900 border border-slate-800 p-3 rounded-lg"><span className="text-xs text-slate-400">{l}</span><div className="text-xl font-bold text-orange-400">{v}</div></div>)}</div><DataTable rows={c.filter(x=>['Em atenção','Inativo'].includes(x.status))} columns={["cliente","representante","uf","faturamento","pedidos","dias_sem_compra","status"]} /></>; })()}
+                    </div>
+                  )}
+
+                  {subInteligencia === "abc" && (
+                    <div className="space-y-4 bg-slate-900/60 p-5 rounded-xl border border-slate-800">
+                      <div className="flex flex-wrap items-center justify-between gap-3"><div><h3 className="text-base font-bold text-white">ABC, Pareto & concentração</h3><p className="text-xs text-slate-400">Curva 80/95% e participação dos Top 5, 10 e 20.</p></div><div className="flex gap-2 text-xs"><select id="abcDim" className="bg-slate-800 border border-slate-700 text-white rounded px-2 py-1"><option value="cliente">Clientes</option><option value="produto">Produtos</option><option value="familia">Famílias</option><option value="representante">Representantes</option></select></div></div>
+                      {(() => { const abc=curvaAbc(dadosFiltrados,"cliente","faturamento"); const conc=concentracaoTop(abc,"faturamento"); return <><div className="grid grid-cols-2 md:grid-cols-4 gap-3">{[["Classe A",abc.filter(x=>x.classe_abc==='A').length],["Top 5",conc.top_5],["Top 10",conc.top_10],["Top 20",conc.top_20]].map(([l,v]:any)=><div key={l} className="bg-slate-900 border border-slate-800 p-3 rounded-lg"><span className="text-xs text-slate-400">{l}</span><div className="text-xl font-bold text-orange-400">{l==='Classe A'?v:formatarPercentual(v)}</div></div>)}</div><DataTable rows={abc} columns={["cliente","faturamento","participacao","participacao_acumulada","classe_abc"]} /></>; })()}
+                    </div>
+                  )}
+
+                  {subInteligencia === "mix" && (
+                    <div className="space-y-4 bg-slate-900/60 p-5 rounded-xl border border-slate-800">
+                      <h3 className="text-base font-bold text-white">Mix & venda cruzada</h3><p className="text-xs text-slate-400">Amplitude do mix, oportunidades ainda não compradas e pares no mesmo pedido.</p>
+                      {(() => { const mix=mixClientes(dadosFiltrados); const cliente=mix[0]?.cliente || ""; const opp=oportunidadesCrossSell(dadosFiltrados,cliente,"familia",15); const pares=paresCompradosJuntos(dadosFiltrados,"familia",20); return <><div className="grid grid-cols-2 md:grid-cols-3 gap-3"><div className="bg-slate-900 border border-slate-800 p-3 rounded-lg"><span className="text-xs text-slate-400">Famílias médias por cliente</span><div className="text-xl font-bold text-orange-400">{(mix.reduce((s,x)=>s+x.familias,0)/Math.max(mix.length,1)).toFixed(1).replace('.',',')}</div></div><div className="bg-slate-900 border border-slate-800 p-3 rounded-lg"><span className="text-xs text-slate-400">Clientes com 1 família</span><div className="text-xl font-bold text-sky-400">{mix.filter(x=>x.familias===1).length}</div></div><div className="bg-slate-900 border border-slate-800 p-3 rounded-lg"><span className="text-xs text-slate-400">Oportunidades do líder</span><div className="text-xl font-bold text-green-400">{opp.length}</div></div></div><div className="grid grid-cols-1 md:grid-cols-2 gap-4"><DataTable rows={opp} columns={["item","clientes_compradores","penetracao_clientes","faturamento_global"]} /><DataTable rows={pares} columns={["item_a","item_b","pedidos_juntos","clientes_juntos"]} /></div></>; })()}
+                    </div>
+                  )}
+
+                  {subInteligencia === "preco_dre" && (
+                    <div className="space-y-4 bg-slate-900/60 p-5 rounded-xl border border-slate-800">
+                      <h3 className="text-base font-bold text-white">Preço, margem & DRE aproximada</h3>
+                      {(() => { const dre=dreAproximada(dadosFiltrados)[0] || {}; const precos=precoMedioPorItem(dadosFiltrados,"produto"); const desvios=desviosPreco(dadosFiltrados,"produto","cliente",0.15); return <><div className="grid grid-cols-2 md:grid-cols-5 gap-3">{[["Faturamento",dre.faturamento],["Receita líquida",dre.receita_liquida_aprox],["Custo",dre.custo],["Resultado",dre.resultado_aprox],["Margem",dre.margem_aprox_pct]].map(([l,v]:any)=><div key={l} className="bg-slate-900 border border-slate-800 p-3 rounded-lg"><span className="text-xs text-slate-400">{l}</span><div className="text-base font-bold text-orange-400">{l==='Margem'?formatarPercentual(v):formatarMoeda(v)}</div></div>)}</div><div className="grid grid-cols-1 md:grid-cols-2 gap-4"><DataTable rows={precos} columns={["produto","preco_medio","quantidade","faturamento","clientes","pedidos"]} /><DataTable rows={desvios} columns={["produto","cliente","preco_medio_grupo","preco_medio_item","desvio_pct"]} /></div></>; })()}
+                    </div>
+                  )}
+
+                  {subInteligencia === "calendario" && (
+                    <div className="space-y-4 bg-slate-900/60 p-5 rounded-xl border border-slate-800"><h3 className="text-base font-bold text-white">Calendário & ritmo</h3><p className="text-xs text-slate-400">Resumo diário, dias úteis, média diária e melhores dias do período.</p>{(() => { const diario=resumoDiarioInteligencia(dadosFiltrados); const media=diario.length?diario.reduce((s,x)=>s+x.faturamento,0)/diario.length:0; const melhor=[...diario].sort((a,b)=>b.faturamento-a.faturamento)[0]; return <><div className="grid grid-cols-2 md:grid-cols-4 gap-3"><div className="bg-slate-900 border border-slate-800 p-3 rounded-lg"><span className="text-xs text-slate-400">Faturamento médio/dia</span><div className="text-xl font-bold text-orange-400">{formatarMoeda(media)}</div></div><div className="bg-slate-900 border border-slate-800 p-3 rounded-lg"><span className="text-xs text-slate-400">Dias com movimento</span><div className="text-xl font-bold text-sky-400">{diario.length}</div></div><div className="bg-slate-900 border border-slate-800 p-3 rounded-lg"><span className="text-xs text-slate-400">Melhor dia</span><div className="text-xl font-bold text-green-400">{melhor?.data || '-'}</div></div><div className="bg-slate-900 border border-slate-800 p-3 rounded-lg"><span className="text-xs text-slate-400">Faturamento do melhor dia</span><div className="text-xl font-bold text-green-400">{formatarMoeda(melhor?.faturamento || 0)}</div></div></div><DataTable rows={diario} columns={["data","dia_semana","faturamento","quantidade","pedidos","clientes"]} /></>; })()}</div>
+                  )}
+
+                  {subInteligencia === "rep_alertas" && (
+                    <div className="space-y-4 bg-slate-900/60 p-5 rounded-xl border border-slate-800"><h3 className="text-base font-bold text-white">Representantes & alertas</h3>{(() => { const cart=classificarCarteiraClientes(dadosFiltrados); const reps=painelRepresentantesInteligencia(dadosFiltrados,cart); const alertas=gerarAlertasComerciais(dadosFiltrados); return <><DataTable rows={reps} columns={["representante","faturamento","pedidos","clientes","clientes_ativos","clientes_atencao","clientes_inativos","concentracao_top5_clientes"]} /><DataTable rows={alertas} columns={["nivel","tipo","mensagem","valor","referencia"]} /></>; })()}</div>
+                  )}
+
+                  {subInteligencia === "fechamento" && (
+                    <div className="space-y-4 bg-slate-900/60 p-5 rounded-xl border border-slate-800"><h3 className="text-base font-bold text-white">Fechamento mensal automático</h3>{(() => { const p=dadosMensais[dadosMensais.length-1]?.ano_mes || ""; const [ano,mes]=p ? p.split('-').map(Number) : [new Date().getFullYear(),new Date().getMonth()+1]; const f=fechamentoMensalInteligencia(dadosFiltrados,ano,mes); const r=f.resumo as any; return <><div className="grid grid-cols-2 md:grid-cols-5 gap-3">{[["Faturamento",r.faturamento||0],["Quantidade",r.quantidade||0],["Pedidos",r.pedidos||0],["Clientes",r.clientes||0],["Ticket",r.ticket_unitario||0]].map(([l,v]:any)=><div key={l} className="bg-slate-900 border border-slate-800 p-3 rounded-lg"><span className="text-xs text-slate-400">{l}</span><div className="text-base font-bold text-orange-400">{['Faturamento','Ticket'].includes(l)?formatarMoeda(v):formatarInteiro(v)}</div></div>)}</div><div className="grid grid-cols-2 md:grid-cols-4 gap-3">{[["Novos",f.movimentos.novos.length],["Recorrentes",f.movimentos.recorrentes.length],["Recuperados",f.movimentos.recuperados.length],["Perdidos",f.movimentos.perdidos.length]].map(([l,v]:any)=><div key={l} className="bg-slate-900 border border-slate-800 p-3 rounded-lg"><span className="text-xs text-slate-400">Clientes {l}</span><div className="text-xl font-bold text-sky-400">{v}</div></div>)}</div><div className="grid grid-cols-1 md:grid-cols-2 gap-4"><DataTable rows={f.top_clientes} columns={["cliente","faturamento","pedidos","clientes"]} /><DataTable rows={f.top_produtos} columns={["produto","faturamento","quantidade","pedidos"]} /></div></>; })()}</div>
+                  )}
+                </div>
+              )}
+
+              {/* ========================================================= */}
+              {/* ABA 8: REGIÕES */}
+              {/* ========================================================= */}
+              {abaAtiva === "regioes" && (
+                <div className="space-y-6">
+                  {/* Mapa do Brasil */}
+                  <MapBrasil dadosUf={dadosPorUf} />
+
+                  {/* Gráficos Regionais */}
+                  <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
+                    {/* Faturamento por Macrorregião */}
+                    <div className="bg-slate-900/80 border border-slate-800 p-4 rounded-xl">
+                      <h3 className="text-sm font-bold text-white mb-3">Participação por Macrorregião</h3>
+                      {(() => {
+                        const regAgg = agregar(
+                          dadosFiltrados.filter((d) => d.regiao !== "Não identificado"),
+                          ["regiao"]
+                        ).sort((a, b) => b.faturamento - a.faturamento);
+
+                        return (
+                          <div className="h-64 w-full">
+                            <ResponsiveContainer width="100%" height="100%">
+                              <BarChart data={regAgg} margin={{ top: 10, right: 20, left: 20, bottom: 20 }}>
+                                <CartesianGrid strokeDasharray="3 3" stroke="#334155" opacity={0.5} />
+                                <XAxis dataKey="regiao" stroke="#CBD5E1" fontSize={11} />
+                                <YAxis stroke="#94A3B8" fontSize={10} tickFormatter={(v) => valorResumido(v, true)} />
+                                <RechartsTooltip
+                                  contentStyle={{ backgroundColor: "#0F172A", borderColor: "#334155" }}
+                                  formatter={(v: any) => [formatarMoeda(v), "Faturamento"]}
+                                />
+                                <Bar dataKey="faturamento" fill={CEMAG_BLUE} radius={[4, 4, 0, 0]} />
+                              </BarChart>
+                            </ResponsiveContainer>
+                          </div>
+                        );
+                      })()}
+                    </div>
+
+                    {/* Top Cidades */}
+                    <div className="bg-slate-900/80 border border-slate-800 p-4 rounded-xl">
+                      <h3 className="text-sm font-bold text-white mb-3">Top 8 Cidades com Maior Faturamento</h3>
+                      {(() => {
+                        const cidAgg = agregar(
+                          dadosFiltrados.filter((d) => d.cidade !== "Não identificado"),
+                          ["cidade", "uf"]
+                        )
+                          .sort((a, b) => b.faturamento - a.faturamento)
+                          .slice(0, 8);
+
+                        return (
+                          <div className="h-64 w-full">
+                            <ResponsiveContainer width="100%" height="100%">
+                              <BarChart data={cidAgg} layout="vertical" margin={{ top: 5, right: 30, left: 80, bottom: 5 }}>
+                                <CartesianGrid strokeDasharray="3 3" stroke="#334155" opacity={0.5} />
+                                <XAxis type="number" stroke="#94A3B8" tickFormatter={(v) => valorResumido(v, true)} fontSize={10} />
+                                <YAxis dataKey="cidade" type="category" stroke="#CBD5E1" fontSize={10} width={90} />
+                                <RechartsTooltip
+                                  contentStyle={{ backgroundColor: "#0F172A", borderColor: "#334155" }}
+                                  formatter={(v: any) => [formatarMoeda(v), "Faturamento"]}
+                                />
+                                <Bar dataKey="faturamento" fill={CEMAG_ORANGE} radius={[0, 4, 4, 0]} />
+                              </BarChart>
+                            </ResponsiveContainer>
+                          </div>
+                        );
+                      })()}
+                    </div>
+                  </div>
+                </div>
+              )}
+
+              {/* ========================================================= */}
+              {/* ABA 9: REPRESENTANTES */}
+              {/* ========================================================= */}
+              {abaAtiva === "representantes" && (
+                <div className="space-y-6">
+                  <div className="flex flex-wrap items-center justify-between gap-4 bg-slate-900/60 p-4 rounded-xl border border-slate-800">
+                    <div>
+                      <h2 className="text-lg font-bold text-white">Representantes Comerciais</h2>
+                      <p className="text-xs text-slate-400">
+                        Desempenho por vendedor, evolução de vendas e carteira por região.
+                      </p>
+                    </div>
+                  </div>
+
+                  {(() => {
+                    const repAgg = agregar(dadosFiltrados, ["representante"]).sort((a, b) => b.faturamento - a.faturamento);
+
+                    return (
+                      <>
+                        <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+                          {/* Ranking de Representantes */}
+                          <div className="bg-slate-900/80 border border-slate-800 p-4 rounded-xl">
+                            <h3 className="text-sm font-bold text-white mb-3">Faturamento por Representante</h3>
+                            <div className="h-72 w-full">
+                              <ResponsiveContainer width="100%" height="100%">
+                                <BarChart data={repAgg} layout="vertical" margin={{ top: 5, right: 30, left: 80, bottom: 5 }}>
+                                  <CartesianGrid strokeDasharray="3 3" stroke="#334155" opacity={0.5} />
+                                  <XAxis type="number" stroke="#94A3B8" tickFormatter={(v) => valorResumido(v, true)} fontSize={10} />
+                                  <YAxis dataKey="representante" type="category" stroke="#CBD5E1" fontSize={11} width={90} />
+                                  <RechartsTooltip
+                                    contentStyle={{ backgroundColor: "#0F172A", borderColor: "#334155" }}
+                                    formatter={(v: any) => [formatarMoeda(v), "Faturamento"]}
+                                  />
+                                  <Bar dataKey="faturamento" fill={CEMAG_ORANGE} radius={[0, 4, 4, 0]} />
+                                </BarChart>
+                              </ResponsiveContainer>
+                            </div>
+                          </div>
+
+                          {/* Tabela de Representantes */}
+                          <div className="bg-slate-900/80 border border-slate-800 rounded-xl overflow-hidden p-4">
+                            <h3 className="text-sm font-bold text-white mb-3">Detalhamento da Força de Vendas</h3>
+                            <div className="max-h-64 overflow-y-auto">
+                              <table className="w-full text-xs text-left text-slate-300">
+                                <thead className="bg-slate-950 uppercase text-[10px] text-slate-400">
+                                  <tr>
+                                    <th className="p-2">Representante</th>
+                                    <th className="p-2 text-right">Faturamento</th>
+                                    <th className="p-2 text-right">Qtd</th>
+                                    <th className="p-2 text-right">Pedidos</th>
+                                    <th className="p-2 text-right">Ticket</th>
+                                  </tr>
+                                </thead>
+                                <tbody className="divide-y divide-slate-800/60 font-mono text-[11px]">
+                                  {repAgg.map((r, idx) => (
+                                    <tr key={idx} className="hover:bg-slate-800/40">
+                                      <td className="p-2 font-sans font-medium text-white">{r.representante}</td>
+                                      <td className="p-2 text-right font-bold text-orange-400">{formatarMoeda(r.faturamento)}</td>
+                                      <td className="p-2 text-right">{formatarInteiro(r.quantidade)}</td>
+                                      <td className="p-2 text-right text-slate-400">{r.pedidos}</td>
+                                      <td className="p-2 text-right text-sky-400">{formatarMoeda(r.ticket_unitario_calc)}</td>
+                                    </tr>
+                                  ))}
+                                </tbody>
+                              </table>
+                            </div>
+                          </div>
+                        </div>
+                      </>
+                    );
+                  })()}
+                </div>
+              )}
+
+              {/* ========================================================= */}
+              {/* ABA 10: TIPOS E CATEGORIAS */}
+              {/* ========================================================= */}
+              {abaAtiva === "tipos" && (
+                <div className="space-y-6">
+                  <div className="bg-slate-900/60 p-4 rounded-xl border border-slate-800">
+                    <h2 className="text-lg font-bold text-white">Formas de Venda e Categorias de Produtos</h2>
+                    <p className="text-xs text-slate-400">
+                      Mix por natureza de operação e distribuição de faturamento por recurso.
+                    </p>
+                  </div>
+
+                  <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+                    {/* Formas de Venda */}
+                    <div className="bg-slate-900/80 border border-slate-800 p-4 rounded-xl">
+                      <h3 className="text-sm font-bold text-white mb-3">Formas de Venda</h3>
+                      {(() => {
+                        const tiposAgg = agregar(dadosFiltrados, ["tipo_venda"]).sort((a, b) => b.faturamento - a.faturamento);
+                        return (
+                          <div className="h-64 w-full">
+                            <ResponsiveContainer width="100%" height="100%">
+                              <BarChart data={tiposAgg} layout="vertical" margin={{ top: 5, right: 30, left: 120, bottom: 5 }}>
+                                <CartesianGrid strokeDasharray="3 3" stroke="#334155" opacity={0.5} />
+                                <XAxis type="number" stroke="#94A3B8" tickFormatter={(v) => valorResumido(v, true)} fontSize={10} />
+                                <YAxis dataKey="tipo_venda" type="category" stroke="#CBD5E1" fontSize={10} width={130} />
+                                <RechartsTooltip
+                                  contentStyle={{ backgroundColor: "#0F172A", borderColor: "#334155" }}
+                                  formatter={(v: any) => [formatarMoeda(v), "Faturamento"]}
+                                />
+                                <Bar dataKey="faturamento" fill={CEMAG_ORANGE} radius={[0, 4, 4, 0]} />
+                              </BarChart>
+                            </ResponsiveContainer>
+                          </div>
+                        );
+                      })()}
+                    </div>
+
+                    {/* Categorias */}
+                    <div className="bg-slate-900/80 border border-slate-800 p-4 rounded-xl">
+                      <h3 className="text-sm font-bold text-white mb-3">Categorias de Produto</h3>
+                      {(() => {
+                        const catAgg = agregar(dadosFiltrados, ["categoria_produto"]).sort((a, b) => b.faturamento - a.faturamento);
+                        return (
+                          <div className="h-64 w-full">
+                            <ResponsiveContainer width="100%" height="100%">
+                              <BarChart data={catAgg} layout="vertical" margin={{ top: 5, right: 30, left: 90, bottom: 5 }}>
+                                <CartesianGrid strokeDasharray="3 3" stroke="#334155" opacity={0.5} />
+                                <XAxis type="number" stroke="#94A3B8" tickFormatter={(v) => valorResumido(v, true)} fontSize={10} />
+                                <YAxis dataKey="categoria_produto" type="category" stroke="#CBD5E1" fontSize={10} width={100} />
+                                <RechartsTooltip
+                                  contentStyle={{ backgroundColor: "#0F172A", borderColor: "#334155" }}
+                                  formatter={(v: any) => [formatarMoeda(v), "Faturamento"]}
+                                />
+                                <Bar dataKey="faturamento" fill={CEMAG_BLUE} radius={[0, 4, 4, 0]} />
+                              </BarChart>
+                            </ResponsiveContainer>
+                          </div>
+                        );
+                      })()}
+                    </div>
+                  </div>
+                </div>
+              )}
+
+              {/* ========================================================= */}
+              {/* ABA 11: BASE TRATADA */}
+              {/* ========================================================= */}
+              {abaAtiva === "base_tratada" && (
+                <div className="space-y-4">
+                  <div className="flex flex-wrap items-center justify-between gap-4 bg-slate-900/60 p-4 rounded-xl border border-slate-800">
+                    <div>
+                      <h2 className="text-lg font-bold text-white">Base Tratada</h2>
+                      <p className="text-xs text-slate-400">
+                        {dadosFiltrados.length.toLocaleString("pt-BR")} linhas ativas com tratamento de UF, moedas e correções.
+                      </p>
+                    </div>
+
+                    <div className="flex items-center gap-2">
+                      <button
+                        onClick={() => exportarTabelaExcel(dadosFiltrados, "base_tratada_completa.xlsx", "Base Tratada")}
+                        className="text-xs flex items-center gap-1.5 bg-orange-600 hover:bg-orange-500 text-white font-semibold px-3 py-1.5 rounded transition-colors shadow-sm"
+                      >
+                        <FileSpreadsheet className="w-3.5 h-3.5" />
+                        <span>Exportar Excel</span>
+                      </button>
+                      <button
+                        onClick={() => exportarTabelaCsv(dadosFiltrados, "base_tratada_completa.csv")}
+                        className="text-xs flex items-center gap-1.5 bg-slate-800 hover:bg-slate-700 text-slate-200 px-3 py-1.5 rounded border border-slate-700 transition-colors"
+                      >
+                        <Download className="w-3.5 h-3.5" />
+                        <span>Exportar CSV</span>
+                      </button>
+                    </div>
+                  </div>
+
+                  {/* Tabela de Dados */}
+                  <div className="bg-slate-900/80 border border-slate-800 rounded-xl overflow-hidden shadow-lg">
+                    <div className="max-h-[550px] overflow-auto">
+                      <table className="w-full text-left text-xs text-slate-300">
+                        <thead className="bg-slate-950 sticky top-0 uppercase tracking-wider text-[11px] text-slate-400 border-b border-slate-800 z-10">
+                          <tr>
+                            <th className="py-2.5 px-3">Pedido</th>
+                            <th className="py-2.5 px-3">Emissão</th>
+                            <th className="py-2.5 px-3">Cliente</th>
+                            <th className="py-2.5 px-3">Cidade</th>
+                            <th className="py-2.5 px-3">UF</th>
+                            <th className="py-2.5 px-3">Representante</th>
+                            <th className="py-2.5 px-3">Produto</th>
+                            <th className="py-2.5 px-3">Família</th>
+                            <th className="py-2.5 px-3 text-right">Qtd</th>
+                            <th className="py-2.5 px-3 text-right">Total</th>
+                            <th className="py-2.5 px-3">Tipo Venda</th>
+                          </tr>
+                        </thead>
+                        <tbody className="divide-y divide-slate-800/60 font-mono text-[11px]">
+                          {dadosFiltrados.slice(0, 300).map((d) => (
+                            <tr key={d.id} className="hover:bg-slate-800/40">
+                              <td className="py-2 px-3 text-slate-400">{d.pedido}</td>
+                              <td className="py-2 px-3 text-slate-300">{d.data_str}</td>
+                              <td className="py-2 px-3 font-sans font-medium text-white truncate max-w-xs">{d.cliente}</td>
+                              <td className="py-2 px-3 font-sans text-slate-300">{d.cidade}</td>
+                              <td className="py-2 px-3 font-bold text-amber-400">{d.uf}</td>
+                              <td className="py-2 px-3 font-sans text-slate-300">{d.representante}</td>
+                              <td className="py-2 px-3 font-sans text-white truncate max-w-xs">{d.produto}</td>
+                              <td className="py-2 px-3 font-sans text-slate-400">{d.familia}</td>
+                              <td className="py-2 px-3 text-right text-slate-300">{formatarInteiro(d.quantidade)}</td>
+                              <td className="py-2 px-3 text-right font-bold text-orange-400">{formatarMoeda(d.faturamento)}</td>
+                              <td className="py-2 px-3 font-sans text-slate-400 truncate max-w-xs">{d.tipo_venda}</td>
+                            </tr>
+                          ))}
+                        </tbody>
+                      </table>
+                    </div>
+                    {dadosFiltrados.length > 300 && (
+                      <div className="p-2.5 bg-slate-950 text-center text-xs text-slate-400 border-t border-slate-800">
+                        Exibindo as primeiras 300 de {dadosFiltrados.length.toLocaleString("pt-BR")} linhas. A exportação completa contém todos os registros.
+                      </div>
+                    )}
+                  </div>
+                </div>
+              )}
+
+              {/* ========================================================= */}
+              {/* ABA 12: CENTRAL DE EXPORTAÇÕES */}
+              {/* ========================================================= */}
+              {abaAtiva === "exportacoes" && (
+                <div className="space-y-6">
+                  <div className="bg-slate-900/60 p-4 rounded-xl border border-slate-800"><h2 className="text-lg font-bold text-white flex items-center gap-2"><Download className="w-5 h-5 text-orange-500" /><span>Central de exportações</span></h2><p className="text-xs text-slate-400">Recorte adicional por anos e meses, tabelas prontas, gerador personalizado e base completa.</p></div>
+                  {(() => { const anos=Array.from(new Set(dadosFiltrados.map(d=>d.ano))).sort(); const meses=Array.from(new Set(dadosFiltrados.map(d=>d.mes_num))).sort((a,b)=>a-b); const tipo=exportTipo; const modo=exportModo; const baseExport=dadosFiltrados; const tabela=modo==='prontas'?tabelaExportacaoPronta(baseExport,tipo):gerarExportacaoPersonalizada(baseExport,exportGranularidade,exportMetrica,exportDimensao==='Nenhum'?undefined:exportDimensao,false); return <div className="space-y-4"><div className="grid grid-cols-2 md:grid-cols-4 gap-3"><div className="bg-slate-900 border border-slate-800 p-3 rounded-lg"><span className="text-xs text-slate-400">Linhas</span><div className="text-xl font-bold text-white">{baseExport.length.toLocaleString('pt-BR')}</div></div><div className="bg-slate-900 border border-slate-800 p-3 rounded-lg"><span className="text-xs text-slate-400">Faturamento</span><div className="text-xl font-bold text-orange-400">{formatarMoeda(baseExport.reduce((s,d)=>s+d.faturamento,0))}</div></div><div className="bg-slate-900 border border-slate-800 p-3 rounded-lg"><span className="text-xs text-slate-400">Quantidade</span><div className="text-xl font-bold text-sky-400">{formatarInteiro(baseExport.reduce((s,d)=>s+d.quantidade,0))}</div></div><div className="bg-slate-900 border border-slate-800 p-3 rounded-lg"><span className="text-xs text-slate-400">Pedidos</span><div className="text-xl font-bold text-green-400">{new Set(baseExport.map(d=>d.pedido)).size}</div></div></div><div className="flex flex-wrap gap-2 bg-slate-900/80 p-2 rounded-lg border border-slate-800"><button onClick={()=>setExportModo('prontas')} className={`px-3 py-1.5 rounded text-xs ${modo==='prontas'?'bg-orange-600 text-white':'text-slate-300'}`}>⚡ Tabelas prontas</button><button onClick={()=>setExportModo('personalizada')} className={`px-3 py-1.5 rounded text-xs ${modo==='personalizada'?'bg-orange-600 text-white':'text-slate-300'}`}>🧩 Gerador personalizado</button><button onClick={()=>setExportModo('base')} className={`px-3 py-1.5 rounded text-xs ${modo==='base'?'bg-orange-600 text-white':'text-slate-300'}`}>🗂️ Base completa</button></div>{modo==='prontas'&&<div className="flex flex-wrap items-center gap-3 text-xs"><span className="text-slate-400">Tabela pronta:</span><select value={exportTipo} onChange={e=>setExportTipo(e.target.value)} className="bg-slate-800 border border-slate-700 text-white rounded px-2 py-1">{["Faturamento diário","Resumo mensal","Resumo trimestral","Resumo anual","Por família","Por produto/carreta","Por cliente","Por representante","Por região / UF / cidade","Por forma de venda","Por lista de preço"].map(x=><option key={x}>{x}</option>)}</select></div>}{modo==='personalizada'&&<div className="flex flex-wrap items-center gap-3 text-xs"><select value={exportGranularidade} onChange={e=>setExportGranularidade(e.target.value)} className="bg-slate-800 border border-slate-700 text-white rounded px-2 py-1">{['Diário','Semanal','Mensal','Trimestral','Anual'].map(x=><option key={x}>{x}</option>)}</select><select value={exportMetrica} onChange={e=>setExportMetrica(e.target.value)} className="bg-slate-800 border border-slate-700 text-white rounded px-2 py-1">{['Faturamento','Quantidade','Pedidos','Clientes','Ticket unitário','Valor médio por pedido'].map(x=><option key={x}>{x}</option>)}</select><select value={exportDimensao} onChange={e=>setExportDimensao(e.target.value)} className="bg-slate-800 border border-slate-700 text-white rounded px-2 py-1"><option>Nenhum</option>{['familia','produto','cliente','cliente_base','representante','regiao','uf','cidade','tipo_venda','categoria_produto','descricao_generica','lista_preco_uf'].map(x=><option key={x}>{x}</option>)}</select></div>}{modo==='base'?<DataTable rows={baseExport.slice(0,300)} columns={["data_str","cliente","produto","uf","quantidade","faturamento","pedido","tipo_venda"]} />:<DataTable rows={tabela} columns={Object.keys(tabela[0]||{}).slice(0,10)} />}{modo!=='base'&&<div className="flex gap-2"><button onClick={()=>exportarTabelaCsv(tabela,`exportacao_${modo}.csv`)} className="px-3 py-2 rounded bg-slate-800 hover:bg-slate-700 text-white text-xs flex items-center gap-2"><Download className="w-4 h-4"/> Baixar CSV</button><button onClick={()=>exportarTabelaExcel(tabela,`exportacao_${modo}.xlsx`,tipo.slice(0,31))} className="px-3 py-2 rounded bg-orange-600 hover:bg-orange-500 text-white text-xs flex items-center gap-2"><FileSpreadsheet className="w-4 h-4"/> Baixar Excel</button></div>}{modo==='base'&&<div className="flex gap-2"><button onClick={()=>exportarTabelaCsv(baseExport,'base_faturamento_filtrada.csv')} className="px-3 py-2 rounded bg-slate-800 hover:bg-slate-700 text-white text-xs">Baixar base filtrada em CSV</button><button onClick={()=>exportarTabelaExcel(baseExport,'base_faturamento_filtrada.xlsx','Base filtrada')} className="px-3 py-2 rounded bg-orange-600 hover:bg-orange-500 text-white text-xs">Baixar base filtrada em Excel</button></div>}</div>; })()}
+                </div>
+              )}
+            </>
+          )}
+        </main>
+      </div>
     </div>
   );
 }
