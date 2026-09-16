@@ -21,3 +21,7 @@ Foi adicionada a aba **Metas mensais** com importação de CSV histórico (`mes;
 A aplicação agora verifica primeiro `localStorage` por uma base salva pelo usuário (`cemag_base_padrao`); se não existir, carrega `tabelaFaturamento.csv` embarcada. Todo CSV/XLSX enviado pelo controle **Substituir Planilha** passa a ser salvo automaticamente como a nova base padrão do navegador e será reutilizado na próxima abertura, até outro arquivo ser enviado.
 
 A aba **Regiões** recebeu o **Mapa municipal de faturamento**, com bolhas dimensionadas pelo faturamento, posicionamento aproximado por UF, tooltip de faturamento/quantidade/pedidos/clientes e ranking dos municípios. A renderização foi validada no browser: `hasMap=true` e `hasRanking=true`. `pnpm check` e `pnpm build` passaram.
+
+## Mapa municipal territorial
+
+O mapa municipal esquemático foi substituído por um mapa coroplético baseado em GeoJSON real dos municípios brasileiros, com 5.570 geometrias carregadas offline. Os limites municipais ficam visíveis, municípios com vendas são coloridos conforme o faturamento, e o hover mostra município, UF, faturamento, quantidade, pedidos e clientes. A validação no browser confirmou `map=true` e `geojson=true`; `pnpm check` e `pnpm build` passaram.
