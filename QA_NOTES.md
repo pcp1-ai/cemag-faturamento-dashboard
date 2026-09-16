@@ -29,3 +29,7 @@ O mapa municipal esquemático foi substituído por um mapa coroplético baseado 
 ## Mapa estadual territorial
 
 O mapa dos estados também foi substituído pelo mapa coroplético baseado no GeoJSON estadual real. Os 27 estados possuem suas demarcações territoriais, preenchimento proporcional ao faturamento, tooltip com indicadores e ranking lateral. Validação no browser confirmou a renderização de `Distribuição territorial por estado`; `pnpm check` e `pnpm build` passaram.
+
+## Foco do mapa municipal
+
+O mapa municipal deixou de exibir o Brasil inteiro por padrão. Agora calcula automaticamente os estados que possuem vendas no filtro atual, mantém todos os municípios desses estados com suas demarcações e ajusta o enquadramento/escala ao bounding box da área relevante. A validação confirmou `hasMap=true`, `focused=true` e nenhum erro de pilha; `pnpm check` e `pnpm build` passaram.
