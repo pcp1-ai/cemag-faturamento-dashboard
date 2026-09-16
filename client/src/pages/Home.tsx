@@ -85,6 +85,7 @@ const metricFormat = (value: number, label: string) =>
 
 const ABAS = [
   { id: "visao_geral", label: "🏠 Visão geral" },
+  { id: "metas", label: "🎯 Metas mensais" },
   { id: "modo_apresentacao", label: "📺 Modo apresentação" },
   { id: "ano_ano", label: "📅 Ano x ano" },
   { id: "mes_mes", label: "🗓️ Mês x mês" },
@@ -445,6 +446,66 @@ export default function Home() {
   const [exportModo, setExportModo] = useState<string>("prontas");
   const [exportTipo, setExportTipo] = useState<string>("Resumo mensal");
 
+  // Metas mensais: CSV histórico + meta manual do mês vigente
+  type MetaMensal = { ano: number; mes: number; meta: number; origem?: string };
+  const hoje = new Date();
+  const [metasImportadas, setMetasImportadas] = useState<MetaMensal[]>([]);
+  const [metaManualAno, setMetaManualAno] = useState<number>(hoje.getFullYear());
+  const [metaManualMes, setMetaManualMes] = useState<number>(hoje.getMonth() + 1);
+  const [metaManualValor, setMetaManualValor] = useState<string>("");
+  const [metaManualSalva, setMetaManualSalva] = useState<MetaMensal | null>(null);
+  const [metaStatus, setMetaStatus] = useState<string>("");
+
+  useEffect(() => {
+    try {
+      const saved = localStorage.getItem("cemag_metas_mensais");
+      if (saved) setMetasImportadas(JSON.parse(saved));
+      const manual = localStorage.getItem("cemag_meta_manual_vigente");
+      if (manual) {
+        const parsed = JSON.parse(manual);
+        setMetaManualAno(parsed.ano); setMetaManualMes(parsed.mes); setMetaManualValor(String(parsed.meta)); setMetaManualSalva(parsed);
+      }
+    } catch { /* armazenamento local indisponível ou legado inválido */ }
+  }, []);
+
+  const normalizarMeta = (row: any): MetaMensal | null => {
+    const keys = Object.keys(row || {});
+    const get = (names: string[]) => { const key = keys.find((k) => names.includes(String(k).normalize("NFKD").replace(/[\u0300-\u036f]/g, "").toLowerCase().trim())); return key ? row[key] : undefined; };
+    const ano = Number(get(["ano", "year"]));
+    const mesRaw = get(["mes", "month"]);
+    const nomes: Record<string, number> = { janeiro:1, jan:1, fevereiro:2, fev:2, marco:3, mar:3, abril:4, abr:4, maio:5, mai:5, junho:6, jun:6, julho:7, jul:7, agosto:8, ago:8, setembro:9, set:9, outubro:10, out:10, novembro:11, nov:11, dezembro:12, dez:12 };
+    const mes = typeof mesRaw === "string" && isNaN(Number(mesRaw)) ? nomes[mesRaw.normalize("NFKD").replace(/[\u0300-\u036f]/g, "").toLowerCase().trim()] : Number(mesRaw);
+    const rawMeta = get(["meta", "meta_faturamento", "meta faturamento", "objetivo", "target"]);
+    if (!ano || !mes || mes < 1 || mes > 12 || rawMeta === undefined) return null;
+    const texto = String(rawMeta).replace(/R\$/g, "").replace(/\s/g, "");
+    const meta = typeof rawMeta === "number" ? rawMeta : (texto.includes(",") ? Number(texto.replace(/\./g, "").replace(",", ".")) : Number(texto));
+    return Number.isFinite(meta) && meta >= 0 ? { ano, mes, meta, origem: "CSV" } : null;
+  };
+
+  const handleUploadMetas = (file: File) => {
+    const reader = new FileReader();
+    reader.onload = (e) => {
+      try {
+        const text = String(e.target?.result || "");
+        const parsed = Papa.parse(text, { header: true, skipEmptyLines: true, delimiter: "" });
+        const rows = (parsed.data as any[]).map(normalizarMeta).filter(Boolean) as MetaMensal[];
+        const unicas = Array.from(new Map(rows.map((r) => [`${r.ano}-${r.mes}`, r])).values());
+        setMetasImportadas(unicas); localStorage.setItem("cemag_metas_mensais", JSON.stringify(unicas));
+        setMetaStatus(`${unicas.length} meta(s) importada(s) com sucesso.`);
+      } catch (err: any) { setMetaStatus(`Erro ao ler metas: ${err.message || "arquivo inválido"}`); }
+    };
+    reader.readAsText(file);
+  };
+
+  const salvarMetaManual = () => {
+    const valor = Number(String(metaManualValor).replace(/\./g, "").replace(",", "."));
+    if (!valor || valor < 0 || !metaManualAno || !metaManualMes) { setMetaStatus("Informe ano, mês e uma meta válida."); return; }
+    const meta: MetaMensal = { ano: metaManualAno, mes: metaManualMes, meta: valor, origem: "Manual — mês vigente" };
+    setMetaManualSalva(meta); localStorage.setItem("cemag_meta_manual_vigente", JSON.stringify(meta)); setMetaStatus("Meta manual do mês vigente salva.");
+  };
+
+  const limparMetas = () => { setMetasImportadas([]); setMetaManualSalva(null); setMetaManualValor(""); localStorage.removeItem("cemag_metas_mensais"); localStorage.removeItem("cemag_meta_manual_vigente"); setMetaStatus("Metas removidas deste navegador."); };
+
   // --------------------------------------------------------------------------
   // CÁLCULOS DERIVADOS POR ABA
   // --------------------------------------------------------------------------
@@ -455,6 +516,19 @@ export default function Home() {
     agg.sort((a, b) => a.ano_mes_data.localeCompare(b.ano_mes_data));
     return agg;
   }, [dadosFiltrados]);
+
+  const atingimentoMensal = useMemo(() => {
+    const mapa = new Map<string, any>();
+    for (const row of dadosMensais) mapa.set(`${row.ano}-${row.mes_num}`, { ...row, realizado: row.faturamento });
+    const metas = [...metasImportadas, ...(metaManualSalva ? [metaManualSalva] : [])];
+    for (const meta of metas) {
+      const key = `${meta.ano}-${meta.mes}`;
+      const row = mapa.get(key) || { ano: meta.ano, mes_num: meta.mes, mes: MESES[meta.mes], ano_mes: `${meta.ano}-${String(meta.mes).padStart(2, "0")}`, realizado: 0 };
+      row.meta = meta.meta; row.origem_meta = meta.origem || "CSV"; row.atingimento = meta.meta > 0 ? row.realizado / meta.meta : 0; row.diferenca_meta = row.realizado - meta.meta;
+      mapa.set(key, row);
+    }
+    return Array.from(mapa.values()).filter((row) => row.meta !== undefined).sort((a, b) => `${a.ano}-${a.mes_num}`.localeCompare(`${b.ano}-${b.mes_num}`));
+  }, [dadosMensais, metasImportadas, metaManualSalva]);
 
   // Mapa de UF para componente MapBrasil
   const dadosPorUf = useMemo(() => {
@@ -773,7 +847,36 @@ export default function Home() {
               )}
 
               {/* ========================================================= */}
-              {/* ABA 2: MODO APRESENTAÇÃO */}
+              {/* ABA 2: METAS MENSAIS */}
+              {/* ========================================================= */}
+              {abaAtiva === "metas" && (
+                <div className="space-y-6">
+                  <div className="bg-slate-900/60 p-5 rounded-xl border border-slate-800">
+                    <h2 className="text-lg font-bold text-white flex items-center gap-2">🎯 Metas mensais de faturamento</h2>
+                    <p className="text-xs text-slate-400 mt-1">Importe metas históricas por CSV e informe manualmente a meta do mês vigente. A meta manual tem prioridade para o mesmo mês.</p>
+                  </div>
+                  <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
+                    <div className="bg-slate-900 border border-slate-800 p-5 rounded-xl space-y-3">
+                      <h3 className="text-sm font-bold text-orange-400">Importar metas históricas por CSV</h3>
+                      <p className="text-xs text-slate-400">Colunas aceitas: <code className="text-slate-200">mes;ano;meta</code>. Também aceita vírgula, nome do mês e valores no formato brasileiro.</p>
+                      <input type="file" accept=".csv,text/csv" onChange={(e) => e.target.files?.[0] && handleUploadMetas(e.target.files[0])} className="block w-full text-xs text-slate-300 file:mr-3 file:rounded file:border-0 file:bg-orange-600 file:px-3 file:py-2 file:text-xs file:font-semibold file:text-white hover:file:bg-orange-500" />
+                      <button onClick={() => exportarTabelaCsv([{ mes: 1, ano: hoje.getFullYear(), meta: 1000000 }], "modelo_metas_mensais.csv")} className="text-xs text-sky-400 hover:text-sky-300">Baixar modelo CSV</button>
+                    </div>
+                    <div className="bg-slate-900 border border-slate-800 p-5 rounded-xl space-y-3">
+                      <h3 className="text-sm font-bold text-green-400">Meta manual do mês vigente</h3>
+                      <p className="text-xs text-slate-400">Use esta opção para atualizar rapidamente a meta do mês atual. Ela fica salva neste navegador.</p>
+                      <div className="grid grid-cols-3 gap-2"><label className="text-xs text-slate-400">Ano<input type="number" value={metaManualAno} onChange={(e) => setMetaManualAno(Number(e.target.value))} className="mt-1 w-full rounded bg-slate-800 border border-slate-700 px-2 py-2 text-white" /></label><label className="text-xs text-slate-400">Mês<input type="number" min="1" max="12" value={metaManualMes} onChange={(e) => setMetaManualMes(Number(e.target.value))} className="mt-1 w-full rounded bg-slate-800 border border-slate-700 px-2 py-2 text-white" /></label><label className="text-xs text-slate-400">Meta (R$)<input type="text" placeholder="1.500.000,00" value={metaManualValor} onChange={(e) => setMetaManualValor(e.target.value)} className="mt-1 w-full rounded bg-slate-800 border border-slate-700 px-2 py-2 text-white" /></label></div>
+                      <div className="flex gap-2"><button onClick={salvarMetaManual} className="rounded bg-green-600 hover:bg-green-500 px-3 py-2 text-xs font-bold text-white">Salvar meta vigente</button><button onClick={limparMetas} className="rounded bg-slate-800 hover:bg-slate-700 px-3 py-2 text-xs text-slate-300">Limpar metas</button></div>
+                    </div>
+                  </div>
+                  {metaStatus && <div className="rounded-lg border border-sky-800/60 bg-sky-950/30 px-3 py-2 text-xs text-sky-200">{metaStatus}</div>}
+                  {(() => { const vigente = atingimentoMensal.find((r) => r.ano === hoje.getFullYear() && r.mes_num === hoje.getMonth() + 1); const realizadoAtual = dadosFiltrados.filter((d) => d.ano === hoje.getFullYear() && d.mes_num === hoje.getMonth() + 1).reduce((s, d) => s + d.faturamento, 0); const diasNoMes = new Date(hoje.getFullYear(), hoje.getMonth() + 1, 0).getDate(); const projecao = hoje.getMonth() === 11 ? realizadoAtual / Math.max(hoje.getDate(), 1) * diasNoMes : realizadoAtual / Math.max(hoje.getDate(), 1) * diasNoMes; return <div className="grid grid-cols-2 md:grid-cols-4 gap-3"><div className="bg-slate-900 border border-slate-800 p-3 rounded-lg"><span className="text-xs text-slate-400">Meta vigente</span><div className="text-xl font-bold text-orange-400">{formatarMoeda(vigente?.meta || 0)}</div></div><div className="bg-slate-900 border border-slate-800 p-3 rounded-lg"><span className="text-xs text-slate-400">Realizado no mês</span><div className="text-xl font-bold text-white">{formatarMoeda(realizadoAtual)}</div></div><div className="bg-slate-900 border border-slate-800 p-3 rounded-lg"><span className="text-xs text-slate-400">Atingimento atual</span><div className={`text-xl font-bold ${(vigente?.meta && realizadoAtual / vigente.meta >= 1) ? "text-green-400" : "text-amber-400"}`}>{vigente?.meta ? formatarPercentual(realizadoAtual / vigente.meta) : "Sem meta"}</div></div><div className="bg-slate-900 border border-slate-800 p-3 rounded-lg"><span className="text-xs text-slate-400">Projeção do mês</span><div className="text-xl font-bold text-sky-400">{formatarMoeda(projecao)}</div></div></div>; })()}
+                  <div className="bg-slate-900/60 border border-slate-800 rounded-xl p-4"><h3 className="text-sm font-bold text-white mb-3">Atingimento por mês</h3>{atingimentoMensal.length ? <DataTable rows={atingimentoMensal.map((r) => ({ ...r, status_meta: r.atingimento >= 1 ? "Atingida" : r.ano === hoje.getFullYear() && r.mes_num === hoje.getMonth() + 1 ? "Em andamento" : "Não atingida" }))} columns={["ano_mes","realizado","meta","atingimento","diferenca_meta","status_meta","origem_meta"]} /> : <div className="rounded-lg border border-dashed border-slate-700 p-8 text-center text-sm text-slate-400">Nenhuma meta cadastrada. Importe um CSV ou salve a meta do mês vigente.</div>}</div>
+                </div>
+              )}
+
+              {/* ========================================================= */}
+              {/* ABA 3: MODO APRESENTAÇÃO */}
               {/* ========================================================= */}
               {abaAtiva === "modo_apresentacao" && (
                 <div
@@ -1751,7 +1854,7 @@ export default function Home() {
               )}
 
               {/* ========================================================= */}
-              {/* ABA 12: CENTRAL DE EXPORTAÇÕES */}
+              {/* ABA 13: CENTRAL DE EXPORTAÇÕES */}
               {/* ========================================================= */}
               {abaAtiva === "exportacoes" && (
                 <div className="space-y-6">
