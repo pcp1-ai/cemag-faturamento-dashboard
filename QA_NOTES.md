@@ -51,3 +51,7 @@ Resultados principais: todas as formas `1.200`; exportação `817`; exclusão CB
 ## Correção do menu lateral ao abrir
 
 O estado do painel lateral agora é persistido em `localStorage` (`cemag_sidebar_oculta`). Quando oculto, surge uma aba fixa vertical **Filtros** na borda esquerda para reabrir o menu, mesmo que o botão do cabeçalho não esteja visível. Teste no browser confirmou `hidden=true`, `fixedButton=true`, `reopened=true` e o botão do cabeçalho voltou a aparecer; `pnpm check` e `pnpm build` passaram.
+
+## Correção de quota no upload CSV
+
+O upload de bases grandes não tenta mais gravar o JSON inteiro no `localStorage`. Bases menores continuam usando `localStorage`; bases acima de aproximadamente 1,5 MB usam IndexedDB (`cemag_faturamento_db`), com recuperação automática na próxima abertura. A base enviada tinha 5,4 MB. A base continua carregada imediatamente nesta sessão mesmo se a persistência falhar. `pnpm check` e `pnpm build` passaram.

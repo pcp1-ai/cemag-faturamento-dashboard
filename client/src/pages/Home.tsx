@@ -84,6 +84,53 @@ const metricKey = (label: string): string => ({
 const metricFormat = (value: number, label: string) =>
   ["Faturamento", "Ticket unitário", "Valor médio por pedido"].includes(label) ? formatarMoeda(value) : formatarInteiro(value);
 
+const BASE_DB = "cemag_faturamento_db";
+const BASE_STORE = "bases";
+
+function abrirBaseDb(): Promise<IDBDatabase> {
+  return new Promise((resolve, reject) => {
+    const request = indexedDB.open(BASE_DB, 1);
+    request.onupgradeneeded = () => request.result.createObjectStore(BASE_STORE);
+    request.onsuccess = () => resolve(request.result);
+    request.onerror = () => reject(request.error);
+  });
+}
+
+async function salvarBasePersistente(rows: any[], nome: string) {
+  const payload = JSON.stringify(rows);
+  try {
+    // Bases pequenas continuam simples e compatíveis com a implementação anterior.
+    if (payload.length < 1_500_000) {
+      localStorage.setItem("cemag_base_padrao", payload);
+      localStorage.setItem("cemag_base_padrao_nome", nome);
+      return "localStorage";
+    }
+    throw new Error("base grande");
+  } catch {
+    const db = await abrirBaseDb();
+    await new Promise<void>((resolve, reject) => {
+      const tx = db.transaction(BASE_STORE, "readwrite");
+      tx.objectStore(BASE_STORE).put({ rows, nome }, "base_padrao");
+      tx.oncomplete = () => resolve();
+      tx.onerror = () => reject(tx.error);
+    });
+    // Remove cópia antiga que poderia continuar ocupando quota.
+    try { localStorage.removeItem("cemag_base_padrao"); localStorage.removeItem("cemag_base_padrao_nome"); } catch { /* sem ação */ }
+    return "indexedDB";
+  }
+}
+
+async function carregarBasePersistente(): Promise<{ rows: any[]; nome: string } | null> {
+  try {
+    const db = await abrirBaseDb();
+    return await new Promise((resolve) => {
+      const request = db.transaction(BASE_STORE, "readonly").objectStore(BASE_STORE).get("base_padrao");
+      request.onsuccess = () => resolve(request.result?.rows?.length ? request.result : null);
+      request.onerror = () => resolve(null);
+    });
+  } catch { return null; }
+}
+
 const ABAS = [
   { id: "visao_geral", label: "🏠 Visão geral" },
   { id: "metas", label: "🎯 Metas mensais" },
@@ -181,6 +228,12 @@ export default function Home() {
             setNomeArquivoBase(nomeSalvo || "base_padrao_local.csv");
             return;
           }
+        }
+        const baseIndexed = await carregarBasePersistente();
+        if (baseIndexed?.rows?.length) {
+          setBaseOriginal(baseIndexed.rows);
+          setNomeArquivoBase(baseIndexed.nome || "base_padrao_local.csv");
+          return;
         }
         const resp = await fetch("/data/tabelaFaturamento.csv");
         if (!resp.ok) throw new Error("Não foi possível carregar a base padrão /data/tabelaFaturamento.csv");
@@ -355,8 +408,7 @@ export default function Home() {
           if (json && json.length) {
             setBaseOriginal(json);
             setNomeArquivoBase(file.name);
-            localStorage.setItem("cemag_base_padrao", JSON.stringify(json));
-            localStorage.setItem("cemag_base_padrao_nome", file.name);
+            void salvarBasePersistente(json, file.name).catch(() => alert("A base foi carregada nesta sessão, mas não pôde ser salva como base padrão no navegador. Verifique o espaço disponível."));
           }
         } catch (err: any) {
           alert("Erro ao ler arquivo Excel: " + err.message);
@@ -371,8 +423,7 @@ export default function Home() {
           if (parsed.data && parsed.data.length) {
             setBaseOriginal(parsed.data);
             setNomeArquivoBase(file.name);
-            localStorage.setItem("cemag_base_padrao", JSON.stringify(parsed.data));
-            localStorage.setItem("cemag_base_padrao_nome", file.name);
+            void salvarBasePersistente(parsed.data, file.name).catch(() => alert("A base foi carregada nesta sessão, mas não pôde ser salva como base padrão no navegador. Verifique o espaço disponível."));
           }
         } catch (err: any) {
           alert("Erro ao processar CSV: " + err.message);
