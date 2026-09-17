@@ -211,6 +211,7 @@ export default function Home() {
     descricoesGenericas: [],
     gruposModelo: [],
     familias: [],
+    tiposProduto: [],
     buscaProduto: "",
   });
 
@@ -278,6 +279,7 @@ export default function Home() {
       return {
         tiposVenda: [],
         familias: [],
+        tiposProduto: [],
         anos: [],
         regioes: [],
         ufs: [],
@@ -308,6 +310,7 @@ export default function Home() {
       categorias: setOf("categoria_produto") as string[],
       descricoes: setOf("descricao_generica") as string[],
       gruposModelo: setOf("grupo_modelo") as string[],
+      tiposProduto: setOf("tipo_produto") as string[],
     };
   }, [dados]);
 
@@ -353,6 +356,7 @@ export default function Home() {
       if (filtros.descricoesGenericas.length > 0 && !filtros.descricoesGenericas.includes(d.descricao_generica)) return false;
       if (filtros.gruposModelo.length > 0 && !filtros.gruposModelo.includes(d.grupo_modelo)) return false;
       if (filtros.familias.length > 0 && !filtros.familias.includes(d.familia)) return false;
+      if (filtros.tiposProduto.length > 0 && !filtros.tiposProduto.includes(d.tipo_produto)) return false;
 
       // Busca textual
       if (filtros.buscaProduto.trim()) {
@@ -454,6 +458,7 @@ export default function Home() {
         descricoesGenericas: [],
         gruposModelo: [],
         familias: [],
+        tiposProduto: [],
         buscaProduto: "",
       });
     }

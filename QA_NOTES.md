@@ -71,3 +71,7 @@ A base oficial `análisefaturamento_dre-tabelaFaturamento(2).csv` foi incorporad
 ## Diagnóstico da Base
 
 Adicionada a aba **Diagnóstico da base**, com cobertura temporal, registros originais/válidos, linhas sem data, meses esperados, meses sem venda, UFs não identificadas, indicadores de qualidade, gráfico de faturamento anual de 2018 a 2026 e lista de meses sem registros. A base oficial foi mantida como fonte. `pnpm check` e `pnpm build` passaram; a aba aparece na navegação após recarregar o dashboard.
+
+## Filtro por tipo de produto
+
+Adicionada classificação automática `tipo_produto` com as categorias **Carreta, Conjunto, Peça, Sucata e Outros**, usando produto, categoria, descrição e forma de venda. O filtro pesquisável foi incluído no painel lateral e é aplicado às análises e indicadores. Teste no browser: selecionar `Peça` reduziu o resultado de 13.365 para 2.044 linhas; o estado padrão foi restaurado. `pnpm check` e `pnpm build` passaram.

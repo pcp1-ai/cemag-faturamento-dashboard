@@ -19,6 +19,7 @@ export interface FiltrosState {
   descricoesGenericas: string[];
   gruposModelo: string[];
   familias: string[];
+  tiposProduto: string[];
   buscaProduto: string;
 }
 
@@ -39,6 +40,7 @@ interface SidebarFiltersProps {
     categorias: string[];
     descricoes: string[];
     gruposModelo: string[];
+    tiposProduto: string[];
   };
   nomeArquivoBase: string;
   onUploadArquivo: (file: File) => void;
@@ -259,6 +261,15 @@ export const SidebarFilters: React.FC<SidebarFiltersProps> = ({
                 />
               </div>
             </div>
+          </div>
+
+          <hr className="border-slate-800" />
+
+          {/* Tipo de produto */}
+          <div className="space-y-2">
+            <label className="text-[11px] font-bold text-slate-300 uppercase tracking-wider block">Tipo de Produto</label>
+            <p className="text-[10px] text-slate-500">Classificação automática por descrição, categoria e forma de venda.</p>
+            {renderMultiSelect("Tipo de produto", "tiposProduto", opcoesFiltros.tiposProduto)}
           </div>
 
           <hr className="border-slate-800" />

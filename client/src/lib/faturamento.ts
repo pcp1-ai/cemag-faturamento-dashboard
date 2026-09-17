@@ -8,6 +8,7 @@ export interface TransacaoRaw {
 export interface TransacaoTratada {
   id: string;
   produto: string;
+  tipo_produto: string;
   cliente: string;
   cliente_base: string;
   cidade: string;
@@ -296,6 +297,15 @@ export function familiaProduto(produto: any): string {
   return str.split(/\s+/)[0];
 }
 
+export function classificarTipoProduto(produto: any, categoria: any, descricao: any, tipoVenda: any): string {
+  const texto = semAcento([produto, categoria, descricao, tipoVenda].filter(Boolean).join(" ")).toUpperCase();
+  if (texto.includes("SUCATA") || texto.includes("SALVADO")) return "Sucata";
+  if (texto.includes("CONJUNTO") || texto.includes("KIT ") || texto.startsWith("KIT")) return "Conjunto";
+  if (/(PECA|PECAS|PARAF|ROLAMENTO|CORREIA|MANCAL|BUCHA|ENGRENAGEM|EIXO|CHAPA|LONA|PNEU|RODA|VALVULA|MOTOR|BOMBA|ACESSOR)/.test(texto)) return "Peça";
+  if (texto.includes("CARRETA") || /^(CBH|CBHM|CTH|FA|MCF|SEF)/.test(String(produto || "").toUpperCase())) return "Carreta";
+  return "Outros";
+}
+
 export function grupoModelo(produto: any): string {
   const fam = familiaProduto(produto).toUpperCase();
   if (fam.startsWith("CBHM")) return "CBHM";
@@ -507,10 +517,12 @@ export function prepararDados(
 
     const familia = familiaProduto(produto);
     const grupo = grupoModelo(produto);
+    const tipoProduto = classificarTipoProduto(produto, catProduto, descGenerica, tipoVenda);
 
     dadosTratados.push({
       id: `${pedido}_${idx}`,
       produto,
+      tipo_produto: tipoProduto,
       cliente,
       cliente_base: clienteBase,
       cidade,
