@@ -1,4 +1,4 @@
-import React, { useRef } from "react";
+import React, { useRef, useState } from "react";
 import { Upload, X, Filter, RotateCcw, Search, CheckSquare, Square } from "lucide-react";
 
 export interface FiltrosState {
@@ -62,6 +62,11 @@ export const SidebarFilters: React.FC<SidebarFiltersProps> = ({
   onCloseMobile,
 }) => {
   const fileInputRef = useRef<HTMLInputElement>(null);
+  const [buscasFiltros, setBuscasFiltros] = useState<Record<string, string>>({});
+
+  const buscaDoFiltro = (key: string) => buscasFiltros[key] || "";
+  const atualizarBuscaFiltro = (key: string, value: string) =>
+    setBuscasFiltros((prev) => ({ ...prev, [key]: value }));
 
   const toggleArrayItem = (key: keyof FiltrosState, item: any) => {
     setFiltros((prev) => {
@@ -83,7 +88,11 @@ export const SidebarFilters: React.FC<SidebarFiltersProps> = ({
     limiteExibicao: number = 80
   ) => {
     const selecionados = (filtros[key] as any[]) || [];
-    const opcoesVisiveis = opcoes.slice(0, limiteExibicao);
+    const busca = buscaDoFiltro(String(key));
+    const opcoesFiltradas = busca.trim()
+      ? opcoes.filter((op) => String(op).toLocaleLowerCase().includes(busca.trim().toLocaleLowerCase()))
+      : opcoes;
+    const opcoesVisiveis = opcoesFiltradas.slice(0, limiteExibicao);
 
     return (
       <div className="space-y-1 text-xs">
@@ -99,6 +108,18 @@ export const SidebarFilters: React.FC<SidebarFiltersProps> = ({
             </button>
           )}
         </div>
+        {opcoes.length > 5 && (
+          <div className="relative">
+            <input
+              type="search"
+              value={busca}
+              onChange={(e) => atualizarBuscaFiltro(String(key), e.target.value)}
+              placeholder={`Buscar ${label.toLowerCase()}...`}
+              className="w-full bg-slate-950 border border-slate-700 text-slate-200 rounded pl-7 pr-2 py-1 text-[11px] focus:ring-1 focus:ring-orange-500"
+            />
+            <Search className="w-3 h-3 text-slate-500 absolute left-2 top-2" />
+          </div>
+        )}
         <div className="max-h-32 overflow-y-auto bg-slate-900/90 border border-slate-800 rounded p-1.5 space-y-1 text-slate-200">
           {opcoesVisiveis.map((op) => {
             const isChecked = selecionados.includes(op);
@@ -117,6 +138,9 @@ export const SidebarFilters: React.FC<SidebarFiltersProps> = ({
               </label>
             );
           })}
+          {opcoesFiltradas.length === 0 && busca.trim() && (
+            <div className="text-[10px] text-slate-500 p-1">Nenhuma opção encontrada</div>
+          )}
           {opcoes.length === 0 && (
             <div className="text-[10px] text-slate-500 p-1">Nenhuma opção disponível</div>
           )}
@@ -266,8 +290,12 @@ export const SidebarFilters: React.FC<SidebarFiltersProps> = ({
                 <span className="text-[10px] text-slate-400">
                   Tipos selecionados (padrão: V ProdPrópria p Consumo):
                 </span>
+                <div className="relative">
+                  <input type="search" value={buscaDoFiltro("tiposVenda")} onChange={(e) => atualizarBuscaFiltro("tiposVenda", e.target.value)} placeholder="Buscar forma de venda..." className="w-full bg-slate-950 border border-slate-700 text-slate-200 rounded pl-7 pr-2 py-1 text-[11px] focus:ring-1 focus:ring-orange-500" />
+                  <Search className="w-3 h-3 text-slate-500 absolute left-2 top-2" />
+                </div>
                 <div className="max-h-28 overflow-y-auto bg-slate-900 border border-slate-800 rounded p-1.5 space-y-1">
-                  {opcoesFiltros.tiposVenda.map((tipo) => {
+                  {opcoesFiltros.tiposVenda.filter((tipo) => !buscaDoFiltro("tiposVenda") || tipo.toLocaleLowerCase().includes(buscaDoFiltro("tiposVenda").toLocaleLowerCase())).map((tipo) => {
                     const isChecked = filtros.tiposVendaSelecionados.includes(tipo);
                     return (
                       <label
@@ -299,8 +327,12 @@ export const SidebarFilters: React.FC<SidebarFiltersProps> = ({
             <p className="text-[10px] text-slate-400">
               Retirar famílias específicas de todas as abas (ex: acessórios ou códigos avulsos):
             </p>
+            <div className="relative">
+              <input type="search" value={buscaDoFiltro("familiasExcluidas")} onChange={(e) => atualizarBuscaFiltro("familiasExcluidas", e.target.value)} placeholder="Buscar família para excluir..." className="w-full bg-slate-950 border border-slate-700 text-slate-200 rounded pl-7 pr-2 py-1 text-[11px] focus:ring-1 focus:ring-orange-500" />
+              <Search className="w-3 h-3 text-slate-500 absolute left-2 top-2" />
+            </div>
             <div className="max-h-28 overflow-y-auto bg-slate-900 border border-slate-800 rounded p-1.5 space-y-1">
-              {opcoesFiltros.familias.map((fam) => {
+              {opcoesFiltros.familias.filter((fam) => !buscaDoFiltro("familiasExcluidas") || fam.toLocaleLowerCase().includes(buscaDoFiltro("familiasExcluidas").toLocaleLowerCase())).map((fam) => {
                 const isExcluded = filtros.familiasExcluidas.includes(fam);
                 return (
                   <label

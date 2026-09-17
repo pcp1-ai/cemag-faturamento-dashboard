@@ -55,3 +55,7 @@ O estado do painel lateral agora é persistido em `localStorage` (`cemag_sidebar
 ## Correção de quota no upload CSV
 
 O upload de bases grandes não tenta mais gravar o JSON inteiro no `localStorage`. Bases menores continuam usando `localStorage`; bases acima de aproximadamente 1,5 MB usam IndexedDB (`cemag_faturamento_db`), com recuperação automática na próxima abertura. A base enviada tinha 5,4 MB. A base continua carregada imediatamente nesta sessão mesmo se a persistência falhar. `pnpm check` e `pnpm build` passaram.
+
+## Barras de pesquisa nos filtros
+
+Adicionadas buscas instantâneas aos multiselects de Ano, Região, UF, Cidade, Representante, Lista de Preço, Cliente, Cliente Base, Categoria, Descrição Genérica, Grupo/Modelo e Família. Também foram incluídas buscas para Forma de Venda e Exclusões da Análise. A busca filtra somente as opções exibidas, preservando as seleções existentes. Teste no browser com `Nord` confirmou apenas `Nordeste` visível, sem `Sul`; `pnpm check` e `pnpm build` passaram.
