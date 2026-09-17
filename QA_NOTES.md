@@ -79,3 +79,7 @@ Adicionada classificação automática `tipo_produto` com as categorias **Carret
 ## Correção de sobreposição visual
 
 Ajustados títulos e cabeçalhos com quebra segura de texto, cartões e colunas de grid com `min-width: 0`, legendas responsivas, eixos menores em telas estreitas e maior margem inferior nos gráficos mensal e comparativo com legenda. O gráfico mensal agora usa rótulos inclinados e espaçados para evitar colisão. `pnpm check`, `pnpm build` e validação visual no browser passaram.
+
+## Período padrão desde 2022
+
+O dashboard agora abre com filtro padrão de `01/01/2022` até a data máxima da base. A base continua completa desde 2018, e o usuário pode alterar manualmente o início para consultar anos anteriores. Browser confirmou `Filtro: 01/01/2022 a 16/09/2026`; `pnpm check` e `pnpm build` passaram.

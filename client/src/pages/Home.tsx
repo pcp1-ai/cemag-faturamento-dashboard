@@ -194,7 +194,7 @@ export default function Home() {
 
   // Filtros Globais
   const [filtros, setFiltros] = useState<FiltrosState>({
-    dataInicio: "",
+    dataInicio: "2022-01-01",
     dataFim: "",
     considerarTodasFormas: false,
     tiposVendaSelecionados: ["V ProdPrópria p Consumo"],
@@ -262,16 +262,17 @@ export default function Home() {
 
   // Inicializar datas de período quando a base for carregada
   useEffect(() => {
-    if (meta?.data_min && meta?.data_max && !filtros.dataInicio && !filtros.dataFim) {
-      const minStr = meta.data_min.toISOString().slice(0, 10);
+    if (meta?.data_min && meta?.data_max && !filtros.dataFim) {
+      const minBase = meta.data_min.toISOString().slice(0, 10);
       const maxStr = meta.data_max.toISOString().slice(0, 10);
+      const inicioPadrao = minBase > "2022-01-01" ? minBase : "2022-01-01";
       setFiltros((prev) => ({
         ...prev,
-        dataInicio: minStr,
+        dataInicio: prev.dataInicio || inicioPadrao,
         dataFim: maxStr,
       }));
     }
-  }, [meta]);
+  }, [meta, filtros.dataFim]);
 
   // Opções para a barra lateral
   const opcoesFiltros = useMemo(() => {
@@ -440,8 +441,9 @@ export default function Home() {
 
   const handleResetFiltros = () => {
     if (meta?.data_min && meta?.data_max) {
+      const minBase = meta.data_min.toISOString().slice(0, 10);
       setFiltros({
-        dataInicio: meta.data_min.toISOString().slice(0, 10),
+        dataInicio: minBase > "2022-01-01" ? minBase : "2022-01-01",
         dataFim: meta.data_max.toISOString().slice(0, 10),
         considerarTodasFormas: false,
         tiposVendaSelecionados: ["V ProdPrópria p Consumo"],
