@@ -632,6 +632,19 @@ export default function Home() {
     ? filtros.familiasExcluidas.join(", ")
     : "Nenhuma";
 
+  const formatarDataResumo = (valor: Date | string | undefined) => {
+    if (!valor) return "—";
+    const data = valor instanceof Date ? valor : new Date(`${valor}T00:00:00`);
+    return Number.isNaN(data.getTime()) ? "—" : data.toLocaleDateString("pt-BR");
+  };
+  const periodoBaseTexto = `${formatarDataResumo(meta?.data_min)} a ${formatarDataResumo(meta?.data_max)}`;
+  const periodoFiltroTexto = `${formatarDataResumo(filtros.dataInicio)} a ${formatarDataResumo(filtros.dataFim)}`;
+  const periodoEfetivo = useMemo(() => {
+    if (!dadosFiltrados.length) return "Nenhum registro";
+    const datas = dadosFiltrados.map((d) => d.data_emissao).filter(Boolean).sort((a, b) => a.getTime() - b.getTime());
+    return `${formatarDataResumo(datas[0])} a ${formatarDataResumo(datas[datas.length - 1])}`;
+  }, [dadosFiltrados]);
+
   if (loading) {
     return (
       <div className="min-h-screen bg-[#0E1117] text-white flex flex-col items-center justify-center p-6">
@@ -714,8 +727,11 @@ export default function Home() {
             <span>•</span>
             <span>Famílias excluídas: <strong className="text-slate-200">{familiasExcluidasTexto}</strong></span>
           </div>
-          <div>
-            <span>Linhas no filtro: <strong className="text-orange-400">{dadosFiltrados.length.toLocaleString("pt-BR")}</strong> de {meta?.linhas_validas?.toLocaleString("pt-BR")}</span>
+          <div className="flex flex-wrap items-center gap-x-3 gap-y-1">
+            <span>Base: <strong className="text-slate-200">{periodoBaseTexto}</strong></span>
+            <span>Filtro: <strong className="text-sky-300">{periodoFiltroTexto}</strong></span>
+            <span>Resultado: <strong className="text-emerald-300">{periodoEfetivo}</strong></span>
+            <span>Linhas: <strong className="text-orange-400">{dadosFiltrados.length.toLocaleString("pt-BR")}</strong> de {meta?.linhas_validas?.toLocaleString("pt-BR")}</span>
           </div>
         </div>
       </header>

@@ -59,3 +59,7 @@ O upload de bases grandes não tenta mais gravar o JSON inteiro no `localStorage
 ## Barras de pesquisa nos filtros
 
 Adicionadas buscas instantâneas aos multiselects de Ano, Região, UF, Cidade, Representante, Lista de Preço, Cliente, Cliente Base, Categoria, Descrição Genérica, Grupo/Modelo e Família. Também foram incluídas buscas para Forma de Venda e Exclusões da Análise. A busca filtra somente as opções exibidas, preservando as seleções existentes. Teste no browser com `Nord` confirmou apenas `Nordeste` visível, sem `Sul`; `pnpm check` e `pnpm build` passaram.
+
+## Resumo contextual de períodos
+
+O cabeçalho agora exibe: **Base** (período total disponível), **Filtro** (período solicitado pelo usuário), **Resultado** (período efetivo dos registros após todos os filtros) e **Linhas** (registros encontrados versus total válido). A validação mostrou a base `05/01/2024 a 27/12/2025`, filtro padrão igual e resultado efetivo até `26/12/2025`; ao mudar o início para `01/01/2025`, o filtro e as linhas atualizaram corretamente para `274`. Filtros foram restaurados ao final. `pnpm check` e `pnpm build` passaram.
