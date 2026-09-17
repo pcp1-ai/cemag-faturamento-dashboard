@@ -134,8 +134,15 @@ export default function Home() {
   const [abaAtiva, setAbaAtiva] = useState<string>("visao_geral");
   const [ufMapaSelecionada, setUfMapaSelecionada] = useState<string | null>(null);
   const [isMobileMenuOpen, setIsMobileMenuOpen] = useState<boolean>(false);
-  const [sidebarOculta, setSidebarOculta] = useState<boolean>(false);
+  const [sidebarOculta, setSidebarOculta] = useState<boolean>(() => {
+    if (typeof window === "undefined") return false;
+    return window.localStorage.getItem("cemag_sidebar_oculta") === "true";
+  });
   const [visualizacaoExpandida, setVisualizacaoExpandida] = useState<boolean>(false);
+
+  useEffect(() => {
+    window.localStorage.setItem("cemag_sidebar_oculta", String(sidebarOculta));
+  }, [sidebarOculta]);
 
   // Filtros Globais
   const [filtros, setFiltros] = useState<FiltrosState>({
@@ -676,6 +683,17 @@ export default function Home() {
           isOpenMobile={isMobileMenuOpen}
           onCloseMobile={() => setIsMobileMenuOpen(false)}
         />}
+        {sidebarOculta && !visualizacaoExpandida && (
+          <button
+            type="button"
+            onClick={() => setSidebarOculta(false)}
+            className="fixed left-0 top-1/2 -translate-y-1/2 z-40 flex items-center gap-2 rounded-r-xl border border-l-0 border-orange-500/50 bg-slate-900 px-2.5 py-3 text-xs font-semibold text-orange-300 shadow-xl hover:bg-slate-800"
+            title="Mostrar painel de filtros"
+          >
+            <Sliders className="w-4 h-4" />
+            <span className="[writing-mode:vertical-rl]">Filtros</span>
+          </button>
+        )}
 
         {/* Área Central Principal */}
         <main className={`${visualizacaoExpandida ? "visualizacao-ampliada fixed inset-0 z-50 bg-[#0E1117] overflow-y-auto" : "flex-1"} p-4 md:p-6 overflow-x-hidden`}>
