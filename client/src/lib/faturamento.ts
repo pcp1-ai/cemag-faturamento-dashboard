@@ -298,11 +298,16 @@ export function familiaProduto(produto: any): string {
 }
 
 export function classificarTipoProduto(produto: any, categoria: any, descricao: any, tipoVenda: any): string {
+  const produtoTexto = semAcento(String(produto ?? "")).trim().toUpperCase();
   const texto = semAcento([produto, categoria, descricao, tipoVenda].filter(Boolean).join(" ")).toUpperCase();
-  if (texto.includes("SUCATA") || texto.includes("SALVADO")) return "Sucata";
+  // Regras de negócio informadas pela CEMAG: códigos 00000 são sucata.
+  if (produtoTexto.startsWith("00000") || texto.includes("SUCATA") || texto.includes("SALVADO")) return "Sucata";
+  // Códigos iniciados por 2 representam itens comprados.
+  if (/^2/.test(produtoTexto)) return "Itens comprados";
   if (texto.includes("CONJUNTO") || texto.includes("KIT ") || texto.startsWith("KIT")) return "Conjunto";
   if (/(PECA|PECAS|PARAF|ROLAMENTO|CORREIA|MANCAL|BUCHA|ENGRENAGEM|EIXO|CHAPA|LONA|PNEU|RODA|VALVULA|MOTOR|BOMBA|ACESSOR)/.test(texto)) return "Peça";
-  if (texto.includes("CARRETA") || /^(CBH|CBHM|CTH|FA|MCF|SEF)/.test(String(produto || "").toUpperCase())) return "Carreta";
+  // Famílias de carretas/implementos: CBH, CBHM, CTH, FA, MCF, SEF e ROCAX (ROÇAX).
+  if (texto.includes("CARRETA") || /^(CBHM?|CTH|FA|MCF|SEF|ROCAX)/.test(produtoTexto)) return "Carreta";
   return "Outros";
 }
 

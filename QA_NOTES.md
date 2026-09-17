@@ -91,3 +91,7 @@ O filtro `Tipo de Produto` agora inicia com **Carreta** selecionado. As categori
 ## Previsão mensal
 
 Adicionada a aba **Previsões**, usando o histórico filtrado para projetar seis meses à frente. O modelo combina tendência linear recente e sazonalidade mensal. A tela exibe histórico, linha projetada, tabela de valores e MAPE indicativo de referência. Validação no browser com o padrão Carreta: 57 meses históricos, projeção de 2026-11 a 2027-04 e valores calculados. `pnpm check` e `pnpm build` passaram.
+
+## Regras de classificação informadas pela CEMAG
+
+Atualizada a classificação automática: códigos iniciados por `00000` são **Sucata**; códigos iniciados por `2` são **Itens comprados**; famílias `CBH`, `CBHM`, `CTH`, `FA`, `MCF`, `SEF` e `ROCAX` (incluindo ROÇAX) são **Carreta**. As regras de Conjunto e Peça permanecem provisórias até definição mais precisa. O filtro Carreta continua selecionado por padrão. Browser confirmou a nova categoria **Itens comprados** e `pnpm check`/`pnpm build` passaram.
