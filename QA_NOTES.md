@@ -87,3 +87,7 @@ O dashboard agora abre com filtro padrão de `01/01/2022` até a data máxima da
 ## Carreta como tipo padrão
 
 O filtro `Tipo de Produto` agora inicia com **Carreta** selecionado. As categorias Conjunto, Peça, Sucata e Outros permanecem disponíveis para seleção adicional. Browser confirmou `Limpar (1)` no filtro e a aplicação carregou com os dados de Carreta. `pnpm check` e `pnpm build` passaram.
+
+## Previsão mensal
+
+Adicionada a aba **Previsões**, usando o histórico filtrado para projetar seis meses à frente. O modelo combina tendência linear recente e sazonalidade mensal. A tela exibe histórico, linha projetada, tabela de valores e MAPE indicativo de referência. Validação no browser com o padrão Carreta: 57 meses históricos, projeção de 2026-11 a 2027-04 e valores calculados. `pnpm check` e `pnpm build` passaram.

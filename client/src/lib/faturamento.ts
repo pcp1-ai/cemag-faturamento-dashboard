@@ -1278,3 +1278,57 @@ export function gerarExportacaoPersonalizada(dados: TransacaoTratada[], granular
   }
   return Array.from(pivot.values());
 }
+
+
+export interface PrevisaoMensal {
+  ano_mes: string;
+  mes_num: number;
+  realizado: number | null;
+  previsao: number | null;
+  tipo: "Histórico" | "Previsão";
+}
+
+export function gerarPrevisaoMensal(dados: TransacaoTratada[], horizonte = 6): { serie: PrevisaoMensal[]; mape: number | null; metodo: string; historicoMeses: number } {
+  const mensal = new Map<string, number>();
+  for (const d of dados) mensal.set(d.ano_mes, (mensal.get(d.ano_mes) || 0) + d.faturamento);
+  const chaves = Array.from(mensal.keys()).sort();
+  if (chaves.length < 6) return { serie: [], mape: null, metodo: "Histórico insuficiente", historicoMeses: chaves.length };
+  const valores = chaves.map((k) => mensal.get(k) || 0);
+  const ultimos = Math.min(24, valores.length);
+  const inicio = valores.length - ultimos;
+  const janela = valores.slice(inicio);
+  const media = janela.reduce((a, b) => a + b, 0) / Math.max(1, janela.length);
+  const fatores: Record<number, number[]> = {};
+  chaves.slice(0, Math.max(0, chaves.length - 6)).forEach((k) => {
+    const mes = Number(k.split("-")[1]);
+    (fatores[mes] ||= []).push(mensal.get(k) || 0);
+  });
+  const mediasSazonais: Record<number, number> = {};
+  for (let mes = 1; mes <= 12; mes++) {
+    const arr = fatores[mes] || [];
+    mediasSazonais[mes] = arr.length && media > 0 ? (arr.reduce((a, b) => a + b, 0) / arr.length) / media : 1;
+  }
+  const xs = janela.map((_, i) => i + 1);
+  const xbar = xs.reduce((a, b) => a + b, 0) / xs.length;
+  const ybar = janela.reduce((a, b) => a + b, 0) / janela.length;
+  const den = xs.reduce((a, x) => a + (x - xbar) ** 2, 0) || 1;
+  const slope = xs.reduce((a, x, i) => a + (x - xbar) * (janela[i] - ybar), 0) / den;
+  const intercept = ybar - slope * xbar;
+  const previsoes: PrevisaoMensal[] = chaves.map((k, i) => ({ ano_mes: k, mes_num: Number(k.split("-")[1]), realizado: valores[i], previsao: null, tipo: "Histórico" }));
+  const ultimo = new Date(Number(chaves[chaves.length - 1].split("-")[0]), Number(chaves[chaves.length - 1].split("-")[1]), 1);
+  for (let i = 1; i <= horizonte; i++) {
+    const dt = new Date(ultimo.getFullYear(), ultimo.getMonth() + i, 1);
+    const mes = dt.getMonth() + 1;
+    const base = Math.max(0, intercept + slope * (ultimos + i));
+    const valor = Math.max(0, base * (mediasSazonais[mes] || 1));
+    previsoes.push({ ano_mes: `${dt.getFullYear()}-${String(mes).padStart(2, "0")}`, mes_num: mes, realizado: null, previsao: valor, tipo: "Previsão" });
+  }
+  const holdout = Math.min(3, Math.floor(valores.length / 4));
+  let erro = 0; let n = 0;
+  if (holdout >= 1) {
+    for (let i = valores.length - holdout; i < valores.length; i++) {
+      if (valores[i] !== 0) { erro += Math.abs((valores[i] - valores[i - 1]) / valores[i]); n++; }
+    }
+  }
+  return { serie: previsoes, mape: n ? (erro / n) * 100 : null, metodo: "Tendência linear + sazonalidade mensal", historicoMeses: chaves.length };
+}
