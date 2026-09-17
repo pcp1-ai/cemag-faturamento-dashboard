@@ -67,3 +67,7 @@ O cabeçalho agora exibe: **Base** (período total disponível), **Filtro** (per
 ## Base oficial carregada
 
 A base oficial `análisefaturamento_dre-tabelaFaturamento(2).csv` foi incorporada como `client/public/data/tabelaFaturamento.csv`. O arquivo possui 16.301 registros brutos, 16.300 datas válidas, período de 08/01/2018 a 16/09/2026 e anos de 2018 a 2026. O dashboard foi recarregado após limpar a base antiga persistida e confirmou o período `08/01/2018 a 16/09/2026`, 16.300 linhas válidas e 13.365 linhas no filtro padrão. `pnpm check` e `pnpm build` passaram.
+
+## Diagnóstico da Base
+
+Adicionada a aba **Diagnóstico da base**, com cobertura temporal, registros originais/válidos, linhas sem data, meses esperados, meses sem venda, UFs não identificadas, indicadores de qualidade, gráfico de faturamento anual de 2018 a 2026 e lista de meses sem registros. A base oficial foi mantida como fonte. `pnpm check` e `pnpm build` passaram; a aba aparece na navegação após recarregar o dashboard.

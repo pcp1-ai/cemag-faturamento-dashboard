@@ -134,6 +134,7 @@ async function carregarBasePersistente(): Promise<{ rows: any[]; nome: string } 
 const ABAS = [
   { id: "visao_geral", label: "🏠 Visão geral" },
   { id: "metas", label: "🎯 Metas mensais" },
+  { id: "diagnostico", label: "🔎 Diagnóstico da base" },
   { id: "modo_apresentacao", label: "📺 Modo apresentação" },
   { id: "ano_ano", label: "📅 Ano x ano" },
   { id: "mes_mes", label: "🗓️ Mês x mês" },
@@ -623,6 +624,34 @@ export default function Home() {
     const grupos = agregar(dadosFiltrados, ["cidade", "uf"]);
     return grupos.map((row: any) => ({ cidade: row.cidade, uf: row.uf, faturamento: row.faturamento, quantidade: row.quantidade, pedidos: row.pedidos, clientes: row.clientes }));
   }, [dadosFiltrados]);
+
+  const diagnosticoBase = useMemo(() => {
+    const dataMin = meta?.data_min as Date | undefined;
+    const dataMax = meta?.data_max as Date | undefined;
+    const mesesEsperados: string[] = [];
+    if (dataMin && dataMax) {
+      const cursor = new Date(dataMin.getFullYear(), dataMin.getMonth(), 1);
+      const fim = new Date(dataMax.getFullYear(), dataMax.getMonth(), 1);
+      while (cursor <= fim) {
+        mesesEsperados.push(`${cursor.getFullYear()}-${String(cursor.getMonth() + 1).padStart(2, "0")}`);
+        cursor.setMonth(cursor.getMonth() + 1);
+      }
+    }
+    const mesesComVenda = new Set(dados.map((d) => d.ano_mes));
+    const mesesSemVenda = mesesEsperados.filter((mes) => !mesesComVenda.has(mes));
+    const anual = agregar(dados, ["ano"]).sort((a, b) => a.ano - b.ano);
+    return {
+      mesesEsperados,
+      mesesSemVenda,
+      anual,
+      qtdNaoPositiva: dados.filter((d) => d.quantidade <= 0).length,
+      faturamentoNaoPositivo: dados.filter((d) => d.faturamento <= 0).length,
+      ufNaoIdentificada: dados.filter((d) => !d.uf || d.uf === "Não identificado").length,
+      cidadeNaoIdentificada: dados.filter((d) => !d.cidade || d.cidade === "Não identificado").length,
+      produtoNaoInformado: dados.filter((d) => !d.produto || d.produto === "Não informado").length,
+      clienteNaoInformado: dados.filter((d) => !d.cliente || d.cliente === "Não informado").length,
+    };
+  }, [dados, meta]);
 
   // Formas de venda texto para exibição
   const formasVendaTexto = filtros.considerarTodasFormas
@@ -1893,6 +1922,49 @@ export default function Home() {
                         );
                       })()}
                     </div>
+                  </div>
+                </div>
+              )}
+
+              {/* ========================================================= */}
+              {/* ABA: DIAGNÓSTICO DA BASE */}
+              {/* ========================================================= */}
+              {abaAtiva === "diagnostico" && (
+                <div className="space-y-6">
+                  <div className="bg-slate-900/60 p-5 rounded-xl border border-slate-800">
+                    <h2 className="text-lg font-bold text-white">Diagnóstico da Base</h2>
+                    <p className="text-xs text-slate-400 mt-1">Cobertura temporal, consistência dos dados e faturamento anual da base completa, sem os filtros comerciais.</p>
+                  </div>
+                  <div className="grid grid-cols-2 md:grid-cols-4 xl:grid-cols-6 gap-3">
+                    {[
+                      ["Registros originais", meta?.linhas_originais || 0, "text-slate-200"],
+                      ["Registros válidos", meta?.linhas_validas || 0, "text-emerald-300"],
+                      ["Sem data", meta?.linhas_sem_data_removidas || 0, "text-amber-300"],
+                      ["Meses esperados", diagnosticoBase.mesesEsperados.length, "text-sky-300"],
+                      ["Meses sem venda", diagnosticoBase.mesesSemVenda.length, diagnosticoBase.mesesSemVenda.length ? "text-amber-300" : "text-emerald-300"],
+                      ["UFs não identificadas", diagnosticoBase.ufNaoIdentificada, diagnosticoBase.ufNaoIdentificada ? "text-amber-300" : "text-emerald-300"],
+                    ].map(([label, value, color]) => (
+                      <div key={String(label)} className="bg-slate-900/80 border border-slate-800 rounded-xl p-4">
+                        <div className="text-[10px] uppercase tracking-wide text-slate-500">{label}</div>
+                        <div className={`text-xl font-bold mt-2 ${color}`}>{Number(value).toLocaleString("pt-BR")}</div>
+                      </div>
+                    ))}
+                  </div>
+                  <div className="grid grid-cols-1 xl:grid-cols-2 gap-6">
+                    <div className="bg-slate-900/80 border border-slate-800 rounded-xl p-5">
+                      <h3 className="text-sm font-bold text-white mb-4">Faturamento anual</h3>
+                      <div className="h-72"><ResponsiveContainer width="100%" height="100%"><BarChart data={diagnosticoBase.anual} margin={{ top: 10, right: 20, left: 20, bottom: 10 }}><CartesianGrid strokeDasharray="3 3" stroke="#334155" opacity={0.5} /><XAxis dataKey="ano" stroke="#94A3B8" fontSize={11} /><YAxis stroke="#94A3B8" fontSize={10} tickFormatter={(v) => valorResumido(v, true)} /><RechartsTooltip contentStyle={{ backgroundColor: "#0F172A", borderColor: "#334155" }} formatter={(v: any) => [formatarMoeda(v), "Faturamento"]} /><Bar dataKey="faturamento" fill={CEMAG_ORANGE} radius={[4, 4, 0, 0]} /></BarChart></ResponsiveContainer></div>
+                    </div>
+                    <div className="bg-slate-900/80 border border-slate-800 rounded-xl p-5">
+                      <h3 className="text-sm font-bold text-white mb-4">Indicadores de qualidade</h3>
+                      <div className="space-y-2 text-xs">
+                        {[["Quantidade não positiva", diagnosticoBase.qtdNaoPositiva], ["Faturamento não positivo", diagnosticoBase.faturamentoNaoPositivo], ["Cidade não identificada", diagnosticoBase.cidadeNaoIdentificada], ["Produto não informado", diagnosticoBase.produtoNaoInformado], ["Cliente não informado", diagnosticoBase.clienteNaoInformado]].map(([label, value]) => <div key={String(label)} className="flex justify-between border-b border-slate-800 py-2"><span className="text-slate-400">{label}</span><strong className={Number(value) ? "text-amber-300" : "text-emerald-300"}>{Number(value).toLocaleString("pt-BR")}</strong></div>)}
+                      </div>
+                    </div>
+                  </div>
+                  <div className="bg-slate-900/80 border border-slate-800 rounded-xl p-5">
+                    <h3 className="text-sm font-bold text-white mb-3">Meses sem registros</h3>
+                    {diagnosticoBase.mesesSemVenda.length ? <div className="flex flex-wrap gap-2">{diagnosticoBase.mesesSemVenda.map((mes) => <span key={mes} className="px-2 py-1 rounded bg-amber-500/10 border border-amber-500/30 text-amber-300 text-xs">{mes}</span>)}</div> : <p className="text-xs text-emerald-300">Todos os meses do intervalo possuem pelo menos um registro.</p>}
                   </div>
                 </div>
               )}
