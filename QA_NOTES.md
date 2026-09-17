@@ -63,3 +63,7 @@ Adicionadas buscas instantâneas aos multiselects de Ano, Região, UF, Cidade, R
 ## Resumo contextual de períodos
 
 O cabeçalho agora exibe: **Base** (período total disponível), **Filtro** (período solicitado pelo usuário), **Resultado** (período efetivo dos registros após todos os filtros) e **Linhas** (registros encontrados versus total válido). A validação mostrou a base `05/01/2024 a 27/12/2025`, filtro padrão igual e resultado efetivo até `26/12/2025`; ao mudar o início para `01/01/2025`, o filtro e as linhas atualizaram corretamente para `274`. Filtros foram restaurados ao final. `pnpm check` e `pnpm build` passaram.
+
+## Base oficial carregada
+
+A base oficial `análisefaturamento_dre-tabelaFaturamento(2).csv` foi incorporada como `client/public/data/tabelaFaturamento.csv`. O arquivo possui 16.301 registros brutos, 16.300 datas válidas, período de 08/01/2018 a 16/09/2026 e anos de 2018 a 2026. O dashboard foi recarregado após limpar a base antiga persistida e confirmou o período `08/01/2018 a 16/09/2026`, 16.300 linhas válidas e 13.365 linhas no filtro padrão. `pnpm check` e `pnpm build` passaram.
