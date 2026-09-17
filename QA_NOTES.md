@@ -83,3 +83,7 @@ Ajustados títulos e cabeçalhos com quebra segura de texto, cartões e colunas 
 ## Período padrão desde 2022
 
 O dashboard agora abre com filtro padrão de `01/01/2022` até a data máxima da base. A base continua completa desde 2018, e o usuário pode alterar manualmente o início para consultar anos anteriores. Browser confirmou `Filtro: 01/01/2022 a 16/09/2026`; `pnpm check` e `pnpm build` passaram.
+
+## Carreta como tipo padrão
+
+O filtro `Tipo de Produto` agora inicia com **Carreta** selecionado. As categorias Conjunto, Peça, Sucata e Outros permanecem disponíveis para seleção adicional. Browser confirmou `Limpar (1)` no filtro e a aplicação carregou com os dados de Carreta. `pnpm check` e `pnpm build` passaram.

@@ -211,7 +211,7 @@ export default function Home() {
     descricoesGenericas: [],
     gruposModelo: [],
     familias: [],
-    tiposProduto: [],
+    tiposProduto: ["Carreta"],
     buscaProduto: "",
   });
 
