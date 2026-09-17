@@ -134,6 +134,8 @@ export default function Home() {
   const [abaAtiva, setAbaAtiva] = useState<string>("visao_geral");
   const [ufMapaSelecionada, setUfMapaSelecionada] = useState<string | null>(null);
   const [isMobileMenuOpen, setIsMobileMenuOpen] = useState<boolean>(false);
+  const [sidebarOculta, setSidebarOculta] = useState<boolean>(false);
+  const [visualizacaoExpandida, setVisualizacaoExpandida] = useState<boolean>(false);
 
   // Filtros Globais
   const [filtros, setFiltros] = useState<FiltrosState>({
@@ -612,6 +614,22 @@ export default function Home() {
 
           <div className="flex items-center gap-3">
             <button
+              onClick={() => setSidebarOculta((v) => !v)}
+              className="hidden lg:flex items-center gap-1.5 text-xs bg-slate-800 hover:bg-slate-700 text-slate-200 px-3 py-1.5 rounded-lg border border-slate-700 transition-colors shadow-sm"
+              title={sidebarOculta ? "Mostrar painel de filtros" : "Ocultar painel de filtros"}
+            >
+              <Sliders className="w-3.5 h-3.5 text-sky-300" />
+              <span>{sidebarOculta ? "Mostrar filtros" : "Ocultar filtros"}</span>
+            </button>
+            <button
+              onClick={() => setVisualizacaoExpandida((v) => !v)}
+              className="flex items-center gap-1.5 text-xs bg-slate-800 hover:bg-slate-700 text-slate-200 px-3 py-1.5 rounded-lg border border-slate-700 transition-colors shadow-sm"
+              title={visualizacaoExpandida ? "Sair da visualização ampliada" : "Expandir gráficos e mapas"}
+            >
+              {visualizacaoExpandida ? <Eye className="w-3.5 h-3.5 text-orange-300" /> : <Tv className="w-3.5 h-3.5 text-orange-300" />}
+              <span className="hidden sm:inline">{visualizacaoExpandida ? "Sair da expansão" : "Expandir visualizações"}</span>
+            </button>
+            <button
               onClick={handleResetFiltros}
               className="flex items-center gap-1.5 text-xs bg-slate-800 hover:bg-slate-700 text-slate-200 px-3 py-1.5 rounded-lg border border-slate-700 transition-colors shadow-sm"
               title="Restaurar parâmetros padrão"
@@ -646,7 +664,7 @@ export default function Home() {
 
       {/* Conteúdo com Sidebar fixa na esquerda */}
       <div className="flex-1 flex max-w-[1700px] w-full mx-auto">
-        <SidebarFilters
+        {!sidebarOculta && <SidebarFilters
           filtros={filtros}
           setFiltros={setFiltros}
           opcoesFiltros={opcoesFiltros}
@@ -657,10 +675,11 @@ export default function Home() {
           totalLinhasValidas={meta?.linhas_validas || 0}
           isOpenMobile={isMobileMenuOpen}
           onCloseMobile={() => setIsMobileMenuOpen(false)}
-        />
+        />}
 
         {/* Área Central Principal */}
-        <main className="flex-1 p-4 md:p-6 overflow-x-hidden">
+        <main className={`${visualizacaoExpandida ? "visualizacao-ampliada fixed inset-0 z-50 bg-[#0E1117] overflow-y-auto" : "flex-1"} p-4 md:p-6 overflow-x-hidden`}>
+          {visualizacaoExpandida && <div className="sticky top-0 z-20 flex justify-end pb-3"><button type="button" onClick={() => setVisualizacaoExpandida(false)} className="flex items-center gap-2 rounded-lg border border-orange-500/40 bg-slate-900 px-3 py-2 text-xs font-semibold text-orange-300 shadow-lg hover:bg-slate-800"><Eye className="h-4 w-4" /> Sair da visualização ampliada</button></div>}
           {/* Navegação Superior de Abas (Idêntica ao st.radio PAGINAS) */}
           <div className="mb-5 overflow-x-auto pb-1 scrollbar-thin">
             <div className="flex items-center gap-1.5 min-w-max bg-slate-900/80 p-1.5 rounded-xl border border-slate-800">

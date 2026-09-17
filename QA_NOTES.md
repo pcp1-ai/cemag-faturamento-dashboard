@@ -37,3 +37,7 @@ O mapa municipal deixou de exibir o Brasil inteiro por padrão. Agora calcula au
 ## Drill-down estado → municípios
 
 O mapa estadual agora aceita clique em cada polígono. Ao selecionar um estado, o painel municipal mostra somente os municípios daquele estado, ajusta o enquadramento territorial, mantém demarcações, cores, tooltip e ranking, e oferece o botão **Voltar aos estados**. Sem seleção, o painel municipal fica em estado vazio orientando o usuário a clicar em um estado. Teste no browser confirmou `detail=true`, `back=true` e `empty=false`; `pnpm check` e `pnpm build` passaram.
+
+## Visualização expandida e painel lateral
+
+Adicionados os controles **Ocultar filtros/Mostrar filtros** e **Expandir visualizações/Sair da visualização ampliada** no cabeçalho. O modo expandido ocupa a tela, aumenta a área vertical de gráficos e mapas e mantém o botão de saída fixo. Validação no browser confirmou `sidebarHidden=true`, `expanded=true` e `exit=true`; `pnpm check` e `pnpm build` passaram.

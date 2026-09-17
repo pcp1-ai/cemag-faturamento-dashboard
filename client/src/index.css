@@ -175,3 +175,10 @@
     }
   }
 }
+
+@layer components {
+  .visualizacao-ampliada .h-64 { height: 65vh; min-height: 420px; }
+  .visualizacao-ampliada .h-72 { height: 72vh; min-height: 480px; }
+  .visualizacao-ampliada .max-h-\[600px\] { max-height: 78vh; }
+  .visualizacao-ampliada [class*="recharts-wrapper"] { min-height: 100%; }
+}
