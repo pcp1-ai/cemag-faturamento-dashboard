@@ -917,9 +917,9 @@ export default function Home() {
                     </h3>
                     <div className="h-72 w-full">
                       <ResponsiveContainer width="100%" height="100%">
-                        <LineChart data={dadosMensais} margin={{ top: 10, right: 20, left: 20, bottom: 20 }}>
+                        <LineChart data={dadosMensais} margin={{ top: 10, right: 20, left: 20, bottom: 34 }}>
                           <CartesianGrid strokeDasharray="3 3" stroke="#334155" opacity={0.5} />
-                          <XAxis dataKey="ano_mes" stroke="#94A3B8" fontSize={11} />
+                          <XAxis dataKey="ano_mes" interval="preserveStartEnd" angle={-18} textAnchor="end" height={42} stroke="#94A3B8" fontSize={10} />
                           <YAxis
                             stroke="#94A3B8"
                             fontSize={11}
@@ -1316,7 +1316,7 @@ export default function Home() {
                           </h3>
                           <div className="h-72 w-full">
                             <ResponsiveContainer width="100%" height="100%">
-                              <BarChart data={comparativoMensal} margin={{ top: 10, right: 30, left: 30, bottom: 20 }}>
+                              <BarChart data={comparativoMensal} margin={{ top: 10, right: 30, left: 30, bottom: 42 }}>
                                 <CartesianGrid strokeDasharray="3 3" stroke="#334155" opacity={0.5} />
                                 <XAxis dataKey="mes" stroke="#94A3B8" fontSize={11} />
                                 <YAxis stroke="#94A3B8" fontSize={11} tickFormatter={(v) => valorResumido(v, true)} />
@@ -1324,7 +1324,7 @@ export default function Home() {
                                   contentStyle={{ backgroundColor: "#0F172A", borderColor: "#334155" }}
                                   formatter={(v: any) => [formatarMoeda(v), "Faturamento"]}
                                 />
-                                <Legend />
+                                <Legend wrapperStyle={{ paddingTop: 10, fontSize: 11 }} />
                                 <Bar dataKey={String(anoBaseYoY)} fill={CEMAG_BLUE} radius={[4, 4, 0, 0]} />
                                 <Bar dataKey={String(anoCompYoY)} fill={CEMAG_ORANGE} radius={[4, 4, 0, 0]} />
                               </BarChart>
@@ -1357,7 +1357,7 @@ export default function Home() {
                       <ResponsiveContainer width="100%" height="100%">
                         <BarChart data={dadosMensais} margin={{ top: 10, right: 30, left: 30, bottom: 20 }}>
                           <CartesianGrid strokeDasharray="3 3" stroke="#334155" opacity={0.5} />
-                          <XAxis dataKey="ano_mes" stroke="#94A3B8" fontSize={11} />
+                          <XAxis dataKey="ano_mes" interval="preserveStartEnd" angle={-18} textAnchor="end" height={42} stroke="#94A3B8" fontSize={10} />
                           <YAxis stroke="#94A3B8" fontSize={11} tickFormatter={(v) => valorResumido(v, true)} />
                           <RechartsTooltip
                             contentStyle={{ backgroundColor: "#0F172A", borderColor: "#334155" }}

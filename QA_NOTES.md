@@ -75,3 +75,7 @@ Adicionada a aba **Diagnóstico da base**, com cobertura temporal, registros ori
 ## Filtro por tipo de produto
 
 Adicionada classificação automática `tipo_produto` com as categorias **Carreta, Conjunto, Peça, Sucata e Outros**, usando produto, categoria, descrição e forma de venda. O filtro pesquisável foi incluído no painel lateral e é aplicado às análises e indicadores. Teste no browser: selecionar `Peça` reduziu o resultado de 13.365 para 2.044 linhas; o estado padrão foi restaurado. `pnpm check` e `pnpm build` passaram.
+
+## Correção de sobreposição visual
+
+Ajustados títulos e cabeçalhos com quebra segura de texto, cartões e colunas de grid com `min-width: 0`, legendas responsivas, eixos menores em telas estreitas e maior margem inferior nos gráficos mensal e comparativo com legenda. O gráfico mensal agora usa rótulos inclinados e espaçados para evitar colisão. `pnpm check`, `pnpm build` e validação visual no browser passaram.

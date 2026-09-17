@@ -182,3 +182,42 @@
   .visualizacao-ampliada .max-h-\[600px\] { max-height: 78vh; }
   .visualizacao-ampliada [class*="recharts-wrapper"] { min-height: 100%; }
 }
+
+
+@layer components {
+  /* Protege títulos, cartões e gráficos contra sobreposição em larguras menores. */
+  h1, h2, h3, h4, h5, h6 {
+    line-height: 1.25;
+    overflow-wrap: anywhere;
+  }
+
+  .grid > *, .recharts-responsive-container, .recharts-wrapper {
+    min-width: 0;
+  }
+
+  .recharts-wrapper {
+    overflow: visible;
+  }
+
+  .recharts-legend-wrapper {
+    line-height: 1.25 !important;
+    white-space: normal !important;
+  }
+
+  .recharts-legend-item-text {
+    display: inline-block;
+    max-width: 14rem;
+    white-space: normal;
+    vertical-align: middle;
+  }
+
+  @media (max-width: 640px) {
+    .recharts-cartesian-axis-tick-value {
+      font-size: 9px;
+    }
+
+    .recharts-legend-wrapper {
+      font-size: 10px !important;
+    }
+  }
+}
