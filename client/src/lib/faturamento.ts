@@ -424,15 +424,18 @@ export function prepararDados(
     const row = linhasRaw[idx];
     const prodVal = colunas.produto ? String(row[colunas.produto] ?? "").trim() : "";
     const cliVal = colunas.cliente ? String(row[colunas.cliente] ?? "").trim() : "";
-    const dataVal = colunas.data_emissao ? row[colunas.data_emissao] : null;
+    const dataEmissaoVal = colunas.data_emissao ? row[colunas.data_emissao] : null;
+    const dataMovimentoVal = colunas.data_movimento ? row[colunas.data_movimento] : null;
 
     if (prodVal === colunas.produto || cliVal === colunas.cliente) {
       cabecalhoIgnorado++;
       continue;
     }
 
-    const dtEmissao = parseDataBr(dataVal);
-    if (!dtEmissao) {
+    const dtEmissaoFallback = parseDataBr(dataEmissaoVal);
+    const dtMovimento = parseDataBr(dataMovimentoVal);
+    const dtPrincipal = dtMovimento || dtEmissaoFallback;
+    if (!dtPrincipal) {
       semDataIgnorado++;
       continue;
     }
@@ -504,16 +507,16 @@ export function prepararDados(
     const impostosPrincipais = ipi + pis + cofins + icms;
     const fatLiquidoAprox = faturamento - tributosDre - frete;
 
-    const ano = dtEmissao.getFullYear();
-    const mesNum = dtEmissao.getMonth() + 1;
+    const ano = dtPrincipal.getFullYear();
+    const mesNum = dtPrincipal.getMonth() + 1;
     const mes = MESES[mesNum] || `M${mesNum}`;
     const mesCompleto = MESES_COMPLETOS[mesNum] || "";
     const anoMes = `${ano}-${String(mesNum).padStart(2, "0")}`;
     const anoMesData = `${ano}-${String(mesNum).padStart(2, "0")}-01`;
     const trimestre = `T${Math.floor((mesNum - 1) / 3) + 1}`;
     const semestre = mesNum <= 6 ? "1º semestre" : "2º semestre";
-    const diaSemana = diasSemanaMap[dtEmissao.getDay()] || "";
-    const diaMes = dtEmissao.getDate();
+    const diaSemana = diasSemanaMap[dtPrincipal.getDay()] || "";
+    const diaMes = dtPrincipal.getDate();
 
     const qtdTicket = quantidade > 0 ? quantidade : 0;
     const fatTicket = quantidade > 0 ? faturamento : 0;
@@ -541,8 +544,9 @@ export function prepararDados(
       categoria_produto: catProduto,
       tipo_venda: tipoVenda,
       pedido,
-      data_emissao: dtEmissao,
-      data_str: dtEmissao.toLocaleDateString("pt-BR"),
+      data_emissao: dtPrincipal,
+      data_movimento: dtMovimento || undefined,
+      data_str: dtPrincipal.toLocaleDateString("pt-BR"),
       ano,
       mes_num: mesNum,
       mes,
