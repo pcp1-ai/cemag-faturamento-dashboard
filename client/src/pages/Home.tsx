@@ -150,8 +150,20 @@ const ABAS = [
   { id: "exportacoes", label: "📤 Exportações" },
 ];
 
-const DataTable: React.FC<{ rows: any[]; columns: string[] }> = ({ rows, columns }) => (
-  <div className="max-h-80 overflow-auto border border-slate-800 rounded-lg">
+const DataTable: React.FC<{ rows: any[]; columns: string[]; exportName?: string }> = ({ rows, columns, exportName = "tabela_dashboard" }) => (
+  <div className="border border-slate-800 rounded-lg">
+    <div className="flex flex-wrap items-center justify-between gap-2 bg-slate-950/80 px-3 py-2 border-b border-slate-800">
+      <span className="text-[10px] text-slate-500">{rows.length.toLocaleString("pt-BR")} linha(s) disponíveis</span>
+      <div className="flex gap-2">
+        <button type="button" onClick={() => exportarTabelaCsv(rows.map((row) => Object.fromEntries(columns.map((column) => [column, row[column]]))), `${exportName}.csv`)} className="inline-flex items-center gap-1 rounded bg-slate-800 px-2 py-1 text-[10px] text-slate-200 hover:bg-slate-700">
+          <Download className="w-3 h-3" /> CSV completo
+        </button>
+        <button type="button" onClick={() => exportarTabelaExcel(rows.map((row) => Object.fromEntries(columns.map((column) => [column, row[column]]))), `${exportName}.xlsx`, exportName.slice(0, 31))} className="inline-flex items-center gap-1 rounded bg-orange-600 px-2 py-1 text-[10px] text-white hover:bg-orange-500">
+          <FileSpreadsheet className="w-3 h-3" /> Excel completo
+        </button>
+      </div>
+    </div>
+    <div className="max-h-80 overflow-auto">
     <table className="w-full text-left text-xs text-slate-300">
       <thead className="bg-slate-950 sticky top-0 text-[10px] uppercase text-slate-400">
         <tr>{columns.map((c) => <th key={c} className="p-2 whitespace-nowrap">{c}</th>)}</tr>
@@ -172,7 +184,8 @@ const DataTable: React.FC<{ rows: any[]; columns: string[] }> = ({ rows, columns
         ))}
       </tbody>
     </table>
-    {rows.length > 300 && <div className="p-2 text-[10px] text-slate-500 text-center">Prévia com 300 de {rows.length} linhas.</div>}
+    {rows.length > 300 && <div className="p-2 text-[10px] text-slate-500 text-center">Prévia com 300 de {rows.length} linhas. Os botões acima exportam tudo.</div>}
+    </div>
   </div>
 );
 
@@ -537,6 +550,10 @@ export default function Home() {
   const [metaManualValor, setMetaManualValor] = useState<string>("");
   const [metaManualSalva, setMetaManualSalva] = useState<MetaMensal | null>(null);
   const [metaStatus, setMetaStatus] = useState<string>("");
+  // Filtros exclusivos da análise de metas. Vazios significam toda a base.
+  const [metaDataInicio, setMetaDataInicio] = useState<string>("");
+  const [metaDataFim, setMetaDataFim] = useState<string>("");
+  const [metaTiposProduto, setMetaTiposProduto] = useState<string[]>([]);
 
   useEffect(() => {
     try {
@@ -599,9 +616,23 @@ export default function Home() {
     return agg;
   }, [dadosFiltrados]);
 
+  // A análise de metas mostra todo o histórico disponível, sem obedecer ao período global.
+  const dadosMetas = useMemo(() => dados.filter((item) => {
+    const dataItem = item.data_emissao.toISOString().slice(0, 10);
+    const dentroInicio = !metaDataInicio || dataItem >= metaDataInicio;
+    const dentroFim = !metaDataFim || dataItem <= metaDataFim;
+    const dentroTipo = !metaTiposProduto.length || metaTiposProduto.includes(item.tipo_produto);
+    return dentroInicio && dentroFim && dentroTipo;
+  }), [dados, metaDataInicio, metaDataFim, metaTiposProduto]);
+  const dadosMensaisBase = useMemo(() => {
+    const agg = agregar(dadosMetas, ["ano_mes", "ano_mes_data", "ano", "mes_num", "mes"]);
+    agg.sort((a, b) => a.ano_mes_data.localeCompare(b.ano_mes_data));
+    return agg;
+  }, [dadosMetas]);
+
   const atingimentoMensal = useMemo(() => {
     const mapa = new Map<string, any>();
-    for (const row of dadosMensais) mapa.set(`${row.ano}-${row.mes_num}`, { ...row, realizado: row.faturamento });
+    for (const row of dadosMensaisBase) mapa.set(`${row.ano}-${row.mes_num}`, { ...row, realizado: row.faturamento });
     const metas = [...metasImportadas, ...(metaManualSalva ? [metaManualSalva] : [])];
     for (const meta of metas) {
       const key = `${meta.ano}-${meta.mes}`;
@@ -610,7 +641,7 @@ export default function Home() {
       mapa.set(key, row);
     }
     return Array.from(mapa.values()).filter((row) => row.meta !== undefined).sort((a, b) => `${a.ano}-${a.mes_num}`.localeCompare(`${b.ano}-${b.mes_num}`));
-  }, [dadosMensais, metasImportadas, metaManualSalva]);
+  }, [dadosMensaisBase, metasImportadas, metaManualSalva]);
 
   // Mapa de UF para componente MapBrasil
   const dadosPorUf = useMemo(() => {
@@ -1031,8 +1062,13 @@ export default function Home() {
                     </div>
                   </div>
                   {metaStatus && <div className="rounded-lg border border-sky-800/60 bg-sky-950/30 px-3 py-2 text-xs text-sky-200">{metaStatus}</div>}
-                  {(() => { const vigente = atingimentoMensal.find((r) => r.ano === hoje.getFullYear() && r.mes_num === hoje.getMonth() + 1); const realizadoAtual = dadosFiltrados.filter((d) => d.ano === hoje.getFullYear() && d.mes_num === hoje.getMonth() + 1).reduce((s, d) => s + d.faturamento, 0); const diasNoMes = new Date(hoje.getFullYear(), hoje.getMonth() + 1, 0).getDate(); const projecao = hoje.getMonth() === 11 ? realizadoAtual / Math.max(hoje.getDate(), 1) * diasNoMes : realizadoAtual / Math.max(hoje.getDate(), 1) * diasNoMes; return <div className="grid grid-cols-2 md:grid-cols-4 gap-3"><div className="bg-slate-900 border border-slate-800 p-3 rounded-lg"><span className="text-xs text-slate-400">Meta vigente</span><div className="text-xl font-bold text-orange-400">{formatarMoeda(vigente?.meta || 0)}</div></div><div className="bg-slate-900 border border-slate-800 p-3 rounded-lg"><span className="text-xs text-slate-400">Realizado no mês</span><div className="text-xl font-bold text-white">{formatarMoeda(realizadoAtual)}</div></div><div className="bg-slate-900 border border-slate-800 p-3 rounded-lg"><span className="text-xs text-slate-400">Atingimento atual</span><div className={`text-xl font-bold ${(vigente?.meta && realizadoAtual / vigente.meta >= 1) ? "text-green-400" : "text-amber-400"}`}>{vigente?.meta ? formatarPercentual(realizadoAtual / vigente.meta) : "Sem meta"}</div></div><div className="bg-slate-900 border border-slate-800 p-3 rounded-lg"><span className="text-xs text-slate-400">Projeção do mês</span><div className="text-xl font-bold text-sky-400">{formatarMoeda(projecao)}</div></div></div>; })()}
-                  <div className="bg-slate-900/60 border border-slate-800 rounded-xl p-4"><h3 className="text-sm font-bold text-white mb-3">Atingimento por mês</h3>{atingimentoMensal.length ? <DataTable rows={atingimentoMensal.map((r) => ({ ...r, status_meta: r.atingimento >= 1 ? "Atingida" : r.ano === hoje.getFullYear() && r.mes_num === hoje.getMonth() + 1 ? "Em andamento" : "Não atingida" }))} columns={["ano_mes","realizado","meta","atingimento","diferenca_meta","status_meta","origem_meta"]} /> : <div className="rounded-lg border border-dashed border-slate-700 p-8 text-center text-sm text-slate-400">Nenhuma meta cadastrada. Importe um CSV ou salve a meta do mês vigente.</div>}</div>
+                  <div className="rounded-xl border border-sky-900/70 bg-sky-950/20 p-4 space-y-3">
+                    <div className="flex flex-wrap items-center justify-between gap-2"><div><h3 className="text-sm font-bold text-sky-200">Filtros exclusivos da análise de metas</h3><p className="text-[11px] text-slate-400">Por padrão, considera todo o faturamento da base e ignora os filtros laterais.</p></div><button type="button" onClick={() => { setMetaDataInicio(""); setMetaDataFim(""); setMetaTiposProduto([]); }} className="rounded bg-slate-800 px-2 py-1 text-[11px] text-slate-300 hover:bg-slate-700">Usar toda a base</button></div>
+                    <div className="grid grid-cols-1 md:grid-cols-3 gap-3"><label className="text-xs text-slate-400">Data inicial<input type="date" value={metaDataInicio} onChange={(e) => setMetaDataInicio(e.target.value)} className="mt-1 w-full rounded bg-slate-800 border border-slate-700 px-2 py-2 text-white" /></label><label className="text-xs text-slate-400">Data final<input type="date" value={metaDataFim} onChange={(e) => setMetaDataFim(e.target.value)} className="mt-1 w-full rounded bg-slate-800 border border-slate-700 px-2 py-2 text-white" /></label><label className="text-xs text-slate-400">Tipos de produto (vazio = todos)<select multiple value={metaTiposProduto} onChange={(e) => setMetaTiposProduto(Array.from(e.target.selectedOptions, (option) => option.value))} className="mt-1 w-full min-h-20 rounded bg-slate-800 border border-slate-700 px-2 py-2 text-white">{["Carreta", "Conjunto", "Peça", "Sucata", "Itens comprados", "Outros"].map((tipo) => <option key={tipo} value={tipo}>{tipo}</option>)}</select></label></div>
+                    <p className="text-[11px] text-slate-500">Registros considerados nesta análise: {dadosMetas.length.toLocaleString("pt-BR")} de {dados.length.toLocaleString("pt-BR")}.</p>
+                  </div>
+                  {(() => { const vigente = atingimentoMensal.find((r) => r.ano === hoje.getFullYear() && r.mes_num === hoje.getMonth() + 1); const realizadoAtual = dadosMetas.filter((d) => d.ano === hoje.getFullYear() && d.mes_num === hoje.getMonth() + 1).reduce((s, d) => s + d.faturamento, 0); const diasNoMes = new Date(hoje.getFullYear(), hoje.getMonth() + 1, 0).getDate(); const projecao = realizadoAtual / Math.max(hoje.getDate(), 1) * diasNoMes; return <div className="grid grid-cols-2 md:grid-cols-4 gap-3"><div className="bg-slate-900 border border-slate-800 p-3 rounded-lg"><span className="text-xs text-slate-400">Meta vigente</span><div className="text-xl font-bold text-orange-400">{formatarMoeda(vigente?.meta || 0)}</div></div><div className="bg-slate-900 border border-slate-800 p-3 rounded-lg"><span className="text-xs text-slate-400">Realizado no mês</span><div className="text-xl font-bold text-white">{formatarMoeda(realizadoAtual)}</div></div><div className="bg-slate-900 border border-slate-800 p-3 rounded-lg"><span className="text-xs text-slate-400">Atingimento atual</span><div className={`text-xl font-bold ${(vigente?.meta && realizadoAtual / vigente.meta >= 1) ? "text-green-400" : "text-amber-400"}`}>{vigente?.meta ? formatarPercentual(realizadoAtual / vigente.meta) : "Sem meta"}</div></div><div className="bg-slate-900 border border-slate-800 p-3 rounded-lg"><span className="text-xs text-slate-400">Projeção do mês</span><div className="text-xl font-bold text-sky-400">{formatarMoeda(projecao)}</div></div></div>; })()}
+                  <div className="bg-slate-900/60 border border-slate-800 rounded-xl p-4"><h3 className="text-sm font-bold text-white mb-3">Atingimento por mês</h3>{atingimentoMensal.length ? <DataTable exportName="atingimento_mensal" rows={atingimentoMensal.map((r) => ({ ...r, status_meta: r.atingimento >= 1 ? "Atingida" : r.ano === hoje.getFullYear() && r.mes_num === hoje.getMonth() + 1 ? "Em andamento" : "Não atingida" }))} columns={["ano_mes","realizado","meta","atingimento","diferenca_meta","status_meta","origem_meta"]} /> : <div className="rounded-lg border border-dashed border-slate-700 p-8 text-center text-sm text-slate-400">Nenhuma meta cadastrada. Importe um CSV ou salve a meta do mês vigente.</div>}</div>
                 </div>
               )}
 
