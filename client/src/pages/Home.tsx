@@ -150,7 +150,7 @@ const ABAS = [
   { id: "exportacoes", label: "📤 Exportações" },
 ];
 
-const DataTable: React.FC<{ rows: any[]; columns: string[]; exportName?: string }> = ({ rows, columns, exportName = "tabela_dashboard" }) => (
+const DataTable: React.FC<{ rows: any[]; columns: string[]; exportName?: string; percentColumns?: string[] }> = ({ rows, columns, exportName = "tabela_dashboard", percentColumns = [] }) => (
   <div className="border border-slate-800 rounded-lg">
     <div className="flex flex-wrap items-center justify-between gap-2 bg-slate-950/80 px-3 py-2 border-b border-slate-800">
       <span className="text-[10px] text-slate-500">{rows.length.toLocaleString("pt-BR")} linha(s) disponíveis</span>
@@ -175,7 +175,7 @@ const DataTable: React.FC<{ rows: any[]; columns: string[]; exportName?: string 
               const value = r[c];
               const normalized = String(c).toLowerCase();
               const isNumber = typeof value === "number";
-              const isPercent = normalized.includes("pct") || normalized.includes("participacao");
+              const isPercent = normalized.includes("pct") || normalized.includes("participacao") || percentColumns.includes(c);
               const isMoney = normalized.includes("faturamento") || normalized.includes("preco") || normalized.includes("resultado") || normalized.includes("receita") || normalized.includes("valor");
               const display = isNumber ? (isPercent ? formatarPercentual(value) : isMoney ? formatarMoeda(value) : formatarInteiro(value)) : String(value ?? "-");
               return <td key={c} className="p-2 max-w-[220px] truncate">{display}</td>;
@@ -1410,6 +1410,40 @@ export default function Home() {
                       </ResponsiveContainer>
                     </div>
                   </div>
+                  {(() => {
+                    const tiposMix = ["Carreta", "Peça", "Conjunto", "Sucata", "Itens comprados", "Outros"];
+                    const coresMix: Record<string, string> = { Carreta: "#F97316", Peça: "#38BDF8", Conjunto: "#A78BFA", Sucata: "#94A3B8", "Itens comprados": "#22C55E", Outros: "#F43F5E" };
+                    const porMes = new Map<string, Record<string, any>>();
+                    for (const item of dadosFiltrados) {
+                      const atual = porMes.get(item.ano_mes) || { ano_mes: item.ano_mes, ano_mes_data: item.ano_mes_data, total: 0 };
+                      const tipo = tiposMix.includes(item.tipo_produto) ? item.tipo_produto : "Outros";
+                      atual[tipo] = (atual[tipo] || 0) + item.faturamento;
+                      atual.total += item.faturamento;
+                      porMes.set(item.ano_mes, atual);
+                    }
+                    const mixMensal = Array.from(porMes.values()).sort((a, b) => a.ano_mes_data.localeCompare(b.ano_mes_data)).map((row) => {
+                      const percentual = Object.fromEntries(tiposMix.map((tipo) => [tipo, row.total ? (row[tipo] || 0) / row.total : 0]));
+                      return { ...row, ...percentual };
+                    });
+                    return <>
+                      <div className="bg-slate-900/80 border border-slate-800 p-5 rounded-xl">
+                        <div className="flex flex-wrap items-start justify-between gap-3 mb-4"><div><h3 className="text-sm font-bold text-white">Mix mensal do faturamento por tipo de produto</h3><p className="text-xs text-slate-400">Em cada mês, veja qual percentual do faturamento veio de carretas, peças, conjuntos e demais categorias.</p></div><span className="text-[11px] text-slate-500">Percentuais somam 100% por mês</span></div>
+                        <div className="h-80 w-full">
+                          <ResponsiveContainer width="100%" height="100%">
+                            <BarChart data={mixMensal} stackOffset="expand" margin={{ top: 10, right: 20, left: 20, bottom: 38 }}>
+                              <CartesianGrid strokeDasharray="3 3" stroke="#334155" opacity={0.5} />
+                              <XAxis dataKey="ano_mes" interval="preserveStartEnd" angle={-18} textAnchor="end" height={44} stroke="#94A3B8" fontSize={10} />
+                              <YAxis tickFormatter={(v) => `${Math.round(v * 100)}%`} domain={[0, 1]} stroke="#94A3B8" fontSize={11} />
+                              <RechartsTooltip contentStyle={{ backgroundColor: "#0F172A", borderColor: "#334155" }} formatter={(v: any, name: string) => [formatarPercentual(v), name]} />
+                              <Legend wrapperStyle={{ paddingTop: 10, fontSize: 11 }} />
+                              {tiposMix.map((tipo) => <Bar key={tipo} dataKey={tipo} stackId="mix" fill={coresMix[tipo]} />)}
+                            </BarChart>
+                          </ResponsiveContainer>
+                        </div>
+                      </div>
+                      <DataTable exportName="mix_mensal_tipo_produto" rows={mixMensal} columns={["ano_mes", ...tiposMix, "total"]} percentColumns={tiposMix} />
+                    </>;
+                  })()}
                 </div>
               )}
 
