@@ -4,9 +4,6 @@ import { DollarSign, Package, ShoppingCart, Users, Tag, TrendingUp } from "lucid
 
 interface MetricCardsProps {
   faturamento: number;
-  faturamentoBruto: number;
-  faturamentoNegativos: number;
-  faturamentoLiquido: number;
   quantidade: number;
   pedidos: number;
   clientes: number;
@@ -16,9 +13,6 @@ interface MetricCardsProps {
 
 export const MetricCards: React.FC<MetricCardsProps> = ({
   faturamento,
-  faturamentoBruto,
-  faturamentoNegativos,
-  faturamentoLiquido,
   quantidade,
   pedidos,
   clientes,
@@ -27,25 +21,11 @@ export const MetricCards: React.FC<MetricCardsProps> = ({
 }) => {
   const cards = [
     {
-      titulo: "Bruto",
-      valor: formatarMoeda(faturamentoBruto),
-      sub: "Soma dos lançamentos positivos",
+      titulo: "Faturamento",
+      valor: formatarMoeda(faturamento),
+      sub: "Total bruto faturado",
       icone: DollarSign,
       corBorda: "#F97316", // Orange CEMAG
-    },
-    {
-      titulo: "Negativos",
-      valor: formatarMoeda(faturamentoNegativos),
-      sub: "Devoluções e ajustes",
-      icone: TrendingUp,
-      corBorda: "#EF4444",
-    },
-    {
-      titulo: "Líquido",
-      valor: formatarMoeda(faturamentoLiquido),
-      sub: "Bruto + negativos",
-      icone: DollarSign,
-      corBorda: "#22C55E",
     },
     {
       titulo: "Quantidade",
