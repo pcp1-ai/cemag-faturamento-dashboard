@@ -83,6 +83,10 @@ export const SidebarFilters: React.FC<SidebarFiltersProps> = ({
     setFiltros((prev) => ({ ...prev, [key]: [] }));
   };
 
+  const selecionarTudo = (key: keyof FiltrosState, opcoes: (string | number)[]) => {
+    setFiltros((prev) => ({ ...prev, [key]: [...opcoes] }));
+  };
+
   const renderMultiSelect = (
     label: string,
     key: keyof FiltrosState,
@@ -98,17 +102,12 @@ export const SidebarFilters: React.FC<SidebarFiltersProps> = ({
 
     return (
       <div className="space-y-1 text-xs">
-        <div className="flex items-center justify-between text-slate-300 font-medium">
+        <div className="flex items-center justify-between gap-2 text-slate-300 font-medium">
           <span>{label}</span>
-          {selecionados.length > 0 && (
-            <button
-              type="button"
-              onClick={() => limparCampo(key)}
-              className="text-[10px] text-orange-400 hover:text-orange-300 transition-colors"
-            >
-              Limpar ({selecionados.length})
-            </button>
-          )}
+          <div className="flex items-center gap-2">
+            {opcoes.length > 0 && <button type="button" onClick={() => selecionarTudo(key, opcoes)} className="text-[10px] text-sky-400 hover:text-sky-300 transition-colors">Selecionar tudo</button>}
+            {selecionados.length > 0 && <button type="button" onClick={() => limparCampo(key)} className="text-[10px] text-orange-400 hover:text-orange-300 transition-colors">Limpar seleção</button>}
+          </div>
         </div>
         {opcoes.length > 5 && (
           <div className="relative">
