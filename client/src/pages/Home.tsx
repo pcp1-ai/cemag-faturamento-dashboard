@@ -211,6 +211,7 @@ export default function Home() {
   const [filtros, setFiltros] = useState<FiltrosState>({
     dataInicio: "2022-01-01",
     dataFim: "",
+    considerarNegativos: true,
     considerarTodasFormas: false,
     tiposVendaSelecionados: ["V ProdPrópria p Consumo"],
     familiasExcluidas: [],
@@ -335,6 +336,7 @@ export default function Home() {
     if (!dados.length) return [];
 
     return dados.filter((d) => {
+      if (!filtros.considerarNegativos && d.faturamento < 0) return false;
       // Período
       if (filtros.dataInicio) {
         const dIni = new Date(filtros.dataInicio + "T00:00:00");
@@ -387,12 +389,16 @@ export default function Home() {
   // KPIs agregados do topo
   const kpis = useMemo(() => {
     let faturamento = 0;
+    let faturamentoBruto = 0;
+    let faturamentoNegativos = 0;
     let quantidade = 0;
     const pedidos = new Set<string>();
     const clientes = new Set<string>();
 
     for (const d of dadosFiltrados) {
       faturamento += d.faturamento;
+      if (d.faturamento >= 0) faturamentoBruto += d.faturamento;
+      else faturamentoNegativos += d.faturamento;
       quantidade += d.quantidade;
       if (d.pedido) pedidos.add(d.pedido);
       if (d.cliente) clientes.add(d.cliente);
@@ -405,6 +411,9 @@ export default function Home() {
 
     return {
       faturamento,
+      faturamentoBruto,
+      faturamentoNegativos,
+      faturamentoLiquido: faturamentoBruto + faturamentoNegativos,
       quantidade,
       pedidos: totalPedidos,
       clientes: totalClientes,
@@ -460,6 +469,7 @@ export default function Home() {
       setFiltros({
         dataInicio: minBase > "2022-01-01" ? minBase : "2022-01-01",
         dataFim: meta.data_max.toISOString().slice(0, 10),
+        considerarNegativos: true,
         considerarTodasFormas: false,
         tiposVendaSelecionados: ["V ProdPrópria p Consumo"],
         familiasExcluidas: [],
@@ -635,10 +645,22 @@ export default function Home() {
   const atingimentoMensal = useMemo(() => {
     const mapa = new Map<string, any>();
     for (const row of dadosMensaisBase) mapa.set(`${row.ano}-${row.mes_num}`, { ...row, realizado: row.faturamento });
+    const financeiroMensal = new Map<string, { bruto: number; negativos: number }>();
+    for (const item of dadosMetas) {
+      const key = `${item.ano}-${item.mes_num}`;
+      const atual = financeiroMensal.get(key) || { bruto: 0, negativos: 0 };
+      if (item.faturamento >= 0) atual.bruto += item.faturamento;
+      else atual.negativos += item.faturamento;
+      financeiroMensal.set(key, atual);
+    }
+    for (const [key, valores] of financeiroMensal) {
+      const row = mapa.get(key);
+      if (row) Object.assign(row, { bruto: valores.bruto, negativos: valores.negativos, liquido: valores.bruto + valores.negativos });
+    }
     const metas = [...metasImportadas, ...(metaManualSalva ? [metaManualSalva] : [])];
     for (const meta of metas) {
       const key = `${meta.ano}-${meta.mes}`;
-      const row = mapa.get(key) || { ano: meta.ano, mes_num: meta.mes, mes: MESES[meta.mes], ano_mes: `${meta.ano}-${String(meta.mes).padStart(2, "0")}`, realizado: 0 };
+      const row = mapa.get(key) || { ano: meta.ano, mes_num: meta.mes, mes: MESES[meta.mes], ano_mes: `${meta.ano}-${String(meta.mes).padStart(2, "0")}`, realizado: 0, bruto: 0, negativos: 0, liquido: 0 };
       row.meta = meta.meta; row.origem_meta = meta.origem || "CSV"; row.atingimento = meta.meta > 0 ? row.realizado / meta.meta : 0; row.diferenca_meta = row.realizado - meta.meta;
       mapa.set(key, row);
     }
@@ -864,6 +886,9 @@ export default function Home() {
           {abaAtiva !== "modo_apresentacao" && (
             <MetricCards
               faturamento={kpis.faturamento}
+              faturamentoBruto={kpis.faturamentoBruto}
+              faturamentoNegativos={kpis.faturamentoNegativos}
+              faturamentoLiquido={kpis.faturamentoLiquido}
               quantidade={kpis.quantidade}
               pedidos={kpis.pedidos}
               clientes={kpis.clientes}
@@ -1070,7 +1095,7 @@ export default function Home() {
                     <p className="text-[11px] text-slate-500">Registros considerados nesta análise: {dadosMetas.length.toLocaleString("pt-BR")} de {dados.length.toLocaleString("pt-BR")}.</p>
                   </div>
                   {(() => { const vigente = atingimentoMensal.find((r) => r.ano === hoje.getFullYear() && r.mes_num === hoje.getMonth() + 1); const realizadoAtual = dadosMetas.filter((d) => d.ano === hoje.getFullYear() && d.mes_num === hoje.getMonth() + 1).reduce((s, d) => s + d.faturamento, 0); const diasNoMes = new Date(hoje.getFullYear(), hoje.getMonth() + 1, 0).getDate(); const projecao = realizadoAtual / Math.max(hoje.getDate(), 1) * diasNoMes; return <div className="grid grid-cols-2 md:grid-cols-4 gap-3"><div className="bg-slate-900 border border-slate-800 p-3 rounded-lg"><span className="text-xs text-slate-400">Meta vigente</span><div className="text-xl font-bold text-orange-400">{formatarMoeda(vigente?.meta || 0)}</div></div><div className="bg-slate-900 border border-slate-800 p-3 rounded-lg"><span className="text-xs text-slate-400">Realizado no mês</span><div className="text-xl font-bold text-white">{formatarMoeda(realizadoAtual)}</div></div><div className="bg-slate-900 border border-slate-800 p-3 rounded-lg"><span className="text-xs text-slate-400">Atingimento atual</span><div className={`text-xl font-bold ${(vigente?.meta && realizadoAtual / vigente.meta >= 1) ? "text-green-400" : "text-amber-400"}`}>{vigente?.meta ? formatarPercentual(realizadoAtual / vigente.meta) : "Sem meta"}</div></div><div className="bg-slate-900 border border-slate-800 p-3 rounded-lg"><span className="text-xs text-slate-400">Projeção do mês</span><div className="text-xl font-bold text-sky-400">{formatarMoeda(projecao)}</div></div></div>; })()}
-                  <div className="bg-slate-900/60 border border-slate-800 rounded-xl p-4"><h3 className="text-sm font-bold text-white mb-3">Atingimento por mês</h3>{atingimentoMensal.length ? <DataTable exportName="atingimento_mensal" rows={atingimentoMensal.map((r) => ({ ...r, status_meta: r.atingimento >= 1 ? "Atingida" : r.ano === hoje.getFullYear() && r.mes_num === hoje.getMonth() + 1 ? "Em andamento" : "Não atingida" }))} columns={["ano_mes","realizado","meta","atingimento","diferenca_meta","status_meta","origem_meta"]} /> : <div className="rounded-lg border border-dashed border-slate-700 p-8 text-center text-sm text-slate-400">Nenhuma meta cadastrada. Importe um CSV ou salve a meta do mês vigente.</div>}</div>
+                  <div className="bg-slate-900/60 border border-slate-800 rounded-xl p-4"><h3 className="text-sm font-bold text-white mb-3">Atingimento por mês</h3>{atingimentoMensal.length ? <DataTable exportName="atingimento_mensal" rows={atingimentoMensal.map((r) => ({ ...r, status_meta: r.atingimento >= 1 ? "Atingida" : r.ano === hoje.getFullYear() && r.mes_num === hoje.getMonth() + 1 ? "Em andamento" : "Não atingida" }))} columns={["ano_mes","bruto","negativos","liquido","realizado","meta","atingimento","diferenca_meta","status_meta","origem_meta"]} /> : <div className="rounded-lg border border-dashed border-slate-700 p-8 text-center text-sm text-slate-400">Nenhuma meta cadastrada. Importe um CSV ou salve a meta do mês vigente.</div>}</div>
                   {(() => {
                     const tiposMix = ["Carreta", "Peça", "Conjunto", "Sucata", "Itens comprados", "Outros"];
                     const coresMix: Record<string, string> = { Carreta: "#F97316", Peça: "#38BDF8", Conjunto: "#A78BFA", Sucata: "#94A3B8", "Itens comprados": "#22C55E", Outros: "#F43F5E" };

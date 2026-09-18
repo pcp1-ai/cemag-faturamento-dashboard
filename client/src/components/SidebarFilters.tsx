@@ -4,6 +4,7 @@ import { Upload, X, Filter, RotateCcw, Search, CheckSquare, Square } from "lucid
 export interface FiltrosState {
   dataInicio: string;
   dataFim: string;
+  considerarNegativos: boolean;
   considerarTodasFormas: boolean;
   tiposVendaSelecionados: string[];
   familiasExcluidas: string[];
@@ -325,6 +326,10 @@ export const SidebarFilters: React.FC<SidebarFiltersProps> = ({
                 </div>
               </div>
             )}
+            <label className="flex items-start gap-2 p-1.5 rounded bg-slate-900/60 hover:bg-slate-900 border border-slate-800 cursor-pointer select-none">
+              <input type="checkbox" checked={filtros.considerarNegativos} onChange={(e) => setFiltros((prev) => ({ ...prev, considerarNegativos: e.target.checked }))} className="mt-0.5 rounded text-orange-500 focus:ring-orange-500" />
+              <span className="text-[11px] font-medium text-amber-300">Considerar valores negativos<span className="block text-[10px] text-slate-500 mt-0.5">Inclui devoluções, cancelamentos e ajustes.</span></span>
+            </label>
           </div>
 
           <hr className="border-slate-800" />
