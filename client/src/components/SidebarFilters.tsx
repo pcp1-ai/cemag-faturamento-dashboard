@@ -161,7 +161,7 @@ export const SidebarFilters: React.FC<SidebarFiltersProps> = ({
       )}
 
       <aside
-        className={`fixed lg:static top-0 left-0 h-full w-80 bg-[#0E131F] border-r border-slate-800 z-50 flex flex-col transition-transform duration-200 shadow-2xl lg:shadow-none overflow-hidden ${
+        className={`fixed lg:static top-0 left-0 h-full lg:h-auto w-80 bg-[#0E131F] border-r border-slate-800 z-50 lg:z-auto flex flex-col transition-transform duration-200 shadow-2xl lg:shadow-none overflow-hidden lg:overflow-visible ${
           isOpenMobile ? "translate-x-0" : "-translate-x-full lg:translate-x-0"
         }`}
       >
@@ -199,7 +199,7 @@ export const SidebarFilters: React.FC<SidebarFiltersProps> = ({
         </div>
 
         {/* Conteúdo com scroll */}
-        <div className="flex-1 overflow-y-auto p-4 space-y-5 text-xs">
+        <div className="flex-1 overflow-y-auto lg:overflow-visible p-4 space-y-5 text-xs">
           {/* Seção Base de Dados */}
           <div className="space-y-2">
             <label className="text-[11px] font-bold text-slate-300 uppercase tracking-wider block">
