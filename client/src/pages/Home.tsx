@@ -836,7 +836,7 @@ export default function Home() {
       </header>
 
       {/* Conteúdo com Sidebar fixa na esquerda */}
-      <div className="flex-1 flex max-w-[1700px] w-full mx-auto">
+      <div className="flex-1 flex w-full mx-0">
         {!sidebarOculta && <SidebarFilters
           filtros={filtros}
           setFiltros={setFiltros}
