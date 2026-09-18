@@ -1069,6 +1069,20 @@ export default function Home() {
                   </div>
                   {(() => { const vigente = atingimentoMensal.find((r) => r.ano === hoje.getFullYear() && r.mes_num === hoje.getMonth() + 1); const realizadoAtual = dadosMetas.filter((d) => d.ano === hoje.getFullYear() && d.mes_num === hoje.getMonth() + 1).reduce((s, d) => s + d.faturamento, 0); const diasNoMes = new Date(hoje.getFullYear(), hoje.getMonth() + 1, 0).getDate(); const projecao = realizadoAtual / Math.max(hoje.getDate(), 1) * diasNoMes; return <div className="grid grid-cols-2 md:grid-cols-4 gap-3"><div className="bg-slate-900 border border-slate-800 p-3 rounded-lg"><span className="text-xs text-slate-400">Meta vigente</span><div className="text-xl font-bold text-orange-400">{formatarMoeda(vigente?.meta || 0)}</div></div><div className="bg-slate-900 border border-slate-800 p-3 rounded-lg"><span className="text-xs text-slate-400">Realizado no mês</span><div className="text-xl font-bold text-white">{formatarMoeda(realizadoAtual)}</div></div><div className="bg-slate-900 border border-slate-800 p-3 rounded-lg"><span className="text-xs text-slate-400">Atingimento atual</span><div className={`text-xl font-bold ${(vigente?.meta && realizadoAtual / vigente.meta >= 1) ? "text-green-400" : "text-amber-400"}`}>{vigente?.meta ? formatarPercentual(realizadoAtual / vigente.meta) : "Sem meta"}</div></div><div className="bg-slate-900 border border-slate-800 p-3 rounded-lg"><span className="text-xs text-slate-400">Projeção do mês</span><div className="text-xl font-bold text-sky-400">{formatarMoeda(projecao)}</div></div></div>; })()}
                   <div className="bg-slate-900/60 border border-slate-800 rounded-xl p-4"><h3 className="text-sm font-bold text-white mb-3">Atingimento por mês</h3>{atingimentoMensal.length ? <DataTable exportName="atingimento_mensal" rows={atingimentoMensal.map((r) => ({ ...r, status_meta: r.atingimento >= 1 ? "Atingida" : r.ano === hoje.getFullYear() && r.mes_num === hoje.getMonth() + 1 ? "Em andamento" : "Não atingida" }))} columns={["ano_mes","realizado","meta","atingimento","diferenca_meta","status_meta","origem_meta"]} /> : <div className="rounded-lg border border-dashed border-slate-700 p-8 text-center text-sm text-slate-400">Nenhuma meta cadastrada. Importe um CSV ou salve a meta do mês vigente.</div>}</div>
+                  {(() => {
+                    const tiposMix = ["Carreta", "Peça", "Conjunto", "Sucata", "Itens comprados", "Outros"];
+                    const coresMix: Record<string, string> = { Carreta: "#F97316", Peça: "#38BDF8", Conjunto: "#A78BFA", Sucata: "#94A3B8", "Itens comprados": "#22C55E", Outros: "#F43F5E" };
+                    const porMes = new Map<string, Record<string, any>>();
+                    for (const item of dadosMetas) {
+                      const atual = porMes.get(item.ano_mes) || { ano_mes: item.ano_mes, ano_mes_data: item.ano_mes_data, total: 0 };
+                      const tipo = tiposMix.includes(item.tipo_produto) ? item.tipo_produto : "Outros";
+                      atual[tipo] = (atual[tipo] || 0) + item.faturamento;
+                      atual.total += item.faturamento;
+                      porMes.set(item.ano_mes, atual);
+                    }
+                    const mixMensal = Array.from(porMes.values()).sort((a, b) => a.ano_mes_data.localeCompare(b.ano_mes_data)).map((row) => ({ ...row, ...Object.fromEntries(tiposMix.map((tipo) => [tipo, row.total ? (row[tipo] || 0) / row.total : 0])) }));
+                    return <div className="space-y-4"><div className="bg-slate-900/80 border border-slate-800 p-5 rounded-xl"><div className="flex flex-wrap items-start justify-between gap-3 mb-4"><div><h3 className="text-sm font-bold text-white">Mix mensal do faturamento por tipo de produto</h3><p className="text-xs text-slate-400">Visão completa da base ou dos filtros exclusivos definidos nesta aba.</p></div><span className="text-[11px] text-slate-500">Percentuais somam 100% por mês</span></div><div className="h-80 w-full"><ResponsiveContainer width="100%" height="100%"><BarChart data={mixMensal} stackOffset="expand" margin={{ top: 10, right: 20, left: 20, bottom: 38 }}><CartesianGrid strokeDasharray="3 3" stroke="#334155" opacity={0.5} /><XAxis dataKey="ano_mes" interval="preserveStartEnd" angle={-18} textAnchor="end" height={44} stroke="#94A3B8" fontSize={10} /><YAxis tickFormatter={(v) => `${Math.round(v * 100)}%`} domain={[0, 1]} stroke="#94A3B8" fontSize={11} /><RechartsTooltip contentStyle={{ backgroundColor: "#0F172A", borderColor: "#334155" }} formatter={(v: any, name: string) => [formatarPercentual(v), name]} /><Legend wrapperStyle={{ paddingTop: 10, fontSize: 11 }} />{tiposMix.map((tipo) => <Bar key={tipo} dataKey={tipo} stackId="mix" fill={coresMix[tipo]} />)}</BarChart></ResponsiveContainer></div></div><DataTable exportName="mix_mensal_tipo_produto" rows={mixMensal} columns={["ano_mes", ...tiposMix, "total"]} percentColumns={tiposMix} /></div>;
+                  })()}
                 </div>
               )}
 
@@ -1410,40 +1424,6 @@ export default function Home() {
                       </ResponsiveContainer>
                     </div>
                   </div>
-                  {(() => {
-                    const tiposMix = ["Carreta", "Peça", "Conjunto", "Sucata", "Itens comprados", "Outros"];
-                    const coresMix: Record<string, string> = { Carreta: "#F97316", Peça: "#38BDF8", Conjunto: "#A78BFA", Sucata: "#94A3B8", "Itens comprados": "#22C55E", Outros: "#F43F5E" };
-                    const porMes = new Map<string, Record<string, any>>();
-                    for (const item of dadosFiltrados) {
-                      const atual = porMes.get(item.ano_mes) || { ano_mes: item.ano_mes, ano_mes_data: item.ano_mes_data, total: 0 };
-                      const tipo = tiposMix.includes(item.tipo_produto) ? item.tipo_produto : "Outros";
-                      atual[tipo] = (atual[tipo] || 0) + item.faturamento;
-                      atual.total += item.faturamento;
-                      porMes.set(item.ano_mes, atual);
-                    }
-                    const mixMensal = Array.from(porMes.values()).sort((a, b) => a.ano_mes_data.localeCompare(b.ano_mes_data)).map((row) => {
-                      const percentual = Object.fromEntries(tiposMix.map((tipo) => [tipo, row.total ? (row[tipo] || 0) / row.total : 0]));
-                      return { ...row, ...percentual };
-                    });
-                    return <>
-                      <div className="bg-slate-900/80 border border-slate-800 p-5 rounded-xl">
-                        <div className="flex flex-wrap items-start justify-between gap-3 mb-4"><div><h3 className="text-sm font-bold text-white">Mix mensal do faturamento por tipo de produto</h3><p className="text-xs text-slate-400">Em cada mês, veja qual percentual do faturamento veio de carretas, peças, conjuntos e demais categorias.</p></div><span className="text-[11px] text-slate-500">Percentuais somam 100% por mês</span></div>
-                        <div className="h-80 w-full">
-                          <ResponsiveContainer width="100%" height="100%">
-                            <BarChart data={mixMensal} stackOffset="expand" margin={{ top: 10, right: 20, left: 20, bottom: 38 }}>
-                              <CartesianGrid strokeDasharray="3 3" stroke="#334155" opacity={0.5} />
-                              <XAxis dataKey="ano_mes" interval="preserveStartEnd" angle={-18} textAnchor="end" height={44} stroke="#94A3B8" fontSize={10} />
-                              <YAxis tickFormatter={(v) => `${Math.round(v * 100)}%`} domain={[0, 1]} stroke="#94A3B8" fontSize={11} />
-                              <RechartsTooltip contentStyle={{ backgroundColor: "#0F172A", borderColor: "#334155" }} formatter={(v: any, name: string) => [formatarPercentual(v), name]} />
-                              <Legend wrapperStyle={{ paddingTop: 10, fontSize: 11 }} />
-                              {tiposMix.map((tipo) => <Bar key={tipo} dataKey={tipo} stackId="mix" fill={coresMix[tipo]} />)}
-                            </BarChart>
-                          </ResponsiveContainer>
-                        </div>
-                      </div>
-                      <DataTable exportName="mix_mensal_tipo_produto" rows={mixMensal} columns={["ano_mes", ...tiposMix, "total"]} percentColumns={tiposMix} />
-                    </>;
-                  })()}
                 </div>
               )}
 
