@@ -192,6 +192,7 @@ const DataTable: React.FC<{ rows: any[]; columns: string[]; exportName?: string;
 export default function Home() {
   const [loading, setLoading] = useState<boolean>(true);
   const [erroCarregamento, setErroCarregamento] = useState<string | null>(null);
+  const [mensagemUpload, setMensagemUpload] = useState<{ tipo: "sucesso" | "aviso" | "erro"; texto: string } | null>(null);
   const [baseOriginal, setBaseOriginal] = useState<any[]>([]);
   const [nomeArquivoBase, setNomeArquivoBase] = useState<string>("data/tabelaFaturamento.csv");
   const [abaAtiva, setAbaAtiva] = useState<string>("visao_geral");
@@ -417,6 +418,16 @@ export default function Home() {
   const handleUploadArquivo = (file: File) => {
     const nome = file.name.toLowerCase();
     const reader = new FileReader();
+    setMensagemUpload({ tipo: "aviso", texto: `Lendo ${file.name}...` });
+
+    const concluirUpload = (linhas: any[]) => {
+      setBaseOriginal(linhas);
+      setNomeArquivoBase(file.name);
+      setMensagemUpload({ tipo: "sucesso", texto: `${file.name} carregado com sucesso: ${linhas.length.toLocaleString("pt-BR")} registros encontrados.` });
+      void salvarBasePersistente(linhas, file.name)
+        .then(() => setMensagemUpload({ tipo: "sucesso", texto: `${file.name} carregado e salvo como base padrão: ${linhas.length.toLocaleString("pt-BR")} registros.` }))
+        .catch(() => setMensagemUpload({ tipo: "aviso", texto: `${file.name} carregado nesta sessão: ${linhas.length.toLocaleString("pt-BR")} registros. Não foi possível salvar como base padrão no navegador.` }));
+    };
 
     if (nome.endsWith(".xlsx") || nome.endsWith(".xls")) {
       reader.onload = (e) => {
@@ -427,12 +438,10 @@ export default function Home() {
           const sheet = workbook.Sheets[firstSheet];
           const json = XLSX.utils.sheet_to_json(sheet);
           if (json && json.length) {
-            setBaseOriginal(json);
-            setNomeArquivoBase(file.name);
-            void salvarBasePersistente(json, file.name).catch(() => alert("A base foi carregada nesta sessão, mas não pôde ser salva como base padrão no navegador. Verifique o espaço disponível."));
-          }
+            concluirUpload(json);
+          } else setMensagemUpload({ tipo: "erro", texto: "O arquivo Excel não contém registros válidos." });
         } catch (err: any) {
-          alert("Erro ao ler arquivo Excel: " + err.message);
+          setMensagemUpload({ tipo: "erro", texto: "Erro ao ler arquivo Excel: " + err.message });
         }
       };
       reader.readAsArrayBuffer(file);
@@ -442,12 +451,10 @@ export default function Home() {
           const text = e.target?.result as string;
           const parsed = Papa.parse(text, { header: true, skipEmptyLines: true });
           if (parsed.data && parsed.data.length) {
-            setBaseOriginal(parsed.data);
-            setNomeArquivoBase(file.name);
-            void salvarBasePersistente(parsed.data, file.name).catch(() => alert("A base foi carregada nesta sessão, mas não pôde ser salva como base padrão no navegador. Verifique o espaço disponível."));
-          }
+            concluirUpload(parsed.data);
+          } else setMensagemUpload({ tipo: "erro", texto: "O arquivo CSV não contém registros válidos." });
         } catch (err: any) {
-          alert("Erro ao processar CSV: " + err.message);
+          setMensagemUpload({ tipo: "erro", texto: "Erro ao processar CSV: " + err.message });
         }
       };
       reader.readAsText(file);
@@ -805,6 +812,11 @@ export default function Home() {
             <span>Linhas: <strong className="text-orange-400">{dadosFiltrados.length.toLocaleString("pt-BR")}</strong> de {meta?.linhas_validas?.toLocaleString("pt-BR")}</span>
           </div>
         </div>
+        {mensagemUpload && (
+          <div className={`max-w-[1700px] mx-auto mt-2 rounded-lg border px-3 py-2 text-xs ${mensagemUpload.tipo === "sucesso" ? "border-emerald-700/60 bg-emerald-950/40 text-emerald-200" : mensagemUpload.tipo === "erro" ? "border-red-700/60 bg-red-950/40 text-red-200" : "border-amber-700/60 bg-amber-950/40 text-amber-200"}`} role="status">
+            {mensagemUpload.texto}
+          </div>
+        )}
       </header>
 
       {/* Conteúdo com Sidebar fixa na esquerda */}
