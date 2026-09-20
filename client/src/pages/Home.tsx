@@ -201,7 +201,7 @@ const MetaCheckboxFilter: React.FC<{ label: string; values: string[]; selected: 
   </div>;
 };
 
-export default function Home({ onLogout }: { onLogout?: () => void }) {
+export default function Home({ onLogout, emailAutenticado, isAdmin = false }: { onLogout?: () => void; emailAutenticado?: string; isAdmin?: boolean }) {
   const [loading, setLoading] = useState<boolean>(true);
   const [erroCarregamento, setErroCarregamento] = useState<string | null>(null);
   const [mensagemUpload, setMensagemUpload] = useState<{ tipo: "sucesso" | "aviso" | "erro"; texto: string } | null>(null);
@@ -781,6 +781,7 @@ export default function Home({ onLogout }: { onLogout?: () => void }) {
                   <span className="text-xs px-2 py-0.5 rounded bg-orange-500/20 text-orange-400 border border-orange-500/30">
                     Carretas CEMAG
                   </span>
+                  {emailAutenticado && <span className={`hidden lg:inline-flex items-center rounded border px-2 py-0.5 text-[10px] ${isAdmin ? "border-emerald-500/30 bg-emerald-500/10 text-emerald-300" : "border-slate-700 bg-slate-800 text-slate-300"}`} title={emailAutenticado}>{isAdmin ? "Administrador" : "Consulta"}</span>}
                 </h1>
                 <p className="text-[11px] text-slate-400 hidden md:block">
                   Painel de inteligência de faturamento, clientes, regiões e mix de carretas
@@ -790,6 +791,7 @@ export default function Home({ onLogout }: { onLogout?: () => void }) {
           </div>
 
           <div className="flex items-center gap-3">
+            {emailAutenticado && <span className="hidden xl:inline max-w-[220px] truncate text-[11px] text-slate-400" title={emailAutenticado}>{emailAutenticado}</span>}
             <button
               onClick={() => setSidebarOculta((v) => !v)}
               className="hidden lg:flex items-center gap-1.5 text-xs bg-slate-800 hover:bg-slate-700 text-slate-200 px-3 py-1.5 rounded-lg border border-slate-700 transition-colors shadow-sm"
@@ -865,6 +867,7 @@ export default function Home({ onLogout }: { onLogout?: () => void }) {
           opcoesFiltros={opcoesFiltros}
           nomeArquivoBase={nomeArquivoBase}
           onUploadArquivo={handleUploadArquivo}
+          isAdmin={isAdmin}
           onResetFiltros={handleResetFiltros}
           linhasFiltradas={dadosFiltrados.length}
           totalLinhasValidas={meta?.linhas_validas || 0}

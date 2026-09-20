@@ -6,13 +6,13 @@ import { Route, Switch } from "wouter";
 import ErrorBoundary from "./components/ErrorBoundary";
 import { ThemeProvider } from "./contexts/ThemeContext";
 import Home from "./pages/Home";
-import Login from "./pages/Login";
+import Login, { ADMIN_EMAIL } from "./pages/Login";
 
 
-function Router({ onLogout }: { onLogout: () => void }) {
+function Router({ onLogout, email }: { onLogout: () => void; email: string }) {
   return (
     <Switch>
-      <Route path={"/"} component={() => <Home onLogout={onLogout} />} />
+      <Route path={"/"} component={() => <Home onLogout={onLogout} emailAutenticado={email} isAdmin={email.toLowerCase() === ADMIN_EMAIL} />} />
       <Route path={"/404"} component={NotFound} />
       {/* Final fallback route */}
       <Route component={NotFound} />
@@ -47,7 +47,7 @@ function App() {
       >
         <TooltipProvider>
           <Toaster />
-          {emailAutenticado ? <Router onLogout={sair} /> : <Login onAuthenticated={setEmailAutenticado} />}
+          {emailAutenticado ? <Router onLogout={sair} email={emailAutenticado} /> : <Login onAuthenticated={setEmailAutenticado} />}
         </TooltipProvider>
       </ThemeProvider>
     </ErrorBoundary>

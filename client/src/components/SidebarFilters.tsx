@@ -44,6 +44,7 @@ interface SidebarFiltersProps {
   };
   nomeArquivoBase: string;
   onUploadArquivo: (file: File) => void;
+  isAdmin: boolean;
   onResetFiltros: () => void;
   linhasFiltradas: number;
   totalLinhasValidas: number;
@@ -57,6 +58,7 @@ export const SidebarFilters: React.FC<SidebarFiltersProps> = ({
   opcoesFiltros,
   nomeArquivoBase,
   onUploadArquivo,
+  isAdmin,
   onResetFiltros,
   linhasFiltradas,
   totalLinhasValidas,
@@ -209,27 +211,29 @@ export const SidebarFilters: React.FC<SidebarFiltersProps> = ({
               <div className="text-[11px] text-slate-300 truncate">
                 Fonte: <span className="text-amber-400 font-medium">{nomeArquivoBase}</span>
               </div>
-              <input
-                ref={fileInputRef}
-                type="file"
-                accept=".csv,.xlsx,.xls"
-                className="hidden"
-                onChange={(e) => {
-                  const file = e.target.files?.[0];
-                  if (file) onUploadArquivo(file);
-                }}
-              />
-              <button
-                type="button"
-                onClick={() => fileInputRef.current?.click()}
-                className="w-full flex items-center justify-center gap-2 py-1.5 px-3 rounded bg-orange-600 hover:bg-orange-500 text-white font-medium text-xs transition-colors shadow-sm"
-              >
-                <Upload className="w-3.5 h-3.5" />
-                <span>Substituir Planilha</span>
-              </button>
-              <p className="text-[10px] text-slate-400 text-center">
-                Formatos aceitos: CSV (delimitador vírgula ou ponto-e-vírgula) e Excel (.xlsx).
-              </p>
+              {isAdmin ? <>
+                <input
+                  ref={fileInputRef}
+                  type="file"
+                  accept=".csv,.xlsx,.xls"
+                  className="hidden"
+                  onChange={(e) => {
+                    const file = e.target.files?.[0];
+                    if (file) onUploadArquivo(file);
+                  }}
+                />
+                <button
+                  type="button"
+                  onClick={() => fileInputRef.current?.click()}
+                  className="w-full flex items-center justify-center gap-2 py-1.5 px-3 rounded bg-orange-600 hover:bg-orange-500 text-white font-medium text-xs transition-colors shadow-sm"
+                >
+                  <Upload className="w-3.5 h-3.5" />
+                  <span>Substituir Planilha</span>
+                </button>
+                <p className="text-[10px] text-slate-400 text-center">
+                  Formatos aceitos: CSV (delimitador vírgula ou ponto-e-vírgula) e Excel (.xlsx).
+                </p>
+              </> : <div className="rounded border border-slate-700 bg-slate-950/60 px-2.5 py-2 text-[10px] leading-4 text-slate-400"><strong className="text-slate-300">Modo consulta.</strong> O envio e a substituição de arquivos estão disponíveis somente para a conta administradora.</div>}
             </div>
           </div>
 

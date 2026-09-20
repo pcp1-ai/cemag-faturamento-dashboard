@@ -3,6 +3,7 @@ import { LockKeyhole, Mail, ShieldCheck, Eye, EyeOff, AlertCircle } from "lucide
 
 const EMAIL_CEMAG_REGEX = /^[^\s@]+@cemag\.com\.br$/i;
 const SENHA_PADRAO = "000000";
+const ADMIN_EMAIL = "pcp1@cemag.com.br";
 
 interface LoginProps {
   onAuthenticated: (email: string) => void;
@@ -94,4 +95,4 @@ export default function Login({ onAuthenticated }: LoginProps) {
   );
 }
 
-export { EMAIL_CEMAG_REGEX, SENHA_PADRAO };
+export { ADMIN_EMAIL, EMAIL_CEMAG_REGEX, SENHA_PADRAO };
