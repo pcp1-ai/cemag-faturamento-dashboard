@@ -51,6 +51,7 @@ import {
   CheckCircle,
   Eye,
   Tv,
+  LogOut,
 } from "lucide-react";
 import {
   ResponsiveContainer,
@@ -200,7 +201,7 @@ const MetaCheckboxFilter: React.FC<{ label: string; values: string[]; selected: 
   </div>;
 };
 
-export default function Home() {
+export default function Home({ onLogout }: { onLogout?: () => void }) {
   const [loading, setLoading] = useState<boolean>(true);
   const [erroCarregamento, setErroCarregamento] = useState<string | null>(null);
   const [mensagemUpload, setMensagemUpload] = useState<{ tipo: "sucesso" | "aviso" | "erro"; texto: string } | null>(null);
@@ -820,6 +821,16 @@ export default function Home() {
               <Download className="w-3.5 h-3.5" />
               <span>Exportar</span>
             </button>
+            {onLogout && (
+              <button
+                onClick={onLogout}
+                className="flex items-center gap-1.5 text-xs bg-slate-800 hover:bg-red-900/60 text-slate-200 hover:text-red-200 px-3 py-1.5 rounded-lg border border-slate-700 transition-colors shadow-sm"
+                title="Sair da conta"
+              >
+                <LogOut className="w-3.5 h-3.5" />
+                <span className="hidden sm:inline">Sair</span>
+              </button>
+            )}
           </div>
         </div>
 
