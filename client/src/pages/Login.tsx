@@ -34,6 +34,7 @@ export default function Login({ onAuthenticated }: LoginProps) {
     window.setTimeout(() => {
       localStorage.setItem("cemag_login_email", emailNormalizado);
       localStorage.setItem("cemag_login_autenticado", "true");
+      localStorage.setItem("cemag_login_ultima_atividade", String(Date.now()));
       onAuthenticated(emailNormalizado);
       setEnviando(false);
     }, 180);
@@ -85,7 +86,7 @@ export default function Login({ onAuthenticated }: LoginProps) {
                 <button type="submit" disabled={enviando} className="w-full rounded-xl bg-orange-600 px-4 py-3 text-sm font-semibold text-white shadow-lg shadow-orange-950/30 transition hover:bg-orange-500 disabled:cursor-wait disabled:opacity-70">{enviando ? "Entrando..." : "Entrar no painel"}</button>
               </form>
 
-              <div className="mt-6 rounded-xl border border-slate-800 bg-slate-950/50 px-4 py-3 text-xs leading-5 text-slate-500"><strong className="text-slate-300">Acesso inicial:</strong> utilize a senha padrão fornecida pela administração e um e-mail terminado em <span className="text-orange-400">@cemag.com.br</span>.</div>
+              <div className="mt-6 rounded-xl border border-slate-800 bg-slate-950/50 px-4 py-3 text-xs leading-5 text-slate-500"><strong className="text-slate-300">Acesso inicial:</strong> utilize a senha padrão fornecida pela administração e um e-mail terminado em <span className="text-orange-400">@cemag.com.br</span>. A sessão expira após 48 horas sem atividade.</div>
               <p className="mt-8 text-center text-[11px] text-slate-600">Acesso restrito à equipe CEMAG</p>
             </div>
           </section>
