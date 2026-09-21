@@ -11,8 +11,8 @@ import Login, { ADMIN_EMAIL } from "./pages/Login";
 const INATIVIDADE_MAXIMA_MS = 48 * 60 * 60 * 1000;
 const CHAVE_ULTIMA_ATIVIDADE = "cemag_login_ultima_atividade";
 
-
 function Router({ onLogout, email }: { onLogout: () => void; email: string }) {
+  // make sure to consider if you need authentication for certain routes
   return (
     <Switch>
       <Route path={"/"} component={() => <Home onLogout={onLogout} emailAutenticado={email} isAdmin={email.toLowerCase() === ADMIN_EMAIL} />} />

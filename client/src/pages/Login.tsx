@@ -1,5 +1,6 @@
 import React, { FormEvent, useState } from "react";
 import { LockKeyhole, Mail, ShieldCheck, Eye, EyeOff, AlertCircle } from "lucide-react";
+import { trpc } from "../lib/trpc";
 
 const EMAIL_CEMAG_REGEX = /^[^\s@]+@cemag\.com\.br$/i;
 const SENHA_PADRAO = "000000";
@@ -10,13 +11,14 @@ interface LoginProps {
 }
 
 export default function Login({ onAuthenticated }: LoginProps) {
+  const loginMutation = trpc.auth.login.useMutation();
   const [email, setEmail] = useState("");
   const [senha, setSenha] = useState("");
   const [mostrarSenha, setMostrarSenha] = useState(false);
   const [erro, setErro] = useState("");
   const [enviando, setEnviando] = useState(false);
 
-  const handleSubmit = (event: FormEvent<HTMLFormElement>) => {
+  const handleSubmit = async (event: FormEvent<HTMLFormElement>) => {
     event.preventDefault();
     setErro("");
     const emailNormalizado = email.trim().toLowerCase();
@@ -31,13 +33,21 @@ export default function Login({ onAuthenticated }: LoginProps) {
     }
 
     setEnviando(true);
-    window.setTimeout(() => {
+    try {
+      const result = await loginMutation.mutateAsync({ email: emailNormalizado, password: senha });
+      if (!result.success) {
+        setErro(result.message);
+        return;
+      }
       localStorage.setItem("cemag_login_email", emailNormalizado);
       localStorage.setItem("cemag_login_autenticado", "true");
       localStorage.setItem("cemag_login_ultima_atividade", String(Date.now()));
       onAuthenticated(emailNormalizado);
+    } catch {
+      setErro("Não foi possível conectar ao servidor de autenticação. Tente novamente.");
+    } finally {
       setEnviando(false);
-    }, 180);
+    }
   };
 
   return (
