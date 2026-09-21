@@ -38,6 +38,7 @@ import { SidebarFilters, FiltrosState } from "../components/SidebarFilters";
 import { MapBrasil } from "../components/MapBrasil";
 import { MapMunicipios } from "../components/MapMunicipios";
 import { trpc } from "../lib/trpc";
+import { gerarComparativoAnual } from "../lib/comparativoAnual";
 import {
   Menu,
   Download,
@@ -576,6 +577,14 @@ export default function Home({ onLogout, emailAutenticado, isAdmin = false }: { 
   const [anoBaseYoY, setAnoBaseYoY] = useState<number>(2024);
   const [anoCompYoY, setAnoCompYoY] = useState<number>(2025);
   const [yoyMesesEquiv, setYoyMesesEquiv] = useState<boolean>(true);
+  const [anosSelecionadosYoY, setAnosSelecionadosYoY] = useState<number[]>([]);
+
+  useEffect(() => {
+    setAnosSelecionadosYoY((atuais) => {
+      if (atuais.length === 0) return anosDisponiveisYoY;
+      return atuais.filter((ano) => anosDisponiveisYoY.includes(ano));
+    });
+  }, [anosDisponiveisYoY]);
 
   // Mês x Mês
   const [metricaMoM, setMetricaMoM] = useState<string>("Faturamento");
@@ -1471,6 +1480,54 @@ export default function Home({ onLogout, emailAutenticado, isAdmin = false }: { 
                       </label>
                     </div>
                   </div>
+
+                  {/* Comparativo de todos os anos com seleção independente */}
+                  {(() => {
+                    const coresAnos = ["#38BDF8", "#F97316", "#A78BFA", "#22C55E", "#F43F5E", "#FACC15", "#14B8A6", "#FB7185", "#60A5FA", "#C084FC"];
+                    const comparativoTodosAnos = gerarComparativoAnual(dadosFiltrados, anosSelecionadosYoY);
+                    const colunasAnos = anosSelecionadosYoY.map(String);
+
+                    return (
+                      <div className="space-y-4">
+                        <div className="bg-slate-900/80 border border-slate-800 p-5 rounded-xl">
+                          <div className="flex flex-wrap items-start justify-between gap-3 mb-4">
+                            <div>
+                              <h3 className="text-sm font-bold text-white">Todos os anos disponíveis</h3>
+                              <p className="text-xs text-slate-400 mt-1">Selecione ou retire anos individualmente. O gráfico respeita os filtros gerais aplicados no painel lateral.</p>
+                            </div>
+                            <div className="flex gap-2 text-[11px]">
+                              <button type="button" onClick={() => setAnosSelecionadosYoY(anosDisponiveisYoY)} className="rounded bg-slate-800 px-2.5 py-1.5 text-slate-200 hover:bg-slate-700">Selecionar todos</button>
+                              <button type="button" onClick={() => setAnosSelecionadosYoY([])} className="rounded bg-slate-800 px-2.5 py-1.5 text-slate-300 hover:bg-slate-700">Limpar seleção</button>
+                            </div>
+                          </div>
+                          <div className="grid grid-cols-2 sm:grid-cols-4 md:grid-cols-6 lg:grid-cols-8 gap-2 mb-5">
+                            {anosDisponiveisYoY.map((ano, index) => (
+                              <label key={ano} className="flex items-center gap-2 rounded-lg border border-slate-700 bg-slate-950/50 px-2.5 py-2 text-xs text-slate-200 cursor-pointer hover:border-slate-500">
+                                <input type="checkbox" checked={anosSelecionadosYoY.includes(ano)} onChange={(event) => setAnosSelecionadosYoY((atuais) => event.target.checked ? [...atuais, ano].sort((a, b) => b - a) : atuais.filter((item) => item !== ano))} className="rounded border-slate-600 bg-slate-800 text-orange-500 focus:ring-orange-500" />
+                                <span className="h-2 w-2 rounded-full" style={{ backgroundColor: coresAnos[index % coresAnos.length] }} />
+                                <span>{ano}</span>
+                              </label>
+                            ))}
+                          </div>
+                          <div className="h-80 w-full">
+                            {anosSelecionadosYoY.length > 0 ? (
+                              <ResponsiveContainer width="100%" height="100%">
+                                <LineChart data={comparativoTodosAnos} margin={{ top: 10, right: 24, left: 28, bottom: 12 }}>
+                                  <CartesianGrid strokeDasharray="3 3" stroke="#334155" opacity={0.5} />
+                                  <XAxis dataKey="mes" stroke="#94A3B8" fontSize={10} />
+                                  <YAxis stroke="#94A3B8" fontSize={11} tickFormatter={(value) => valorResumido(value, true)} />
+                                  <RechartsTooltip contentStyle={{ backgroundColor: "#0F172A", borderColor: "#334155" }} formatter={(value: any, name: string) => [formatarMoeda(value), name]} />
+                                  <Legend wrapperStyle={{ paddingTop: 8, fontSize: 11 }} />
+                                  {anosSelecionadosYoY.map((ano, index) => <Line key={ano} type="monotone" dataKey={String(ano)} stroke={coresAnos[index % coresAnos.length]} strokeWidth={2.5} dot={{ r: 2 }} activeDot={{ r: 5 }} connectNulls />)}
+                                </LineChart>
+                              </ResponsiveContainer>
+                            ) : <div className="h-full flex items-center justify-center rounded-lg border border-dashed border-slate-700 text-sm text-slate-500">Selecione pelo menos um ano para visualizar o gráfico.</div>}
+                          </div>
+                        </div>
+                        {anosSelecionadosYoY.length > 0 && <DataTable exportName="comparativo_todos_os_anos" rows={comparativoTodosAnos} columns={["mes", ...colunasAnos]} />}
+                      </div>
+                    );
+                  })()}
 
                   {(() => {
                     const dadosAnoBase = dadosFiltrados.filter((d) => d.ano === anoBaseYoY);
