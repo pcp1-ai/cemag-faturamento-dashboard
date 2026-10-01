@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { gerarComparativoAnual } from "./comparativoAnual";
+import { calcularMetricaComparativo, gerarComparativoAnual } from "./comparativoAnual";
 
 describe("gerarComparativoAnual", () => {
   it("cria doze meses e mantém uma coluna independente para cada ano", () => {
@@ -25,5 +25,25 @@ describe("gerarComparativoAnual", () => {
 
     expect(result[7]).toMatchObject({ mes: "Ago", "2025": 30, "2023": 10 });
     expect(result[7]).not.toHaveProperty("2024");
+  });
+
+  it("calcula métricas quantitativas e médias sem confundir linhas do mesmo pedido", () => {
+    const registros = [
+      { ano: 2025, mes_num: 1, faturamento: 100, quantidade: 4, pedido: "P1", cliente: "C1" },
+      { ano: 2025, mes_num: 1, faturamento: 50, quantidade: 1, pedido: "P1", cliente: "C1" },
+      { ano: 2025, mes_num: 1, faturamento: 25, quantidade: 5, pedido: "P2", cliente: "C2" },
+    ];
+
+    expect(gerarComparativoAnual(registros, [2025], "quantidade")[0]).toMatchObject({ "2025": 10 });
+    expect(gerarComparativoAnual(registros, [2025], "pedidos")[0]).toMatchObject({ "2025": 2 });
+    expect(gerarComparativoAnual(registros, [2025], "clientes")[0]).toMatchObject({ "2025": 2 });
+    expect(calcularMetricaComparativo(registros, "ticket_unitario")).toBe(17.5);
+    expect(calcularMetricaComparativo(registros, "valor_medio_pedido")).toBe(87.5);
+  });
+
+  it("retorna zero para médias sem quantidade ou pedidos", () => {
+    const registros = [{ ano: 2025, mes_num: 1, faturamento: 100 }];
+    expect(calcularMetricaComparativo(registros, "ticket_unitario")).toBe(0);
+    expect(calcularMetricaComparativo(registros, "valor_medio_pedido")).toBe(0);
   });
 });

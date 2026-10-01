@@ -38,7 +38,7 @@ import { SidebarFilters, FiltrosState } from "../components/SidebarFilters";
 import { MapBrasil } from "../components/MapBrasil";
 import { MapMunicipios } from "../components/MapMunicipios";
 import { trpc } from "../lib/trpc";
-import { gerarComparativoAnual } from "../lib/comparativoAnual";
+import { calcularMetricaComparativo, gerarComparativoAnual, MetricaComparativoAnual } from "../lib/comparativoAnual";
 import {
   Menu,
   Download,
@@ -75,6 +75,21 @@ const CEMAG_BLUE = "#7DD3FC";
 const CEMAG_GREEN = "#22C55E";
 const CEMAG_RED = "#EF4444";
 const CEMAG_MUTED = "#64748B";
+
+const ROTULOS_METRICA_YOY: Record<MetricaComparativoAnual, string> = {
+  faturamento: "Faturamento",
+  quantidade: "Quantidade",
+  pedidos: "Pedidos",
+  clientes: "Clientes",
+  ticket_unitario: "Ticket unitário",
+  valor_medio_pedido: "Valor médio por pedido",
+};
+
+function formatarMetricaYoY(valor: number, metrica: MetricaComparativoAnual) {
+  return metrica === "faturamento" || metrica === "ticket_unitario" || metrica === "valor_medio_pedido"
+    ? formatarMoeda(valor)
+    : formatarInteiro(valor);
+}
 
 function bytesToBase64(bytes: Uint8Array): string {
   let binary = "";
@@ -578,6 +593,7 @@ export default function Home({ onLogout, emailAutenticado, isAdmin = false }: { 
   const [anoCompYoY, setAnoCompYoY] = useState<number>(2025);
   const [yoyMesesEquiv, setYoyMesesEquiv] = useState<boolean>(true);
   const [anosSelecionadosYoY, setAnosSelecionadosYoY] = useState<number[]>([]);
+  const [metricaYoY, setMetricaYoY] = useState<MetricaComparativoAnual>("faturamento");
 
   useEffect(() => {
     setAnosSelecionadosYoY((atuais) => {
@@ -1469,6 +1485,22 @@ export default function Home({ onLogout, emailAutenticado, isAdmin = false }: { 
                         </select>
                       </div>
 
+                      <div className="flex items-center gap-1.5">
+                        <span className="text-slate-400">Métrica:</span>
+                        <select
+                          value={metricaYoY}
+                          onChange={(e) => setMetricaYoY(e.target.value as MetricaComparativoAnual)}
+                          className="bg-slate-800 border border-slate-700 text-white rounded px-2 py-1"
+                        >
+                          <option value="faturamento">Faturamento</option>
+                          <option value="quantidade">Quantidade</option>
+                          <option value="pedidos">Pedidos</option>
+                          <option value="clientes">Clientes</option>
+                          <option value="ticket_unitario">Ticket unitário</option>
+                          <option value="valor_medio_pedido">Valor médio por pedido</option>
+                        </select>
+                      </div>
+
                       <label className="flex items-center gap-1.5 cursor-pointer select-none">
                         <input
                           type="checkbox"
@@ -1484,7 +1516,7 @@ export default function Home({ onLogout, emailAutenticado, isAdmin = false }: { 
                   {/* Comparativo de todos os anos com seleção independente */}
                   {(() => {
                     const coresAnos = ["#38BDF8", "#F97316", "#A78BFA", "#22C55E", "#F43F5E", "#FACC15", "#14B8A6", "#FB7185", "#60A5FA", "#C084FC"];
-                    const comparativoTodosAnos = gerarComparativoAnual(dadosFiltrados, anosSelecionadosYoY);
+                    const comparativoTodosAnos = gerarComparativoAnual(dadosFiltrados, anosSelecionadosYoY, metricaYoY);
                     const colunasAnos = anosSelecionadosYoY.map(String);
 
                     return (
@@ -1492,7 +1524,7 @@ export default function Home({ onLogout, emailAutenticado, isAdmin = false }: { 
                         <div className="bg-slate-900/80 border border-slate-800 p-5 rounded-xl">
                           <div className="flex flex-wrap items-start justify-between gap-3 mb-4">
                             <div>
-                              <h3 className="text-sm font-bold text-white">Todos os anos disponíveis</h3>
+                              <h3 className="text-sm font-bold text-white">Todos os anos disponíveis — {ROTULOS_METRICA_YOY[metricaYoY]}</h3>
                               <p className="text-xs text-slate-400 mt-1">Selecione ou retire anos individualmente. O gráfico respeita os filtros gerais aplicados no painel lateral.</p>
                             </div>
                             <div className="flex gap-2 text-[11px]">
@@ -1515,8 +1547,8 @@ export default function Home({ onLogout, emailAutenticado, isAdmin = false }: { 
                                 <LineChart data={comparativoTodosAnos} margin={{ top: 10, right: 24, left: 28, bottom: 12 }}>
                                   <CartesianGrid strokeDasharray="3 3" stroke="#334155" opacity={0.5} />
                                   <XAxis dataKey="mes" stroke="#94A3B8" fontSize={10} />
-                                  <YAxis stroke="#94A3B8" fontSize={11} tickFormatter={(value) => valorResumido(value, true)} />
-                                  <RechartsTooltip contentStyle={{ backgroundColor: "#0F172A", borderColor: "#334155" }} formatter={(value: any, name: string) => [formatarMoeda(value), name]} />
+                                  <YAxis stroke="#94A3B8" fontSize={11} tickFormatter={(value) => metricaYoY === "faturamento" || metricaYoY === "ticket_unitario" || metricaYoY === "valor_medio_pedido" ? valorResumido(value, true) : formatarInteiro(value)} />
+                                  <RechartsTooltip contentStyle={{ backgroundColor: "#0F172A", borderColor: "#334155" }} formatter={(value: any, name: string) => [formatarMetricaYoY(value, metricaYoY), `${ROTULOS_METRICA_YOY[metricaYoY]} ${name}`]} />
                                   <Legend wrapperStyle={{ paddingTop: 8, fontSize: 11 }} />
                                   {anosSelecionadosYoY.map((ano, index) => <Line key={ano} type="monotone" dataKey={String(ano)} stroke={coresAnos[index % coresAnos.length]} strokeWidth={2.5} dot={{ r: 2 }} activeDot={{ r: 5 }} connectNulls />)}
                                 </LineChart>
@@ -1543,14 +1575,14 @@ export default function Home({ onLogout, emailAutenticado, isAdmin = false }: { 
                     const baseFiltradaM = dadosAnoBase.filter((d) => mesesConsiderados.includes(d.mes_num));
                     const compFiltradaM = dadosAnoComp.filter((d) => mesesConsiderados.includes(d.mes_num));
 
-                    const fatBase = baseFiltradaM.reduce((s, d) => s + d.faturamento, 0);
-                    const fatComp = compFiltradaM.reduce((s, d) => s + d.faturamento, 0);
-                    const varAbs = fatComp - fatBase;
-                    const varPct = fatBase > 0 ? varAbs / fatBase : 0;
+                    const valorBase = calcularMetricaComparativo(baseFiltradaM, metricaYoY);
+                    const valorComp = calcularMetricaComparativo(compFiltradaM, metricaYoY);
+                    const varAbs = valorComp - valorBase;
+                    const varPct = valorBase > 0 ? varAbs / valorBase : 0;
 
                     const comparativoMensal = mesesConsiderados.map((m) => {
-                      const fBaseM = baseFiltradaM.filter((d) => d.mes_num === m).reduce((s, d) => s + d.faturamento, 0);
-                      const fCompM = compFiltradaM.filter((d) => d.mes_num === m).reduce((s, d) => s + d.faturamento, 0);
+                      const fBaseM = calcularMetricaComparativo(baseFiltradaM.filter((d) => d.mes_num === m), metricaYoY);
+                      const fCompM = calcularMetricaComparativo(compFiltradaM.filter((d) => d.mes_num === m), metricaYoY);
                       return {
                         mes: MESES[m] || `M${m}`,
                         [String(anoBaseYoY)]: fBaseM,
@@ -1562,17 +1594,17 @@ export default function Home({ onLogout, emailAutenticado, isAdmin = false }: { 
                       <>
                         <div className="grid grid-cols-1 sm:grid-cols-4 gap-4">
                           <div className="bg-slate-900 border border-slate-800 p-4 rounded-xl">
-                            <span className="text-xs text-slate-400">Faturamento {anoBaseYoY}</span>
-                            <div className="text-xl font-bold text-white mt-1">{formatarMoeda(fatBase)}</div>
+                            <span className="text-xs text-slate-400">{ROTULOS_METRICA_YOY[metricaYoY]} {anoBaseYoY}</span>
+                            <div className="text-xl font-bold text-white mt-1">{formatarMetricaYoY(valorBase, metricaYoY)}</div>
                           </div>
                           <div className="bg-slate-900 border border-slate-800 p-4 rounded-xl">
-                            <span className="text-xs text-slate-400">Faturamento {anoCompYoY}</span>
-                            <div className="text-xl font-bold text-orange-400 mt-1">{formatarMoeda(fatComp)}</div>
+                            <span className="text-xs text-slate-400">{ROTULOS_METRICA_YOY[metricaYoY]} {anoCompYoY}</span>
+                            <div className="text-xl font-bold text-orange-400 mt-1">{formatarMetricaYoY(valorComp, metricaYoY)}</div>
                           </div>
                           <div className="bg-slate-900 border border-slate-800 p-4 rounded-xl">
                             <span className="text-xs text-slate-400">Variação no Período</span>
                             <div className={`text-xl font-bold mt-1 ${varAbs >= 0 ? "text-green-400" : "text-red-400"}`}>
-                              {formatarMoeda(varAbs)} ({formatarPercentual(varPct)})
+                              {formatarMetricaYoY(varAbs, metricaYoY)} ({formatarPercentual(varPct)})
                             </div>
                           </div>
                           <div className="bg-slate-900 border border-slate-800 p-4 rounded-xl">
@@ -1584,17 +1616,17 @@ export default function Home({ onLogout, emailAutenticado, isAdmin = false }: { 
                         {/* Gráfico comparativo de barras lado a lado */}
                         <div className="bg-slate-900/80 border border-slate-800 p-5 rounded-xl">
                           <h3 className="text-sm font-bold text-white mb-4">
-                            Evolução mensal - {anoBaseYoY} vs {anoCompYoY}
+                            Evolução mensal — {ROTULOS_METRICA_YOY[metricaYoY]} — {anoBaseYoY} vs {anoCompYoY}
                           </h3>
                           <div className="h-72 w-full">
                             <ResponsiveContainer width="100%" height="100%">
                               <BarChart data={comparativoMensal} margin={{ top: 10, right: 30, left: 30, bottom: 42 }}>
                                 <CartesianGrid strokeDasharray="3 3" stroke="#334155" opacity={0.5} />
                                 <XAxis dataKey="mes" stroke="#94A3B8" fontSize={11} />
-                                <YAxis stroke="#94A3B8" fontSize={11} tickFormatter={(v) => valorResumido(v, true)} />
+                                <YAxis stroke="#94A3B8" fontSize={11} tickFormatter={(v) => metricaYoY === "faturamento" || metricaYoY === "ticket_unitario" || metricaYoY === "valor_medio_pedido" ? valorResumido(v, true) : formatarInteiro(v)} />
                                 <RechartsTooltip
                                   contentStyle={{ backgroundColor: "#0F172A", borderColor: "#334155" }}
-                                  formatter={(v: any) => [formatarMoeda(v), "Faturamento"]}
+                                  formatter={(v: any) => [formatarMetricaYoY(v, metricaYoY), ROTULOS_METRICA_YOY[metricaYoY]]}
                                 />
                                 <Legend wrapperStyle={{ paddingTop: 10, fontSize: 11 }} />
                                 <Bar dataKey={String(anoBaseYoY)} fill={CEMAG_BLUE} radius={[4, 4, 0, 0]} />
