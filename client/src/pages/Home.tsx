@@ -120,6 +120,26 @@ const metricKey = (label: string): string => ({
 const metricFormat = (value: number, label: string) =>
   ["Faturamento", "Ticket unitário", "Valor médio por pedido"].includes(label) ? formatarMoeda(value) : formatarInteiro(value);
 
+const METRICAS_PAINEL = ["Faturamento", "Quantidade", "Pedidos", "Clientes", "Ticket unitário", "Valor médio por pedido"] as const;
+const CAMPO_METRICA: Record<string, string> = { Faturamento: "faturamento", Quantidade: "quantidade", Pedidos: "pedidos", Clientes: "clientes", "Ticket unitário": "ticket_unitario_calc", "Valor médio por pedido": "valor_medio_pedido" };
+const campoMetrica = (metrica: string) => CAMPO_METRICA[metrica] || "faturamento";
+const valorMetrica = (row: any, metrica: string) => {
+  const campo = campoMetrica(metrica);
+  const fallback = campo === "ticket_unitario_calc" ? "ticketUnitario" : campo === "valor_medio_pedido" ? "valorMedioPedido" : campo;
+  return Number(row?.[campo] ?? row?.[fallback] ?? 0);
+};
+const formatarMetrica = (valor: number, metrica: string) => ["Faturamento", "Ticket unitário", "Valor médio por pedido"].includes(metrica) ? formatarMoeda(valor) : formatarInteiro(valor);
+const resumirMetrica = (valor: number, metrica: string) => ["Faturamento", "Ticket unitário", "Valor médio por pedido"].includes(metrica) ? valorResumido(valor, true) : formatarInteiro(valor);
+
+const SeletorMetrica: React.FC<{ value: string; onChange: (value: string) => void; label?: string }> = ({ value, onChange, label = "Métrica" }) => (
+  <label className="flex items-center gap-2 text-xs text-slate-400">
+    <span>{label}:</span>
+    <select value={value} onChange={(e) => onChange(e.target.value)} className="bg-slate-800 border border-slate-700 text-white rounded px-2.5 py-1">
+      {METRICAS_PAINEL.map((metrica) => <option key={metrica} value={metrica}>{metrica}</option>)}
+    </select>
+  </label>
+);
+
 const BASE_DB = "cemag_faturamento_db";
 const BASE_STORE = "bases";
 
@@ -1084,6 +1104,7 @@ export default function Home({ onLogout, emailAutenticado, isAdmin = false }: { 
                         <option value="Faturamento">Faturamento</option>
                         <option value="Quantidade">Quantidade</option>
                         <option value="Pedidos">Pedidos</option>
+                        <option value="Clientes">Clientes</option>
                         <option value="Ticket unitário">Ticket unitário</option>
                         <option value="Valor médio por pedido">Valor médio por pedido</option>
                       </select>
@@ -1092,32 +1113,32 @@ export default function Home({ onLogout, emailAutenticado, isAdmin = false }: { 
 
                   {/* 4 Destaques Líderes */}
                   {(() => {
-                    const topCli = agregar(dadosFiltrados, ["cliente"]).sort((a, b) => b.faturamento - a.faturamento)[0];
-                    const topProd = agregar(dadosFiltrados, ["produto"]).sort((a, b) => b.faturamento - a.faturamento)[0];
-                    const topReg = agregar(dadosFiltrados, ["regiao"]).sort((a, b) => b.faturamento - a.faturamento)[0];
-                    const topRep = agregar(dadosFiltrados, ["representante"]).sort((a, b) => b.faturamento - a.faturamento)[0];
+                    const topCli = agregar(dadosFiltrados, ["cliente"]).sort((a, b) => valorMetrica(b, metricaVisao) - valorMetrica(a, metricaVisao))[0];
+                    const topProd = agregar(dadosFiltrados, ["produto"]).sort((a, b) => valorMetrica(b, metricaVisao) - valorMetrica(a, metricaVisao))[0];
+                    const topReg = agregar(dadosFiltrados, ["regiao"]).sort((a, b) => valorMetrica(b, metricaVisao) - valorMetrica(a, metricaVisao))[0];
+                    const topRep = agregar(dadosFiltrados, ["representante"]).sort((a, b) => valorMetrica(b, metricaVisao) - valorMetrica(a, metricaVisao))[0];
 
                     return (
                       <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-3">
                         <div className="bg-slate-900/80 border border-slate-800 p-3.5 rounded-xl">
                           <span className="text-xs text-slate-400">Cliente líder</span>
                           <div className="text-sm font-bold text-white truncate mt-1">{topCli?.cliente || "-"}</div>
-                          <div className="text-xs font-semibold text-orange-400 mt-0.5">{formatarMoeda(topCli?.faturamento)}</div>
+                          <div className="text-xs font-semibold text-orange-400 mt-0.5">{formatarMetrica(valorMetrica(topCli, metricaVisao), metricaVisao)}</div>
                         </div>
                         <div className="bg-slate-900/80 border border-slate-800 p-3.5 rounded-xl">
                           <span className="text-xs text-slate-400">Produto líder</span>
                           <div className="text-sm font-bold text-white truncate mt-1">{topProd?.produto || "-"}</div>
-                          <div className="text-xs font-semibold text-orange-400 mt-0.5">{formatarMoeda(topProd?.faturamento)}</div>
+                          <div className="text-xs font-semibold text-orange-400 mt-0.5">{formatarMetrica(valorMetrica(topProd, metricaVisao), metricaVisao)}</div>
                         </div>
                         <div className="bg-slate-900/80 border border-slate-800 p-3.5 rounded-xl">
                           <span className="text-xs text-slate-400">Região líder</span>
                           <div className="text-sm font-bold text-white truncate mt-1">{topReg?.regiao || "-"}</div>
-                          <div className="text-xs font-semibold text-orange-400 mt-0.5">{formatarMoeda(topReg?.faturamento)}</div>
+                          <div className="text-xs font-semibold text-orange-400 mt-0.5">{formatarMetrica(valorMetrica(topReg, metricaVisao), metricaVisao)}</div>
                         </div>
                         <div className="bg-slate-900/80 border border-slate-800 p-3.5 rounded-xl">
                           <span className="text-xs text-slate-400">Representante líder</span>
                           <div className="text-sm font-bold text-white truncate mt-1">{topRep?.representante || "-"}</div>
-                          <div className="text-xs font-semibold text-orange-400 mt-0.5">{formatarMoeda(topRep?.faturamento)}</div>
+                          <div className="text-xs font-semibold text-orange-400 mt-0.5">{formatarMetrica(valorMetrica(topRep, metricaVisao), metricaVisao)}</div>
                         </div>
                       </div>
                     );
@@ -1136,18 +1157,18 @@ export default function Home({ onLogout, emailAutenticado, isAdmin = false }: { 
                           <YAxis
                             stroke="#94A3B8"
                             fontSize={11}
-                            tickFormatter={(v) => valorResumido(v, metricaVisao === "Faturamento")}
+                            tickFormatter={(v) => resumirMetrica(v, metricaVisao)}
                           />
                           <RechartsTooltip
                             contentStyle={{ backgroundColor: "#0F172A", borderColor: "#334155", borderRadius: "8px" }}
                             formatter={(v: any) => [
-                              metricaVisao === "Faturamento" ? formatarMoeda(v) : formatarInteiro(v),
+                              formatarMetrica(v, metricaVisao),
                               metricaVisao,
                             ]}
                           />
                           <Line
                             type="monotone"
-                            dataKey={metricaVisao === "Quantidade" ? "quantidade" : "faturamento"}
+                            dataKey={campoMetrica(metricaVisao)}
                             stroke={CEMAG_ORANGE}
                             strokeWidth={3}
                             dot={{ fill: CEMAG_ORANGE_SOFT, r: 4 }}
@@ -1164,20 +1185,20 @@ export default function Home({ onLogout, emailAutenticado, isAdmin = false }: { 
                       <h3 className="text-sm font-bold text-white mb-3">Top 8 carretas / produtos</h3>
                       {(() => {
                         const topProds = agregar(dadosFiltrados, ["produto"])
-                          .sort((a, b) => b.faturamento - a.faturamento)
+                          .sort((a, b) => valorMetrica(b, metricaVisao) - valorMetrica(a, metricaVisao))
                           .slice(0, 8);
                         return (
                           <div className="h-64 w-full">
                             <ResponsiveContainer width="100%" height="100%">
                               <BarChart data={topProds} layout="vertical" margin={{ top: 5, right: 30, left: 80, bottom: 5 }}>
                                 <CartesianGrid strokeDasharray="3 3" stroke="#334155" opacity={0.5} />
-                                <XAxis type="number" stroke="#94A3B8" tickFormatter={(v) => valorResumido(v, true)} fontSize={10} />
+                                <XAxis type="number" stroke="#94A3B8" tickFormatter={(v) => resumirMetrica(v, metricaVisao)} fontSize={10} />
                                 <YAxis dataKey="produto" type="category" stroke="#CBD5E1" fontSize={10} width={90} />
                                 <RechartsTooltip
                                   contentStyle={{ backgroundColor: "#0F172A", borderColor: "#334155" }}
-                                  formatter={(v: any) => [formatarMoeda(v), "Faturamento"]}
+                                  formatter={(v: any) => [formatarMetrica(v, metricaVisao), metricaVisao]}
                                 />
-                                <Bar dataKey="faturamento" fill={CEMAG_ORANGE} radius={[0, 4, 4, 0]} />
+                                <Bar dataKey={campoMetrica(metricaVisao)} fill={CEMAG_ORANGE} radius={[0, 4, 4, 0]} />
                               </BarChart>
                             </ResponsiveContainer>
                           </div>
@@ -1190,20 +1211,20 @@ export default function Home({ onLogout, emailAutenticado, isAdmin = false }: { 
                       <h3 className="text-sm font-bold text-white mb-3">Top 8 clientes</h3>
                       {(() => {
                         const topClis = agregar(dadosFiltrados, ["cliente"])
-                          .sort((a, b) => b.faturamento - a.faturamento)
+                          .sort((a, b) => valorMetrica(b, metricaVisao) - valorMetrica(a, metricaVisao))
                           .slice(0, 8);
                         return (
                           <div className="h-64 w-full">
                             <ResponsiveContainer width="100%" height="100%">
                               <BarChart data={topClis} layout="vertical" margin={{ top: 5, right: 30, left: 90, bottom: 5 }}>
                                 <CartesianGrid strokeDasharray="3 3" stroke="#334155" opacity={0.5} />
-                                <XAxis type="number" stroke="#94A3B8" tickFormatter={(v) => valorResumido(v, true)} fontSize={10} />
+                                <XAxis type="number" stroke="#94A3B8" tickFormatter={(v) => resumirMetrica(v, metricaVisao)} fontSize={10} />
                                 <YAxis dataKey="cliente" type="category" stroke="#CBD5E1" fontSize={10} width={100} />
                                 <RechartsTooltip
                                   contentStyle={{ backgroundColor: "#0F172A", borderColor: "#334155" }}
-                                  formatter={(v: any) => [formatarMoeda(v), "Faturamento"]}
+                                  formatter={(v: any) => [formatarMetrica(v, metricaVisao), metricaVisao]}
                                 />
-                                <Bar dataKey="faturamento" fill={CEMAG_BLUE} radius={[0, 4, 4, 0]} />
+                                <Bar dataKey={campoMetrica(metricaVisao)} fill={CEMAG_BLUE} radius={[0, 4, 4, 0]} />
                               </BarChart>
                             </ResponsiveContainer>
                           </div>
@@ -1323,7 +1344,9 @@ export default function Home({ onLogout, emailAutenticado, isAdmin = false }: { 
                           <option value="Faturamento">Faturamento</option>
                           <option value="Quantidade">Quantidade</option>
                           <option value="Pedidos">Pedidos</option>
+                          <option value="Clientes">Clientes</option>
                           <option value="Ticket unitário">Ticket unitário</option>
+                          <option value="Valor médio por pedido">Valor médio por pedido</option>
                         </select>
                       </div>
 
@@ -1379,14 +1402,14 @@ export default function Home({ onLogout, emailAutenticado, isAdmin = false }: { 
                         <LineChart data={dadosMensais} margin={{ top: 10, right: 30, left: 30, bottom: 20 }}>
                           <CartesianGrid strokeDasharray="3 3" opacity={0.3} />
                           <XAxis dataKey="ano_mes" fontSize={12} stroke="currentColor" />
-                          <YAxis fontSize={12} stroke="currentColor" tickFormatter={(v) => valorResumido(v, true)} />
+                          <YAxis fontSize={12} stroke="currentColor" tickFormatter={(v) => resumirMetrica(v, metricaApresentacao)} />
                           <RechartsTooltip
                             contentStyle={{ backgroundColor: "#0F172A", color: "#FFF", borderRadius: "8px" }}
-                            formatter={(v: any) => [formatarMoeda(v), metricaApresentacao]}
+                            formatter={(v: any) => [formatarMetrica(v, metricaApresentacao), metricaApresentacao]}
                           />
                           <Line
                             type="monotone"
-                            dataKey="faturamento"
+                            dataKey={campoMetrica(metricaApresentacao)}
                             stroke={temaApresentacao === "Claro" ? "#EA580C" : "#7DD3FC"}
                             strokeWidth={4}
                             dot={{ r: 6 }}
@@ -1402,7 +1425,7 @@ export default function Home({ onLogout, emailAutenticado, isAdmin = false }: { 
                       <h4 className="text-sm font-bold mb-3">Top {topNApresentacao} Carretas / Produtos</h4>
                       {(() => {
                         const topP = agregar(dadosFiltrados, ["produto"])
-                          .sort((a, b) => b.faturamento - a.faturamento)
+                          .sort((a, b) => valorMetrica(b, metricaApresentacao) - valorMetrica(a, metricaApresentacao))
                           .slice(0, topNApresentacao);
                         return (
                           <div className="space-y-2.5">
@@ -1412,7 +1435,7 @@ export default function Home({ onLogout, emailAutenticado, isAdmin = false }: { 
                                   <span className="opacity-50">#{idx + 1}</span>
                                   <span className="truncate">{item.produto}</span>
                                 </span>
-                                <span className="font-extrabold text-orange-400 ml-2">{formatarMoeda(item.faturamento)}</span>
+                                <span className="font-extrabold text-orange-400 ml-2">{formatarMetrica(valorMetrica(item, metricaApresentacao), metricaApresentacao)}</span>
                               </div>
                             ))}
                           </div>
@@ -1424,7 +1447,7 @@ export default function Home({ onLogout, emailAutenticado, isAdmin = false }: { 
                       <h4 className="text-sm font-bold mb-3">Top {topNApresentacao} Clientes</h4>
                       {(() => {
                         const topC = agregar(dadosFiltrados, ["cliente"])
-                          .sort((a, b) => b.faturamento - a.faturamento)
+                          .sort((a, b) => valorMetrica(b, metricaApresentacao) - valorMetrica(a, metricaApresentacao))
                           .slice(0, topNApresentacao);
                         return (
                           <div className="space-y-2.5">
@@ -1434,7 +1457,7 @@ export default function Home({ onLogout, emailAutenticado, isAdmin = false }: { 
                                   <span className="opacity-50">#{idx + 1}</span>
                                   <span className="truncate">{item.cliente}</span>
                                 </span>
-                                <span className="font-extrabold text-sky-400 ml-2">{formatarMoeda(item.faturamento)}</span>
+                                <span className="font-extrabold text-sky-400 ml-2">{formatarMetrica(valorMetrica(item, metricaApresentacao), metricaApresentacao)}</span>
                               </div>
                             ))}
                           </div>
@@ -1649,6 +1672,7 @@ export default function Home({ onLogout, emailAutenticado, isAdmin = false }: { 
                   <div className="flex flex-wrap items-center justify-between gap-4 bg-slate-900/60 p-4 rounded-xl border border-slate-800">
                     <div>
                       <h2 className="text-lg font-bold text-white">Evolução Mês a Mês (MoM)</h2>
+                      <div className="mt-2"><SeletorMetrica value={metricaMoM} onChange={setMetricaMoM} /></div>
                       <p className="text-xs text-slate-400">
                         Acompanhe oscilações mensais, ritmo recente e produtos com maiores aumentos e quedas.
                       </p>
@@ -1656,18 +1680,15 @@ export default function Home({ onLogout, emailAutenticado, isAdmin = false }: { 
                   </div>
 
                   <div className="bg-slate-900/80 border border-slate-800 p-5 rounded-xl">
-                    <h3 className="text-sm font-bold text-white mb-4">Faturamento mensal e variações recentes</h3>
+                    <h3 className="text-sm font-bold text-white mb-4">{metricaMoM} mensal e variações recentes</h3>
                     <div className="h-72 w-full">
                       <ResponsiveContainer width="100%" height="100%">
                         <BarChart data={dadosMensais} margin={{ top: 10, right: 30, left: 30, bottom: 20 }}>
                           <CartesianGrid strokeDasharray="3 3" stroke="#334155" opacity={0.5} />
                           <XAxis dataKey="ano_mes" interval="preserveStartEnd" angle={-18} textAnchor="end" height={42} stroke="#94A3B8" fontSize={10} />
-                          <YAxis stroke="#94A3B8" fontSize={11} tickFormatter={(v) => valorResumido(v, true)} />
-                          <RechartsTooltip
-                            contentStyle={{ backgroundColor: "#0F172A", borderColor: "#334155" }}
-                            formatter={(v: any) => [formatarMoeda(v), "Faturamento"]}
-                          />
-                          <Bar dataKey="faturamento" fill={CEMAG_ORANGE} radius={[4, 4, 0, 0]} />
+                          <YAxis stroke="#94A3B8" fontSize={11} tickFormatter={(v) => resumirMetrica(v, metricaMoM)} />
+                          <RechartsTooltip contentStyle={{ backgroundColor: "#0F172A", borderColor: "#334155" }} formatter={(v: any) => [formatarMetrica(v, metricaMoM), metricaMoM]} />
+                          <Bar dataKey={campoMetrica(metricaMoM)} fill={CEMAG_ORANGE} radius={[4, 4, 0, 0]} />
                         </BarChart>
                       </ResponsiveContainer>
                     </div>
@@ -1689,6 +1710,7 @@ export default function Home({ onLogout, emailAutenticado, isAdmin = false }: { 
                     </div>
 
                     <div className="flex flex-wrap items-center gap-3 text-xs">
+                      <SeletorMetrica value={metricaProd} onChange={setMetricaProd} />
                       <div className="flex items-center gap-2">
                         <span className="text-slate-400">Agrupar por:</span>
                         <select
@@ -1723,13 +1745,13 @@ export default function Home({ onLogout, emailAutenticado, isAdmin = false }: { 
                   {/* Tabela e Gráfico de Produtos */}
                   {(() => {
                     const prodAgg = agregar(dadosFiltrados, [agrupamentoProd])
-                      .sort((a, b) => b.faturamento - a.faturamento)
+                      .sort((a, b) => valorMetrica(b, metricaProd) - valorMetrica(a, metricaProd))
                       .slice(0, topNProd);
 
-                    const totalFat = dadosFiltrados.reduce((s, d) => s + d.faturamento, 0);
+                    const totalFat = dadosFiltrados.reduce((s, d) => s + valorMetrica(d, metricaProd), 0);
                     let acum = 0;
                     const prodComPareto = prodAgg.map((p) => {
-                      const pct = totalFat > 0 ? p.faturamento / totalFat : 0;
+                      const pct = totalFat > 0 ? valorMetrica(p, metricaProd) / totalFat : 0;
                       acum += pct;
                       return {
                         ...p,
@@ -1742,19 +1764,19 @@ export default function Home({ onLogout, emailAutenticado, isAdmin = false }: { 
                       <>
                         <div className="bg-slate-900/80 border border-slate-800 p-5 rounded-xl">
                           <h3 className="text-sm font-bold text-white mb-4">
-                            Ranking de {agrupamentoProd} - Top {topNProd}
+                            Ranking de {agrupamentoProd} por {metricaProd} - Top {topNProd}
                           </h3>
                           <div className="h-80 w-full">
                             <ResponsiveContainer width="100%" height="100%">
                               <BarChart data={prodComPareto.slice(0, 15)} layout="vertical" margin={{ top: 5, right: 30, left: 100, bottom: 5 }}>
                                 <CartesianGrid strokeDasharray="3 3" stroke="#334155" opacity={0.5} />
-                                <XAxis type="number" stroke="#94A3B8" tickFormatter={(v) => valorResumido(v, true)} fontSize={10} />
+                                <XAxis type="number" stroke="#94A3B8" tickFormatter={(v) => resumirMetrica(v, metricaProd)} fontSize={10} />
                                 <YAxis dataKey={agrupamentoProd} type="category" stroke="#CBD5E1" fontSize={10} width={110} />
                                 <RechartsTooltip
                                   contentStyle={{ backgroundColor: "#0F172A", borderColor: "#334155" }}
-                                  formatter={(v: any) => [formatarMoeda(v), "Faturamento"]}
+                                  formatter={(v: any) => [formatarMetrica(v, metricaProd), metricaProd]}
                                 />
-                                <Bar dataKey="faturamento" fill={CEMAG_ORANGE} radius={[0, 4, 4, 0]} />
+                                <Bar dataKey={campoMetrica(metricaProd)} fill={CEMAG_ORANGE} radius={[0, 4, 4, 0]} />
                               </BarChart>
                             </ResponsiveContainer>
                           </div>
@@ -1777,7 +1799,7 @@ export default function Home({ onLogout, emailAutenticado, isAdmin = false }: { 
                               <thead className="bg-slate-950/80 sticky top-0 text-[11px] uppercase tracking-wider text-slate-400 border-b border-slate-800">
                                 <tr>
                                   <th className="py-2.5 px-4">Item</th>
-                                  <th className="py-2.5 px-4 text-right">Faturamento</th>
+                                  <th className="py-2.5 px-4 text-right">{metricaProd}</th>
                                   <th className="py-2.5 px-4 text-right">Participação</th>
                                   <th className="py-2.5 px-4 text-right">Acumulado</th>
                                   <th className="py-2.5 px-4 text-right">Quantidade</th>
@@ -1834,7 +1856,9 @@ export default function Home({ onLogout, emailAutenticado, isAdmin = false }: { 
                       </p>
                     </div>
 
-                    <div className="flex items-center gap-2 text-xs">
+                    <div className="flex flex-wrap items-center gap-3 text-xs">
+                      <SeletorMetrica value={metricaCli} onChange={setMetricaCli} />
+                      <div className="flex items-center gap-2">
                       <span className="text-slate-400">Visão:</span>
                       <select
                         value={agrupCliente}
@@ -1844,12 +1868,13 @@ export default function Home({ onLogout, emailAutenticado, isAdmin = false }: { 
                         <option value="cliente">Cliente completo</option>
                         <option value="cliente_base">Cliente base unificado</option>
                       </select>
+                      </div>
                     </div>
                   </div>
 
                   {(() => {
-                    const abc = curvaAbc(dadosFiltrados, agrupCliente, "faturamento");
-                    const carteira = classificarCarteiraClientes(dadosFiltrados);
+                    const abc = curvaAbc(dadosFiltrados, agrupCliente, campoMetrica(metricaCli));
+                    const carteira = classificarCarteiraClientes(dadosFiltrados).sort((a, b) => valorMetrica(b, metricaCli) - valorMetrica(a, metricaCli));
 
                     const qtdA = abc.filter((c) => c.classe_abc === "A").length;
                     const qtdB = abc.filter((c) => c.classe_abc === "B").length;
@@ -1865,7 +1890,7 @@ export default function Home({ onLogout, emailAutenticado, isAdmin = false }: { 
                           <div className="bg-slate-900 border border-slate-800 p-4 rounded-xl">
                             <span className="text-xs text-slate-400">Clientes Classe A (80%)</span>
                             <div className="text-xl font-bold text-orange-400 mt-1">{qtdA} clientes</div>
-                            <span className="text-[10px] text-slate-500">80% do faturamento</span>
+                            <span className="text-[10px] text-slate-500">Classe A por {metricaCli}</span>
                           </div>
                           <div className="bg-slate-900 border border-slate-800 p-4 rounded-xl">
                             <span className="text-xs text-slate-400">Clientes em Atenção</span>
@@ -1881,8 +1906,8 @@ export default function Home({ onLogout, emailAutenticado, isAdmin = false }: { 
                             <span className="text-xs text-slate-400">Concentração Top 10</span>
                             <div className="text-xl font-bold text-sky-400 mt-1">
                               {formatarPercentual(
-                                abc.slice(0, 10).reduce((s, c) => s + c.faturamento, 0) /
-                                  (kpis.faturamento || 1)
+                                abc.slice(0, 10).reduce((s, c) => s + valorMetrica(c, metricaCli), 0) /
+                                  (valorMetrica(kpis, metricaCli) || 1)
                               )}
                             </div>
                             <span className="text-[10px] text-slate-500">Parcela dos 10 maiores</span>
@@ -1908,7 +1933,7 @@ export default function Home({ onLogout, emailAutenticado, isAdmin = false }: { 
                                   <th className="py-2.5 px-4">Cliente</th>
                                   <th className="py-2.5 px-4">UF</th>
                                   <th className="py-2.5 px-4">Representante</th>
-                                  <th className="py-2.5 px-4 text-right">Faturamento</th>
+                                  <th className="py-2.5 px-4 text-right">{metricaCli}</th>
                                   <th className="py-2.5 px-4 text-right">Pedidos</th>
                                   <th className="py-2.5 px-4 text-right">Última Compra</th>
                                   <th className="py-2.5 px-4 text-right">Dias sem Comprar</th>
@@ -1921,7 +1946,7 @@ export default function Home({ onLogout, emailAutenticado, isAdmin = false }: { 
                                     <td className="py-2 px-4 font-sans font-medium text-white truncate max-w-xs">{c.cliente}</td>
                                     <td className="py-2 px-4 text-slate-300">{c.uf}</td>
                                     <td className="py-2 px-4 text-slate-300">{c.representante}</td>
-                                    <td className="py-2 px-4 text-right font-bold text-orange-400">{formatarMoeda(c.faturamento)}</td>
+                                    <td className="py-2 px-4 text-right font-bold text-orange-400">{formatarMetrica(valorMetrica(c, metricaCli), metricaCli)}</td>
                                     <td className="py-2 px-4 text-right text-slate-300">{c.pedidos}</td>
                                     <td className="py-2 px-4 text-right text-slate-300">{c.ultima_compra}</td>
                                     <td className="py-2 px-4 text-right text-slate-300 font-bold">{c.dias_sem_compra} d</td>
@@ -2030,6 +2055,7 @@ export default function Home({ onLogout, emailAutenticado, isAdmin = false }: { 
               {/* ========================================================= */}
               {abaAtiva === "regioes" && (
                 <div className="space-y-6">
+                  <div className="flex justify-end"><SeletorMetrica value={metricaGeo} onChange={setMetricaGeo} /></div>
                   {/* Mapa do Brasil */}
                   <MapBrasil dadosUf={dadosPorUf} onSelectUf={setUfMapaSelecionada} />
                   <MapMunicipios dadosMunicipios={dadosMunicipios} selectedUf={ufMapaSelecionada} onClearSelection={() => setUfMapaSelecionada(null)} />
@@ -2038,12 +2064,12 @@ export default function Home({ onLogout, emailAutenticado, isAdmin = false }: { 
                   <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
                     {/* Faturamento por Macrorregião */}
                     <div className="bg-slate-900/80 border border-slate-800 p-4 rounded-xl">
-                      <h3 className="text-sm font-bold text-white mb-3">Participação por Macrorregião</h3>
+                      <h3 className="text-sm font-bold text-white mb-3">{metricaGeo} por Macrorregião</h3>
                       {(() => {
                         const regAgg = agregar(
                           dadosFiltrados.filter((d) => d.regiao !== "Não identificado"),
                           ["regiao"]
-                        ).sort((a, b) => b.faturamento - a.faturamento);
+                        ).sort((a, b) => valorMetrica(b, metricaGeo) - valorMetrica(a, metricaGeo));
 
                         return (
                           <div className="h-64 w-full">
@@ -2051,12 +2077,12 @@ export default function Home({ onLogout, emailAutenticado, isAdmin = false }: { 
                               <BarChart data={regAgg} margin={{ top: 10, right: 20, left: 20, bottom: 20 }}>
                                 <CartesianGrid strokeDasharray="3 3" stroke="#334155" opacity={0.5} />
                                 <XAxis dataKey="regiao" stroke="#CBD5E1" fontSize={11} />
-                                <YAxis stroke="#94A3B8" fontSize={10} tickFormatter={(v) => valorResumido(v, true)} />
+                                <YAxis stroke="#94A3B8" fontSize={10} tickFormatter={(v) => resumirMetrica(v, metricaGeo)} />
                                 <RechartsTooltip
                                   contentStyle={{ backgroundColor: "#0F172A", borderColor: "#334155" }}
-                                  formatter={(v: any) => [formatarMoeda(v), "Faturamento"]}
+                                  formatter={(v: any) => [formatarMetrica(v, metricaGeo), metricaGeo]}
                                 />
-                                <Bar dataKey="faturamento" fill={CEMAG_BLUE} radius={[4, 4, 0, 0]} />
+                                <Bar dataKey={campoMetrica(metricaGeo)} fill={CEMAG_BLUE} radius={[4, 4, 0, 0]} />
                               </BarChart>
                             </ResponsiveContainer>
                           </div>
@@ -2066,13 +2092,13 @@ export default function Home({ onLogout, emailAutenticado, isAdmin = false }: { 
 
                     {/* Top Cidades */}
                     <div className="bg-slate-900/80 border border-slate-800 p-4 rounded-xl">
-                      <h3 className="text-sm font-bold text-white mb-3">Top 8 Cidades com Maior Faturamento</h3>
+                      <h3 className="text-sm font-bold text-white mb-3">Top 8 Cidades por {metricaGeo}</h3>
                       {(() => {
                         const cidAgg = agregar(
                           dadosFiltrados.filter((d) => d.cidade !== "Não identificado"),
                           ["cidade", "uf"]
                         )
-                          .sort((a, b) => b.faturamento - a.faturamento)
+                          .sort((a, b) => valorMetrica(b, metricaGeo) - valorMetrica(a, metricaGeo))
                           .slice(0, 8);
 
                         return (
@@ -2080,13 +2106,13 @@ export default function Home({ onLogout, emailAutenticado, isAdmin = false }: { 
                             <ResponsiveContainer width="100%" height="100%">
                               <BarChart data={cidAgg} layout="vertical" margin={{ top: 5, right: 30, left: 80, bottom: 5 }}>
                                 <CartesianGrid strokeDasharray="3 3" stroke="#334155" opacity={0.5} />
-                                <XAxis type="number" stroke="#94A3B8" tickFormatter={(v) => valorResumido(v, true)} fontSize={10} />
+                                <XAxis type="number" stroke="#94A3B8" tickFormatter={(v) => resumirMetrica(v, metricaGeo)} fontSize={10} />
                                 <YAxis dataKey="cidade" type="category" stroke="#CBD5E1" fontSize={10} width={90} />
                                 <RechartsTooltip
                                   contentStyle={{ backgroundColor: "#0F172A", borderColor: "#334155" }}
-                                  formatter={(v: any) => [formatarMoeda(v), "Faturamento"]}
+                                  formatter={(v: any) => [formatarMetrica(v, metricaGeo), metricaGeo]}
                                 />
-                                <Bar dataKey="faturamento" fill={CEMAG_ORANGE} radius={[0, 4, 4, 0]} />
+                                <Bar dataKey={campoMetrica(metricaGeo)} fill={CEMAG_ORANGE} radius={[0, 4, 4, 0]} />
                               </BarChart>
                             </ResponsiveContainer>
                           </div>
@@ -2102,6 +2128,7 @@ export default function Home({ onLogout, emailAutenticado, isAdmin = false }: { 
               {/* ========================================================= */}
               {abaAtiva === "representantes" && (
                 <div className="space-y-6">
+                  <div className="flex justify-end"><SeletorMetrica value={metricaRep} onChange={setMetricaRep} /></div>
                   <div className="flex flex-wrap items-center justify-between gap-4 bg-slate-900/60 p-4 rounded-xl border border-slate-800">
                     <div>
                       <h2 className="text-lg font-bold text-white">Representantes Comerciais</h2>
@@ -2112,25 +2139,25 @@ export default function Home({ onLogout, emailAutenticado, isAdmin = false }: { 
                   </div>
 
                   {(() => {
-                    const repAgg = agregar(dadosFiltrados, ["representante"]).sort((a, b) => b.faturamento - a.faturamento);
+                    const repAgg = agregar(dadosFiltrados, ["representante"]).sort((a, b) => valorMetrica(b, metricaRep) - valorMetrica(a, metricaRep));
 
                     return (
                       <>
                         <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
                           {/* Ranking de Representantes */}
                           <div className="bg-slate-900/80 border border-slate-800 p-4 rounded-xl">
-                            <h3 className="text-sm font-bold text-white mb-3">Faturamento por Representante</h3>
+                            <h3 className="text-sm font-bold text-white mb-3">{metricaRep} por Representante</h3>
                             <div className="h-72 w-full">
                               <ResponsiveContainer width="100%" height="100%">
                                 <BarChart data={repAgg} layout="vertical" margin={{ top: 5, right: 30, left: 80, bottom: 5 }}>
                                   <CartesianGrid strokeDasharray="3 3" stroke="#334155" opacity={0.5} />
-                                  <XAxis type="number" stroke="#94A3B8" tickFormatter={(v) => valorResumido(v, true)} fontSize={10} />
+                                  <XAxis type="number" stroke="#94A3B8" tickFormatter={(v) => resumirMetrica(v, metricaRep)} fontSize={10} />
                                   <YAxis dataKey="representante" type="category" stroke="#CBD5E1" fontSize={11} width={90} />
                                   <RechartsTooltip
                                     contentStyle={{ backgroundColor: "#0F172A", borderColor: "#334155" }}
-                                    formatter={(v: any) => [formatarMoeda(v), "Faturamento"]}
+                                    formatter={(v: any) => [formatarMetrica(v, metricaRep), metricaRep]}
                                   />
-                                  <Bar dataKey="faturamento" fill={CEMAG_ORANGE} radius={[0, 4, 4, 0]} />
+                                  <Bar dataKey={campoMetrica(metricaRep)} fill={CEMAG_ORANGE} radius={[0, 4, 4, 0]} />
                                 </BarChart>
                               </ResponsiveContainer>
                             </div>
@@ -2144,7 +2171,7 @@ export default function Home({ onLogout, emailAutenticado, isAdmin = false }: { 
                                 <thead className="bg-slate-950 uppercase text-[10px] text-slate-400">
                                   <tr>
                                     <th className="p-2">Representante</th>
-                                    <th className="p-2 text-right">Faturamento</th>
+                                    <th className="p-2 text-right">{metricaRep}</th>
                                     <th className="p-2 text-right">Qtd</th>
                                     <th className="p-2 text-right">Pedidos</th>
                                     <th className="p-2 text-right">Ticket</th>
@@ -2154,7 +2181,7 @@ export default function Home({ onLogout, emailAutenticado, isAdmin = false }: { 
                                   {repAgg.map((r, idx) => (
                                     <tr key={idx} className="hover:bg-slate-800/40">
                                       <td className="p-2 font-sans font-medium text-white">{r.representante}</td>
-                                      <td className="p-2 text-right font-bold text-orange-400">{formatarMoeda(r.faturamento)}</td>
+                                      <td className="p-2 text-right font-bold text-orange-400">{formatarMetrica(valorMetrica(r, metricaRep), metricaRep)}</td>
                                       <td className="p-2 text-right">{formatarInteiro(r.quantidade)}</td>
                                       <td className="p-2 text-right text-slate-400">{r.pedidos}</td>
                                       <td className="p-2 text-right text-sky-400">{formatarMoeda(r.ticket_unitario_calc)}</td>
@@ -2177,6 +2204,7 @@ export default function Home({ onLogout, emailAutenticado, isAdmin = false }: { 
               {abaAtiva === "tipos" && (
                 <div className="space-y-6">
                   <div className="bg-slate-900/60 p-4 rounded-xl border border-slate-800">
+                    <div className="flex justify-end mb-3"><SeletorMetrica value={metricaVisao} onChange={setMetricaVisao} /></div>
                     <h2 className="text-lg font-bold text-white">Formas de Venda e Categorias de Produtos</h2>
                     <p className="text-xs text-slate-400">
                       Mix por natureza de operação e distribuição de faturamento por recurso.
@@ -2186,21 +2214,21 @@ export default function Home({ onLogout, emailAutenticado, isAdmin = false }: { 
                   <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
                     {/* Formas de Venda */}
                     <div className="bg-slate-900/80 border border-slate-800 p-4 rounded-xl">
-                      <h3 className="text-sm font-bold text-white mb-3">Formas de Venda</h3>
+                      <h3 className="text-sm font-bold text-white mb-3">{metricaVisao} por Forma de Venda</h3>
                       {(() => {
-                        const tiposAgg = agregar(dadosFiltrados, ["tipo_venda"]).sort((a, b) => b.faturamento - a.faturamento);
+                        const tiposAgg = agregar(dadosFiltrados, ["tipo_venda"]).sort((a, b) => valorMetrica(b, metricaVisao) - valorMetrica(a, metricaVisao));
                         return (
                           <div className="h-64 w-full">
                             <ResponsiveContainer width="100%" height="100%">
                               <BarChart data={tiposAgg} layout="vertical" margin={{ top: 5, right: 30, left: 120, bottom: 5 }}>
                                 <CartesianGrid strokeDasharray="3 3" stroke="#334155" opacity={0.5} />
-                                <XAxis type="number" stroke="#94A3B8" tickFormatter={(v) => valorResumido(v, true)} fontSize={10} />
+                                <XAxis type="number" stroke="#94A3B8" tickFormatter={(v) => resumirMetrica(v, metricaVisao)} fontSize={10} />
                                 <YAxis dataKey="tipo_venda" type="category" stroke="#CBD5E1" fontSize={10} width={130} />
                                 <RechartsTooltip
                                   contentStyle={{ backgroundColor: "#0F172A", borderColor: "#334155" }}
-                                  formatter={(v: any) => [formatarMoeda(v), "Faturamento"]}
+                                  formatter={(v: any) => [formatarMetrica(v, metricaVisao), metricaVisao]}
                                 />
-                                <Bar dataKey="faturamento" fill={CEMAG_ORANGE} radius={[0, 4, 4, 0]} />
+                                <Bar dataKey={campoMetrica(metricaVisao)} fill={CEMAG_ORANGE} radius={[0, 4, 4, 0]} />
                               </BarChart>
                             </ResponsiveContainer>
                           </div>
@@ -2210,21 +2238,21 @@ export default function Home({ onLogout, emailAutenticado, isAdmin = false }: { 
 
                     {/* Categorias */}
                     <div className="bg-slate-900/80 border border-slate-800 p-4 rounded-xl">
-                      <h3 className="text-sm font-bold text-white mb-3">Categorias de Produto</h3>
+                      <h3 className="text-sm font-bold text-white mb-3">{metricaVisao} por Categoria de Produto</h3>
                       {(() => {
-                        const catAgg = agregar(dadosFiltrados, ["categoria_produto"]).sort((a, b) => b.faturamento - a.faturamento);
+                        const catAgg = agregar(dadosFiltrados, ["categoria_produto"]).sort((a, b) => valorMetrica(b, metricaVisao) - valorMetrica(a, metricaVisao));
                         return (
                           <div className="h-64 w-full">
                             <ResponsiveContainer width="100%" height="100%">
                               <BarChart data={catAgg} layout="vertical" margin={{ top: 5, right: 30, left: 90, bottom: 5 }}>
                                 <CartesianGrid strokeDasharray="3 3" stroke="#334155" opacity={0.5} />
-                                <XAxis type="number" stroke="#94A3B8" tickFormatter={(v) => valorResumido(v, true)} fontSize={10} />
+                                <XAxis type="number" stroke="#94A3B8" tickFormatter={(v) => resumirMetrica(v, metricaVisao)} fontSize={10} />
                                 <YAxis dataKey="categoria_produto" type="category" stroke="#CBD5E1" fontSize={10} width={100} />
                                 <RechartsTooltip
                                   contentStyle={{ backgroundColor: "#0F172A", borderColor: "#334155" }}
-                                  formatter={(v: any) => [formatarMoeda(v), "Faturamento"]}
+                                  formatter={(v: any) => [formatarMetrica(v, metricaVisao), metricaVisao]}
                                 />
-                                <Bar dataKey="faturamento" fill={CEMAG_BLUE} radius={[0, 4, 4, 0]} />
+                                <Bar dataKey={campoMetrica(metricaVisao)} fill={CEMAG_BLUE} radius={[0, 4, 4, 0]} />
                               </BarChart>
                             </ResponsiveContainer>
                           </div>
