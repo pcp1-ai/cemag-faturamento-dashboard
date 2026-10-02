@@ -28,6 +28,7 @@ import {
   gerarExportacaoPersonalizada,
   exportarTabelaExcel,
   exportarTabelaCsv,
+  exportarAuditoriaExcel,
   CLIENTE_INFO_OVERRIDE,
   UF_NOME,
   MESES,
@@ -2415,6 +2416,40 @@ export default function Home({ onLogout, emailAutenticado, isAdmin = false }: { 
               {abaAtiva === "exportacoes" && (
                 <div className="space-y-6">
                   <div className="bg-slate-900/60 p-4 rounded-xl border border-slate-800"><h2 className="text-lg font-bold text-white flex items-center gap-2"><Download className="w-5 h-5 text-orange-500" /><span>Central de exportações</span></h2><p className="text-xs text-slate-400">Recorte adicional por anos e meses, tabelas prontas, gerador personalizado e base completa.</p></div>
+                  {(() => {
+                    const quantidadeAuditada = dadosFiltrados.reduce((s, d) => s + Number(d.quantidade || 0), 0);
+                    const faturamentoAuditado = dadosFiltrados.reduce((s, d) => s + Number(d.faturamento || 0), 0);
+                    const pedidosAuditados = new Set(dadosFiltrados.map((d) => d.pedido)).size;
+                    const clientesAuditados = new Set(dadosFiltrados.map((d) => d.cliente)).size;
+                    const resumoAuditoria = [
+                      { indicador: "Linhas consideradas pelo filtro", valor: dadosFiltrados.length },
+                      { indicador: "Quantidade total", valor: quantidadeAuditada },
+                      { indicador: "Faturamento total", valor: faturamentoAuditado },
+                      { indicador: "Pedidos únicos", valor: pedidosAuditados },
+                      { indicador: "Clientes únicos", valor: clientesAuditados },
+                      { indicador: "Período exibido", valor: periodoBaseTexto },
+                      { indicador: "Data usada nos cálculos", valor: "BAI_MOVIMENTAC (com fallback para BAI_EMISSAO)" },
+                    ];
+                    return <div className="rounded-xl border border-orange-500/30 bg-orange-950/20 p-4">
+                      <div className="flex flex-wrap items-start justify-between gap-4">
+                        <div>
+                          <h3 className="text-sm font-bold text-orange-300">Auditoria dos números exibidos</h3>
+                          <p className="mt-1 max-w-3xl text-xs text-slate-300">Exporta exatamente as linhas atualmente filtradas e uma aba de resumo com os indicadores usados pelo painel. Use este arquivo para conferir números como as 145 linhas e a quantidade 222 mostradas na tela.</p>
+                        </div>
+                        <div className="flex flex-wrap gap-2">
+                          <button onClick={() => exportarAuditoriaExcel(dadosFiltrados, resumoAuditoria, "auditoria_periodo_filtrado.xlsx")} className="inline-flex items-center gap-2 rounded bg-orange-600 px-3 py-2 text-xs font-semibold text-white hover:bg-orange-500"><FileSpreadsheet className="h-4 w-4" /> Exportar auditoria Excel</button>
+                          <button onClick={() => exportarTabelaCsv(dadosFiltrados, "linhas_filtradas_auditoria.csv")} className="inline-flex items-center gap-2 rounded bg-slate-800 px-3 py-2 text-xs font-semibold text-slate-100 hover:bg-slate-700"><Download className="h-4 w-4" /> Exportar linhas CSV</button>
+                        </div>
+                      </div>
+                      <div className="mt-3 grid grid-cols-2 gap-2 text-xs md:grid-cols-5">
+                        <div className="rounded bg-slate-950/70 p-2"><span className="text-slate-500">Linhas</span><strong className="block text-white">{dadosFiltrados.length.toLocaleString("pt-BR")}</strong></div>
+                        <div className="rounded bg-slate-950/70 p-2"><span className="text-slate-500">Quantidade</span><strong className="block text-orange-300">{formatarInteiro(quantidadeAuditada)}</strong></div>
+                        <div className="rounded bg-slate-950/70 p-2"><span className="text-slate-500">Faturamento</span><strong className="block text-orange-300">{formatarMoeda(faturamentoAuditado)}</strong></div>
+                        <div className="rounded bg-slate-950/70 p-2"><span className="text-slate-500">Pedidos</span><strong className="block text-sky-300">{pedidosAuditados.toLocaleString("pt-BR")}</strong></div>
+                        <div className="rounded bg-slate-950/70 p-2"><span className="text-slate-500">Clientes</span><strong className="block text-sky-300">{clientesAuditados.toLocaleString("pt-BR")}</strong></div>
+                      </div>
+                    </div>;
+                  })()}
                   {(() => { const anos=Array.from(new Set(dadosFiltrados.map(d=>d.ano))).sort(); const meses=Array.from(new Set(dadosFiltrados.map(d=>d.mes_num))).sort((a,b)=>a-b); const tipo=exportTipo; const modo=exportModo; const baseExport=dadosFiltrados; const tabela=modo==='prontas'?tabelaExportacaoPronta(baseExport,tipo):gerarExportacaoPersonalizada(baseExport,exportGranularidade,exportMetrica,exportDimensao==='Nenhum'?undefined:exportDimensao,false); return <div className="space-y-4"><div className="grid grid-cols-2 md:grid-cols-4 gap-3"><div className="bg-slate-900 border border-slate-800 p-3 rounded-lg"><span className="text-xs text-slate-400">Linhas</span><div className="text-xl font-bold text-white">{baseExport.length.toLocaleString('pt-BR')}</div></div><div className="bg-slate-900 border border-slate-800 p-3 rounded-lg"><span className="text-xs text-slate-400">Faturamento</span><div className="text-xl font-bold text-orange-400">{formatarMoeda(baseExport.reduce((s,d)=>s+d.faturamento,0))}</div></div><div className="bg-slate-900 border border-slate-800 p-3 rounded-lg"><span className="text-xs text-slate-400">Quantidade</span><div className="text-xl font-bold text-sky-400">{formatarInteiro(baseExport.reduce((s,d)=>s+d.quantidade,0))}</div></div><div className="bg-slate-900 border border-slate-800 p-3 rounded-lg"><span className="text-xs text-slate-400">Pedidos</span><div className="text-xl font-bold text-green-400">{new Set(baseExport.map(d=>d.pedido)).size}</div></div></div><div className="flex flex-wrap gap-2 bg-slate-900/80 p-2 rounded-lg border border-slate-800"><button onClick={()=>setExportModo('prontas')} className={`px-3 py-1.5 rounded text-xs ${modo==='prontas'?'bg-orange-600 text-white':'text-slate-300'}`}>⚡ Tabelas prontas</button><button onClick={()=>setExportModo('personalizada')} className={`px-3 py-1.5 rounded text-xs ${modo==='personalizada'?'bg-orange-600 text-white':'text-slate-300'}`}>🧩 Gerador personalizado</button><button onClick={()=>setExportModo('base')} className={`px-3 py-1.5 rounded text-xs ${modo==='base'?'bg-orange-600 text-white':'text-slate-300'}`}>🗂️ Base completa</button></div>{modo==='prontas'&&<div className="flex flex-wrap items-center gap-3 text-xs"><span className="text-slate-400">Tabela pronta:</span><select value={exportTipo} onChange={e=>setExportTipo(e.target.value)} className="bg-slate-800 border border-slate-700 text-white rounded px-2 py-1">{["Faturamento diário","Resumo mensal","Resumo trimestral","Resumo anual","Por família","Por produto/carreta","Por cliente","Por representante","Por região / UF / cidade","Por forma de venda","Por lista de preço"].map(x=><option key={x}>{x}</option>)}</select></div>}{modo==='personalizada'&&<div className="flex flex-wrap items-center gap-3 text-xs"><select value={exportGranularidade} onChange={e=>setExportGranularidade(e.target.value)} className="bg-slate-800 border border-slate-700 text-white rounded px-2 py-1">{['Diário','Semanal','Mensal','Trimestral','Anual'].map(x=><option key={x}>{x}</option>)}</select><select value={exportMetrica} onChange={e=>setExportMetrica(e.target.value)} className="bg-slate-800 border border-slate-700 text-white rounded px-2 py-1">{['Faturamento','Quantidade','Pedidos','Clientes','Ticket unitário','Valor médio por pedido'].map(x=><option key={x}>{x}</option>)}</select><select value={exportDimensao} onChange={e=>setExportDimensao(e.target.value)} className="bg-slate-800 border border-slate-700 text-white rounded px-2 py-1"><option>Nenhum</option>{['familia','produto','cliente','cliente_base','representante','regiao','uf','cidade','tipo_venda','categoria_produto','descricao_generica','lista_preco_uf'].map(x=><option key={x}>{x}</option>)}</select></div>}{modo==='base'?<DataTable rows={baseExport.slice(0,300)} columns={["data_str","cliente","produto","uf","quantidade","faturamento","pedido","tipo_venda"]} />:<DataTable rows={tabela} columns={Object.keys(tabela[0]||{}).slice(0,10)} />}{modo!=='base'&&<div className="flex gap-2"><button onClick={()=>exportarTabelaCsv(tabela,`exportacao_${modo}.csv`)} className="px-3 py-2 rounded bg-slate-800 hover:bg-slate-700 text-white text-xs flex items-center gap-2"><Download className="w-4 h-4"/> Baixar CSV</button><button onClick={()=>exportarTabelaExcel(tabela,`exportacao_${modo}.xlsx`,tipo.slice(0,31))} className="px-3 py-2 rounded bg-orange-600 hover:bg-orange-500 text-white text-xs flex items-center gap-2"><FileSpreadsheet className="w-4 h-4"/> Baixar Excel</button></div>}{modo==='base'&&<div className="flex gap-2"><button onClick={()=>exportarTabelaCsv(baseExport,'base_faturamento_filtrada.csv')} className="px-3 py-2 rounded bg-slate-800 hover:bg-slate-700 text-white text-xs">Baixar base filtrada em CSV</button><button onClick={()=>exportarTabelaExcel(baseExport,'base_faturamento_filtrada.xlsx','Base filtrada')} className="px-3 py-2 rounded bg-orange-600 hover:bg-orange-500 text-white text-xs">Baixar base filtrada em Excel</button></div>}</div>; })()}
                 </div>
               )}

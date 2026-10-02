@@ -1057,6 +1057,21 @@ export function exportarTabelaExcel(tabela: any[], nomeArquivo: string = "export
   XLSX.writeFile(wb, nomeArquivo);
 }
 
+/** Exporta a trilha de auditoria: resumo dos indicadores + todas as linhas usadas no filtro atual. */
+export function exportarAuditoriaExcel(
+  linhas: any[],
+  resumo: Array<{ indicador: string; valor: string | number }>,
+  nomeArquivo: string = "auditoria_periodo_filtrado.xlsx"
+) {
+  if (!linhas || !linhas.length) return;
+  const wb = XLSX.utils.book_new();
+  const resumoWs = XLSX.utils.json_to_sheet(resumo);
+  const linhasWs = XLSX.utils.json_to_sheet(linhas);
+  XLSX.utils.book_append_sheet(wb, resumoWs, "Resumo dos números");
+  XLSX.utils.book_append_sheet(wb, linhasWs, "Linhas filtradas");
+  XLSX.writeFile(wb, nomeArquivo);
+}
+
 export function exportarTabelaCsv(tabela: any[], nomeArquivo: string = "exportacao.csv") {
   if (!tabela || !tabela.length) return;
   const csv = Papa.unparse(tabela, { delimiter: ";" });
