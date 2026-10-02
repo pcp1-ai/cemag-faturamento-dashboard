@@ -874,6 +874,46 @@ export default function Home({ onLogout, emailAutenticado, isAdmin = false }: { 
     };
   }, [dados, meta]);
 
+  const classificacaoFiltrada = useMemo(() => {
+    const mapa = new Map<string, { tipo_produto: string; linhas: number; quantidade: number; faturamento: number; pedidos: Set<string>; clientes: Set<string>; produtos: Set<string>; categorias: Set<string> }>();
+    for (const d of dadosFiltrados) {
+      const tipo = d.tipo_produto || "Outros";
+      if (!mapa.has(tipo)) mapa.set(tipo, { tipo_produto: tipo, linhas: 0, quantidade: 0, faturamento: 0, pedidos: new Set(), clientes: new Set(), produtos: new Set(), categorias: new Set() });
+      const item = mapa.get(tipo)!;
+      item.linhas += 1;
+      item.quantidade += Number(d.quantidade || 0);
+      item.faturamento += Number(d.faturamento || 0);
+      item.pedidos.add(d.pedido);
+      item.clientes.add(d.cliente);
+      if (d.produto) item.produtos.add(d.produto);
+      if (d.categoria_produto) item.categorias.add(d.categoria_produto);
+    }
+    const totalQuantidade = dadosFiltrados.reduce((s, d) => s + Number(d.quantidade || 0), 0);
+    const totalFaturamento = dadosFiltrados.reduce((s, d) => s + Number(d.faturamento || 0), 0);
+    const criterio: Record<string, string> = {
+      Carreta: "Prefixo CBH/CTH/FTC/F6/FA/MCF/SEF/ROCAX ou texto de carreta/implemento",
+      Conjunto: "Texto contém CONJUNTO ou KIT",
+      Peça: "Descrição contém peça, eixo, roda, pneu, motor, acessório e termos similares",
+      Sucata: "Código 00000 ou texto contém sucata/salvado",
+      "Itens comprados": "Código do produto começa com 2",
+      Outros: "Não atendeu às regras específicas anteriores",
+    };
+    return Array.from(mapa.values()).map((item) => ({
+      tipo_produto: item.tipo_produto,
+      criterio: criterio[item.tipo_produto] || "Regra de classificação aplicada",
+      linhas: item.linhas,
+      quantidade: item.quantidade,
+      participacao_quantidade: totalQuantidade ? item.quantidade / totalQuantidade : 0,
+      faturamento: item.faturamento,
+      participacao_faturamento: totalFaturamento ? item.faturamento / totalFaturamento : 0,
+      pedidos: item.pedidos.size,
+      clientes: item.clientes.size,
+      produtos_distintos: item.produtos.size,
+      exemplos_produtos: Array.from(item.produtos).slice(0, 5).join(" | "),
+      categorias_origem: Array.from(item.categorias).slice(0, 4).join(" | "),
+    })).sort((a, b) => b.quantidade - a.quantidade || b.faturamento - a.faturamento);
+  }, [dadosFiltrados]);
+
   // Formas de venda texto para exibição
   const formasVendaTexto = filtros.considerarTodasFormas
     ? "Todas"
@@ -2324,6 +2364,21 @@ export default function Home({ onLogout, emailAutenticado, isAdmin = false }: { 
                         {[["Quantidade não positiva", diagnosticoBase.qtdNaoPositiva], ["Faturamento não positivo", diagnosticoBase.faturamentoNaoPositivo], ["Cidade não identificada", diagnosticoBase.cidadeNaoIdentificada], ["Produto não informado", diagnosticoBase.produtoNaoInformado], ["Cliente não informado", diagnosticoBase.clienteNaoInformado]].map(([label, value]) => <div key={String(label)} className="flex justify-between border-b border-slate-800 py-2"><span className="text-slate-400">{label}</span><strong className={Number(value) ? "text-amber-300" : "text-emerald-300"}>{Number(value).toLocaleString("pt-BR")}</strong></div>)}
                       </div>
                     </div>
+                  </div>
+                  <div className="bg-slate-900/80 border border-orange-500/30 rounded-xl p-5">
+                    <div className="flex flex-wrap items-start justify-between gap-3 mb-3">
+                      <div>
+                        <h3 className="text-sm font-bold text-orange-300">Como os números foram classificados</h3>
+                        <p className="text-xs text-slate-400 mt-1">Esta tabela acompanha os filtros ativos, inclusive início e fim do período. A quantidade abaixo é a soma das linhas filtradas, e não o número de registros.</p>
+                      </div>
+                      <div className="text-right text-[11px] text-slate-500">{dadosFiltrados.length.toLocaleString("pt-BR")} linhas no filtro atual</div>
+                    </div>
+                    <DataTable
+                      rows={classificacaoFiltrada}
+                      exportName="classificacao_por_tipo_filtrada"
+                      columns={["tipo_produto", "criterio", "linhas", "quantidade", "participacao_quantidade", "faturamento", "participacao_faturamento", "pedidos", "clientes", "produtos_distintos", "exemplos_produtos", "categorias_origem"]}
+                      percentColumns={["participacao_quantidade", "participacao_faturamento"]}
+                    />
                   </div>
                   <div className="bg-slate-900/80 border border-slate-800 rounded-xl p-5">
                     <h3 className="text-sm font-bold text-white mb-3">Meses sem registros</h3>
