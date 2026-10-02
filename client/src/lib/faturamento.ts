@@ -304,6 +304,10 @@ export function classificarTipoProduto(produto: any, categoria: any, descricao: 
   if (produtoTexto.startsWith("00000") || texto.includes("SUCATA") || texto.includes("SALVADO")) return "Sucata";
   // Códigos iniciados por 2 representam itens comprados.
   if (/^2/.test(produtoTexto)) return "Itens comprados";
+  // A base usa "70 Sistemas Carretas" para conjuntos/componentes de
+  // carretas. Esta regra precisa vir antes da regra de prefixos e do texto
+  // genérico "CARRETA", pois esses itens não são carretas completas.
+  if (texto.includes("SISTEMAS CARRETAS")) return "Conjunto";
   // Padrão CEMAG: estas famílias identificam carretas/implementos, mesmo
   // quando a descrição também contém termos genéricos de peças ou acessórios.
   // A checagem usa o início do código para cobrir variações como CBH6R,

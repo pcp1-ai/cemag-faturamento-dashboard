@@ -23,6 +23,25 @@ describe("classificação de carretas conforme padrão CEMAG", () => {
     expect(classificarTipoProduto("FTC4300R", "", "EIXO E ACESSÓRIO", "")).toBe("Carreta");
   });
 
+  it.each([
+    "025635LC",
+    "025638LC",
+    "025688LC",
+    "029656CO",
+    "031250AN",
+    "031251AN",
+    "031254AN",
+    "031255AN",
+    "031541AN",
+    "031542AN",
+    "032433CO",
+    "440001",
+    "460382AN",
+    "460400AN",
+  ])("classifica %s como Conjunto quando pertence a 70 Sistemas Carretas", (produto) => {
+    expect(classificarTipoProduto(produto, "70 Sistemas Carretas", "", "")).toBe("Conjunto");
+  });
+
   it("mantém sucata e itens comprados como categorias prioritárias", () => {
     expect(classificarTipoProduto("00000-PEÇA", "", "", "")).toBe("Sucata");
     expect(classificarTipoProduto("200123", "", "", "")).toBe("Itens comprados");
