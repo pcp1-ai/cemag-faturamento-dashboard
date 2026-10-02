@@ -304,10 +304,14 @@ export function classificarTipoProduto(produto: any, categoria: any, descricao: 
   if (produtoTexto.startsWith("00000") || texto.includes("SUCATA") || texto.includes("SALVADO")) return "Sucata";
   // Códigos iniciados por 2 representam itens comprados.
   if (/^2/.test(produtoTexto)) return "Itens comprados";
+  // Padrão CEMAG: estas famílias identificam carretas/implementos, mesmo
+  // quando a descrição também contém termos genéricos de peças ou acessórios.
+  // A checagem usa o início do código para cobrir variações como CBH6R,
+  // CBHM6000-2E, FTC6500R, FA2A e os sufixos de ano/versão.
+  if (/^(CBH|CTH|FTC|F6|FA|MCF|SEF|ROCAX)/.test(produtoTexto)) return "Carreta";
   if (texto.includes("CONJUNTO") || texto.includes("KIT ") || texto.startsWith("KIT")) return "Conjunto";
   if (/(PECA|PECAS|PARAF|ROLAMENTO|CORREIA|MANCAL|BUCHA|ENGRENAGEM|EIXO|CHAPA|LONA|PNEU|RODA|VALVULA|MOTOR|BOMBA|ACESSOR)/.test(texto)) return "Peça";
-  // Famílias de carretas/implementos: CBH, CBHM, CTH, FA, MCF, SEF e ROCAX (ROÇAX).
-  if (texto.includes("CARRETA") || /^(CBHM?|CTH|FA|MCF|SEF|ROCAX)/.test(produtoTexto)) return "Carreta";
+  if (texto.includes("CARRETA") || texto.includes("IMPLEMENTO")) return "Carreta";
   return "Outros";
 }
 
@@ -316,8 +320,10 @@ export function grupoModelo(produto: any): string {
   if (fam.startsWith("CBHM")) return "CBHM";
   if (fam.startsWith("CBH")) return "CBH";
   if (fam.startsWith("CTH")) return "CTH";
-  if (fam.startsWith("F")) return "F";
+  if (fam.startsWith("FTC")) return "FTC";
+  if (fam.startsWith("F6")) return "F6";
   if (fam.startsWith("FA")) return "FA";
+  if (fam.startsWith("F")) return "F";
   if (fam.startsWith("MCF")) return "MCF";
   if (fam.startsWith("SEF")) return "SEF";
   if (fam.startsWith("RO")) return "Roçadeiras";
