@@ -1319,6 +1319,8 @@ export interface PrevisaoMensal {
   mes_num: number;
   realizado: number | null;
   previsao: number | null;
+  conservador?: number | null;
+  otimista?: number | null;
   tipo: "Histórico" | "Previsão";
 }
 
@@ -1385,5 +1387,10 @@ export function gerarPrevisaoMensal(dados: TransacaoTratada[], horizonte = 6, me
       if (valores[i] !== 0) { erro += Math.abs((valores[i] - valores[i - 1]) / valores[i]); n++; }
     }
   }
-  return { serie: previsoes, mape: n ? (erro / n) * 100 : null, metodo: "Tendência linear + sazonalidade mensal", historicoMeses: chaves.length, metrica };
+  const mape = n ? (erro / n) * 100 : null;
+  const margem = Math.min(0.35, Math.max(0.08, ((mape ?? 15) / 100) * 1.5));
+  const serieComCenarios = previsoes.map((item) => item.tipo === "Previsão" && item.previsao != null
+    ? { ...item, conservador: Math.max(0, item.previsao * (1 - margem)), otimista: item.previsao * (1 + margem) }
+    : item);
+  return { serie: serieComCenarios, mape, metodo: "Tendência linear + sazonalidade mensal", historicoMeses: chaves.length, metrica };
 }
