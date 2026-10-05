@@ -1322,11 +1322,32 @@ export interface PrevisaoMensal {
   tipo: "Histórico" | "Previsão";
 }
 
-export function gerarPrevisaoMensal(dados: TransacaoTratada[], horizonte = 6): { serie: PrevisaoMensal[]; mape: number | null; metodo: string; historicoMeses: number } {
+function valorMensalPrevisao(rows: TransacaoTratada[], metrica: string): number {
+  if (metrica === "Quantidade") return rows.reduce((s, d) => s + d.quantidade, 0);
+  if (metrica === "Pedidos") return new Set(rows.map((d) => d.pedido)).size;
+  if (metrica === "Clientes") return new Set(rows.map((d) => d.cliente)).size;
+  const faturamento = rows.reduce((s, d) => s + d.faturamento, 0);
+  if (metrica === "Ticket unitário") {
+    const quantidade = rows.reduce((s, d) => s + d.quantidade, 0);
+    return quantidade ? faturamento / quantidade : 0;
+  }
+  if (metrica === "Valor médio por pedido") {
+    const pedidos = new Set(rows.map((d) => d.pedido)).size;
+    return pedidos ? faturamento / pedidos : 0;
+  }
+  return faturamento;
+}
+
+export function gerarPrevisaoMensal(dados: TransacaoTratada[], horizonte = 6, metrica = "Faturamento"): { serie: PrevisaoMensal[]; mape: number | null; metodo: string; historicoMeses: number; metrica: string } {
   const mensal = new Map<string, number>();
-  for (const d of dados) mensal.set(d.ano_mes, (mensal.get(d.ano_mes) || 0) + d.faturamento);
+  const porMes = new Map<string, TransacaoTratada[]>();
+  for (const d of dados) {
+    if (!porMes.has(d.ano_mes)) porMes.set(d.ano_mes, []);
+    porMes.get(d.ano_mes)!.push(d);
+  }
+  for (const [mes, rows] of porMes) mensal.set(mes, valorMensalPrevisao(rows, metrica));
   const chaves = Array.from(mensal.keys()).sort();
-  if (chaves.length < 6) return { serie: [], mape: null, metodo: "Histórico insuficiente", historicoMeses: chaves.length };
+  if (chaves.length < 6) return { serie: [], mape: null, metodo: "Histórico insuficiente", historicoMeses: chaves.length, metrica };
   const valores = chaves.map((k) => mensal.get(k) || 0);
   const ultimos = Math.min(24, valores.length);
   const inicio = valores.length - ultimos;
@@ -1364,5 +1385,5 @@ export function gerarPrevisaoMensal(dados: TransacaoTratada[], horizonte = 6): {
       if (valores[i] !== 0) { erro += Math.abs((valores[i] - valores[i - 1]) / valores[i]); n++; }
     }
   }
-  return { serie: previsoes, mape: n ? (erro / n) * 100 : null, metodo: "Tendência linear + sazonalidade mensal", historicoMeses: chaves.length };
+  return { serie: previsoes, mape: n ? (erro / n) * 100 : null, metodo: "Tendência linear + sazonalidade mensal", historicoMeses: chaves.length, metrica };
 }
