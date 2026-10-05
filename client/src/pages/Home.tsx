@@ -849,6 +849,21 @@ export default function Home({ onLogout, emailAutenticado, isAdmin = false }: { 
 
   const previsaoMensal = useMemo(() => gerarPrevisaoMensal(dadosFiltrados, horizontePrevisao, metricaPrevisao), [dadosFiltrados, horizontePrevisao, metricaPrevisao]);
   const validacaoPrevisao = useMemo(() => validarPrevisaoMensal(dadosFiltrados, metricaPrevisao), [dadosFiltrados, metricaPrevisao]);
+  const explicacaoPrevisoes = useMemo(() => previsaoMensal.serie.filter((item) => item.tipo === "Previsão").map((item) => {
+    const provavel = Number(item.previsao || 0);
+    const conservador = Number(item.conservador || 0);
+    const otimista = Number(item.otimista || 0);
+    const margem = provavel ? (otimista / provavel - 1) : 0;
+    return {
+      mes: item.ano_mes,
+      metrica: metricaPrevisao,
+      conservador,
+      provavel,
+      otimista,
+      margem_pct: margem,
+      explicacao: `Provável = tendência + sazonalidade; Conservador = provável - ${(margem * 100).toFixed(1)}%; Otimista = provável + ${(margem * 100).toFixed(1)}%. Faixa baseada no erro histórico.`,
+    };
+  }), [previsaoMensal, metricaPrevisao]);
 
   const diagnosticoBase = useMemo(() => {
     const dataMin = meta?.data_min as Date | undefined;
@@ -2327,6 +2342,7 @@ export default function Home({ onLogout, emailAutenticado, isAdmin = false }: { 
                       <h3 className="text-sm font-bold text-white mb-3">Histórico e próximos {horizontePrevisao} meses — {metricaPrevisao}</h3>
                       <div className="h-80 w-full"><ResponsiveContainer width="100%" height="100%"><LineChart data={previsaoMensal.serie} margin={{ top: 10, right: 20, left: 20, bottom: 34 }}><CartesianGrid strokeDasharray="3 3" stroke="#334155" opacity={0.5} /><XAxis dataKey="ano_mes" interval="preserveStartEnd" angle={-18} textAnchor="end" height={42} stroke="#94A3B8" fontSize={10} /><YAxis stroke="#94A3B8" fontSize={10} tickFormatter={(v) => formatarMetrica(v, metricaPrevisao)} /><RechartsTooltip contentStyle={{ backgroundColor: "#0F172A", borderColor: "#334155" }} formatter={(v: any, name: any) => [formatarMetrica(v, metricaPrevisao), name === "realizado" || name === "Realizado" ? "Realizado" : name === "previsao" || name === "Provável" ? "Provável" : name === "conservador" || name === "Conservador" ? "Conservador" : "Otimista"]} /><Legend wrapperStyle={{ paddingTop: 10, fontSize: 11 }} /><Line type="monotone" dataKey="realizado" name="Realizado" stroke={CEMAG_BLUE} strokeWidth={2.5} dot={false} connectNulls={false} /><Line type="monotone" dataKey="previsao" name="Provável" stroke={CEMAG_ORANGE} strokeWidth={2.5} strokeDasharray="6 4" dot={{ r: 3 }} connectNulls={false} /><Line type="monotone" dataKey="conservador" name="Conservador" stroke="#F87171" strokeWidth={1.5} strokeDasharray="3 3" dot={false} connectNulls={false} /><Line type="monotone" dataKey="otimista" name="Otimista" stroke="#34D399" strokeWidth={1.5} strokeDasharray="3 3" dot={false} connectNulls={false} /></LineChart></ResponsiveContainer></div>
                     </div>
+                    <div className="bg-slate-900/80 border border-slate-800 rounded-xl p-5"><h3 className="text-sm font-bold text-white mb-2">Explicação de cada previsão — {metricaPrevisao}</h3><p className="text-xs text-slate-400 mb-3">O cenário <strong className="text-orange-300">Provável</strong> é a estimativa principal do modelo. O <strong className="text-red-300">Conservador</strong> reduz esse valor e o <strong className="text-emerald-300">Otimista</strong> aumenta esse valor usando uma margem baseada no erro histórico.</p><DataTable rows={explicacaoPrevisoes} exportName="explicacao_previsoes" columns={["mes", "metrica", "conservador", "provavel", "otimista", "margem_pct", "explicacao"]} percentColumns={["margem_pct"]} metricColumns={{ conservador: metricaPrevisao, provavel: metricaPrevisao, otimista: metricaPrevisao }} /></div>
                     <div className="bg-slate-900/80 border border-slate-800 rounded-xl p-5"><h3 className="text-sm font-bold text-white mb-3">Valores previstos — {metricaPrevisao}</h3><DataTable rows={previsaoMensal.serie.filter((x) => x.tipo === "Previsão")} columns={["ano_mes", "conservador", "previsao", "otimista", "tipo"]} metricColumns={{ conservador: metricaPrevisao, previsao: metricaPrevisao, otimista: metricaPrevisao }} /></div>
                   </> : <div className="bg-amber-500/10 border border-amber-500/30 text-amber-200 rounded-xl p-5 text-sm">Histórico insuficiente após os filtros atuais. São necessários pelo menos seis meses com registros.</div>}
                 </div>
