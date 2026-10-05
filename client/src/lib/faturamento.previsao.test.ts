@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { gerarPrevisaoMensal } from "./faturamento";
+import { gerarPrevisaoMensal, validarPrevisaoMensal } from "./faturamento";
 
 const dados = Array.from({ length: 6 }, (_, index) => {
   const mes = String(index + 1).padStart(2, "0");
@@ -29,5 +29,16 @@ describe("previsão mensal por métrica", () => {
     const medio = gerarPrevisaoMensal(dados, 1, "Valor médio por pedido");
     expect(ticket.serie[0].realizado).toBe(300);
     expect(medio.serie[0].realizado).toBe(1500);
+  });
+
+  it("valida os últimos meses fora do treino", () => {
+    const mesesExtras = Array.from({ length: 3 }, (_, index) => {
+      const mes = String(index + 7).padStart(2, "0");
+      return { ano_mes: `2025-${mes}`, faturamento: 1500, quantidade: 5, pedido: `P${index + 6}A`, cliente: `C${index + 6}A` };
+    });
+    const validacao = validarPrevisaoMensal([...dados, ...mesesExtras] as any[], "Faturamento");
+    expect(validacao.pontos).toBe(3);
+    expect(validacao.mape).toBe(0);
+    expect(validacao.mae).toBe(0);
   });
 });

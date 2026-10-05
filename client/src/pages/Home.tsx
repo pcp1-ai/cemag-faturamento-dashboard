@@ -33,6 +33,7 @@ import {
   UF_NOME,
   MESES,
   gerarPrevisaoMensal,
+  validarPrevisaoMensal,
 } from "../lib/faturamento";
 import { MetricCards } from "../components/MetricCards";
 import { SidebarFilters, FiltrosState } from "../components/SidebarFilters";
@@ -847,6 +848,7 @@ export default function Home({ onLogout, emailAutenticado, isAdmin = false }: { 
   }, [dadosFiltrados]);
 
   const previsaoMensal = useMemo(() => gerarPrevisaoMensal(dadosFiltrados, horizontePrevisao, metricaPrevisao), [dadosFiltrados, horizontePrevisao, metricaPrevisao]);
+  const validacaoPrevisao = useMemo(() => validarPrevisaoMensal(dadosFiltrados, metricaPrevisao), [dadosFiltrados, metricaPrevisao]);
 
   const diagnosticoBase = useMemo(() => {
     const dataMin = meta?.data_min as Date | undefined;
@@ -2318,7 +2320,7 @@ export default function Home({ onLogout, emailAutenticado, isAdmin = false }: { 
                     <div className="bg-slate-900/80 border border-slate-800 rounded-xl p-4"><div className="text-[10px] uppercase text-slate-500">Métrica</div><div className="text-sm font-semibold text-orange-300 mt-2">{metricaPrevisao}</div></div>
                     <div className="bg-slate-900/80 border border-slate-800 rounded-xl p-4"><div className="text-[10px] uppercase text-slate-500">Meses históricos</div><div className="text-xl font-bold text-white mt-2">{previsaoMensal.historicoMeses}</div></div>
                     <div className="bg-slate-900/80 border border-slate-800 rounded-xl p-4"><div className="text-[10px] uppercase text-slate-500">Horizonte</div><div className="text-xl font-bold text-orange-300 mt-2">{horizontePrevisao} meses</div></div>
-                    <div className="bg-slate-900/80 border border-slate-800 rounded-xl p-4"><div className="text-[10px] uppercase text-slate-500">Cenários</div><div className="text-sm font-semibold text-sky-300 mt-2">Conservador · Provável · Otimista</div><div className="text-[10px] text-slate-500 mt-1">Faixa pelo erro histórico</div></div><div className="bg-slate-900/80 border border-slate-800 rounded-xl p-4"><div className="text-[10px] uppercase text-slate-500">Erro indicativo</div><div className="text-xl font-bold text-emerald-300 mt-2">{previsaoMensal.mape == null ? "-" : `${previsaoMensal.mape.toFixed(1)}%`}</div><div className="text-[10px] text-slate-500 mt-1">MAPE de referência</div></div>
+                    <div className="bg-slate-900/80 border border-slate-800 rounded-xl p-4"><div className="text-[10px] uppercase text-slate-500">Cenários</div><div className="text-sm font-semibold text-sky-300 mt-2">Conservador · Provável · Otimista</div><div className="text-[10px] text-slate-500 mt-1">Faixa pelo erro histórico</div></div><div className="bg-slate-900/80 border border-slate-800 rounded-xl p-4"><div className="text-[10px] uppercase text-slate-500">Validação histórica</div><div className="text-xl font-bold text-emerald-300 mt-2">{validacaoPrevisao.mape == null ? "-" : `${validacaoPrevisao.mape.toFixed(1)}%`}</div><div className="text-[10px] text-slate-500 mt-1">MAPE em {validacaoPrevisao.pontos} mês(es) testado(s)</div></div><div className="bg-slate-900/80 border border-slate-800 rounded-xl p-4"><div className="text-[10px] uppercase text-slate-500">Erro médio absoluto</div><div className="text-xl font-bold text-sky-300 mt-2">{validacaoPrevisao.mae == null ? "-" : formatarMetrica(validacaoPrevisao.mae, metricaPrevisao)}</div><div className="text-[10px] text-slate-500 mt-1">Diferença média entre previsto e realizado</div></div>
                   </div>
                   {previsaoMensal.serie.length ? <>
                     <div className="bg-slate-900/80 border border-slate-800 p-5 rounded-xl">

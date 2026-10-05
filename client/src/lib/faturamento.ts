@@ -1394,3 +1394,32 @@ export function gerarPrevisaoMensal(dados: TransacaoTratada[], horizonte = 6, me
     : item);
   return { serie: serieComCenarios, mape, metodo: "Tendência linear + sazonalidade mensal", historicoMeses: chaves.length, metrica };
 }
+
+export function validarPrevisaoMensal(dados: TransacaoTratada[], metrica = "Faturamento"): { mape: number | null; mae: number | null; pontos: number } {
+  const porMes = new Map<string, TransacaoTratada[]>();
+  for (const d of dados) {
+    if (!porMes.has(d.ano_mes)) porMes.set(d.ano_mes, []);
+    porMes.get(d.ano_mes)!.push(d);
+  }
+  const chaves = Array.from(porMes.keys()).sort();
+  const valores = chaves.map((k) => valorMensalPrevisao(porMes.get(k)!, metrica));
+  const inicioTeste = Math.max(6, valores.length - 3);
+  const errosPct: number[] = [];
+  const errosAbs: number[] = [];
+  for (let i = inicioTeste; i < valores.length; i++) {
+    const treino = valores.slice(0, i);
+    if (treino.length < 6 || valores[i] === 0) continue;
+    const ultimos = Math.min(24, treino.length);
+    const janela = treino.slice(treino.length - ultimos);
+    const media = janela.reduce((a, b) => a + b, 0) / janela.length;
+    const xs = janela.map((_, j) => j + 1);
+    const xbar = xs.reduce((a, b) => a + b, 0) / xs.length;
+    const ybar = janela.reduce((a, b) => a + b, 0) / janela.length;
+    const den = xs.reduce((a, x) => a + (x - xbar) ** 2, 0) || 1;
+    const slope = xs.reduce((a, x, j) => a + (x - xbar) * (janela[j] - ybar), 0) / den;
+    const previsao = Math.max(0, ybar + slope * (ultimos + 1));
+    errosAbs.push(Math.abs(valores[i] - previsao));
+    errosPct.push(Math.abs(valores[i] - previsao) / Math.abs(valores[i]) * 100);
+  }
+  return { mape: errosPct.length ? errosPct.reduce((a, b) => a + b, 0) / errosPct.length : null, mae: errosAbs.length ? errosAbs.reduce((a, b) => a + b, 0) / errosAbs.length : null, pontos: errosPct.length };
+}
