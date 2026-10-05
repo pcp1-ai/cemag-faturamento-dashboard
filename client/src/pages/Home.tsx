@@ -648,6 +648,7 @@ export default function Home({ onLogout, emailAutenticado, isAdmin = false }: { 
   // Representantes
   const [metricaRep, setMetricaRep] = useState<string>("Faturamento");
   const [metricaPrevisao, setMetricaPrevisao] = useState<string>("Faturamento");
+  const [horizontePrevisao, setHorizontePrevisao] = useState<number>(6);
   const [repEscolhido, setRepEscolhido] = useState<string>("");
 
   // Base tratada: colunas visíveis
@@ -845,7 +846,7 @@ export default function Home({ onLogout, emailAutenticado, isAdmin = false }: { 
     return grupos.map((row: any) => ({ cidade: row.cidade, uf: row.uf, faturamento: row.faturamento, quantidade: row.quantidade, pedidos: row.pedidos, clientes: row.clientes }));
   }, [dadosFiltrados]);
 
-  const previsaoMensal = useMemo(() => gerarPrevisaoMensal(dadosFiltrados, 6, metricaPrevisao), [dadosFiltrados, metricaPrevisao]);
+  const previsaoMensal = useMemo(() => gerarPrevisaoMensal(dadosFiltrados, horizontePrevisao, metricaPrevisao), [dadosFiltrados, horizontePrevisao, metricaPrevisao]);
 
   const diagnosticoBase = useMemo(() => {
     const dataMin = meta?.data_min as Date | undefined;
@@ -2311,17 +2312,17 @@ export default function Home({ onLogout, emailAutenticado, isAdmin = false }: { 
               {abaAtiva === "previsoes" && (
                 <div className="space-y-6">
                   <div className="bg-slate-900/60 p-5 rounded-xl border border-slate-800">
-                    <div className="flex flex-wrap items-start justify-between gap-4"><div><h2 className="text-lg font-bold text-white">Previsão mensal por métrica</h2><p className="text-xs text-slate-400 mt-1">Estimativa baseada no histórico filtrado, tendência recente e sazonalidade por mês. Não substitui a análise comercial.</p></div><label className="flex items-center gap-2 text-xs text-slate-300">Métrica<select value={metricaPrevisao} onChange={(e) => setMetricaPrevisao(e.target.value)} className="bg-slate-800 border border-slate-700 text-white rounded px-2 py-1.5">{METRICAS_PAINEL.map((metrica) => <option key={metrica} value={metrica}>{metrica}</option>)}</select></label></div>
+                    <div className="flex flex-wrap items-start justify-between gap-4"><div><h2 className="text-lg font-bold text-white">Previsão mensal por métrica</h2><p className="text-xs text-slate-400 mt-1">Estimativa baseada no histórico filtrado, tendência recente e sazonalidade por mês. Não substitui a análise comercial.</p></div><div className="flex flex-wrap gap-3"><label className="flex items-center gap-2 text-xs text-slate-300">Métrica<select value={metricaPrevisao} onChange={(e) => setMetricaPrevisao(e.target.value)} className="bg-slate-800 border border-slate-700 text-white rounded px-2 py-1.5">{METRICAS_PAINEL.map((metrica) => <option key={metrica} value={metrica}>{metrica}</option>)}</select></label><label className="flex items-center gap-2 text-xs text-slate-300">Horizonte<select value={horizontePrevisao} onChange={(e) => setHorizontePrevisao(Number(e.target.value))} className="bg-slate-800 border border-slate-700 text-white rounded px-2 py-1.5"><option value={3}>3 meses</option><option value={6}>6 meses</option><option value={12}>12 meses</option></select></label></div></div>
                   </div>
                   <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
                     <div className="bg-slate-900/80 border border-slate-800 rounded-xl p-4"><div className="text-[10px] uppercase text-slate-500">Métrica</div><div className="text-sm font-semibold text-orange-300 mt-2">{metricaPrevisao}</div></div>
                     <div className="bg-slate-900/80 border border-slate-800 rounded-xl p-4"><div className="text-[10px] uppercase text-slate-500">Meses históricos</div><div className="text-xl font-bold text-white mt-2">{previsaoMensal.historicoMeses}</div></div>
-                    <div className="bg-slate-900/80 border border-slate-800 rounded-xl p-4"><div className="text-[10px] uppercase text-slate-500">Horizonte</div><div className="text-xl font-bold text-orange-300 mt-2">6 meses</div></div>
+                    <div className="bg-slate-900/80 border border-slate-800 rounded-xl p-4"><div className="text-[10px] uppercase text-slate-500">Horizonte</div><div className="text-xl font-bold text-orange-300 mt-2">{horizontePrevisao} meses</div></div>
                     <div className="bg-slate-900/80 border border-slate-800 rounded-xl p-4"><div className="text-[10px] uppercase text-slate-500">Cenários</div><div className="text-sm font-semibold text-sky-300 mt-2">Conservador · Provável · Otimista</div><div className="text-[10px] text-slate-500 mt-1">Faixa pelo erro histórico</div></div><div className="bg-slate-900/80 border border-slate-800 rounded-xl p-4"><div className="text-[10px] uppercase text-slate-500">Erro indicativo</div><div className="text-xl font-bold text-emerald-300 mt-2">{previsaoMensal.mape == null ? "-" : `${previsaoMensal.mape.toFixed(1)}%`}</div><div className="text-[10px] text-slate-500 mt-1">MAPE de referência</div></div>
                   </div>
                   {previsaoMensal.serie.length ? <>
                     <div className="bg-slate-900/80 border border-slate-800 p-5 rounded-xl">
-                      <h3 className="text-sm font-bold text-white mb-3">Histórico e próximos seis meses — {metricaPrevisao}</h3>
+                      <h3 className="text-sm font-bold text-white mb-3">Histórico e próximos {horizontePrevisao} meses — {metricaPrevisao}</h3>
                       <div className="h-80 w-full"><ResponsiveContainer width="100%" height="100%"><LineChart data={previsaoMensal.serie} margin={{ top: 10, right: 20, left: 20, bottom: 34 }}><CartesianGrid strokeDasharray="3 3" stroke="#334155" opacity={0.5} /><XAxis dataKey="ano_mes" interval="preserveStartEnd" angle={-18} textAnchor="end" height={42} stroke="#94A3B8" fontSize={10} /><YAxis stroke="#94A3B8" fontSize={10} tickFormatter={(v) => formatarMetrica(v, metricaPrevisao)} /><RechartsTooltip contentStyle={{ backgroundColor: "#0F172A", borderColor: "#334155" }} formatter={(v: any, name: any) => [formatarMetrica(v, metricaPrevisao), name === "realizado" ? "Realizado" : name === "previsao" ? "Provável" : name === "conservador" ? "Conservador" : "Otimista"]} /><Legend wrapperStyle={{ paddingTop: 10, fontSize: 11 }} /><Line type="monotone" dataKey="realizado" name="Realizado" stroke={CEMAG_BLUE} strokeWidth={2.5} dot={false} connectNulls={false} /><Line type="monotone" dataKey="previsao" name="Provável" stroke={CEMAG_ORANGE} strokeWidth={2.5} strokeDasharray="6 4" dot={{ r: 3 }} connectNulls={false} /><Line type="monotone" dataKey="conservador" name="Conservador" stroke="#F87171" strokeWidth={1.5} strokeDasharray="3 3" dot={false} connectNulls={false} /><Line type="monotone" dataKey="otimista" name="Otimista" stroke="#34D399" strokeWidth={1.5} strokeDasharray="3 3" dot={false} connectNulls={false} /></LineChart></ResponsiveContainer></div>
                     </div>
                     <div className="bg-slate-900/80 border border-slate-800 rounded-xl p-5"><h3 className="text-sm font-bold text-white mb-3">Valores previstos — {metricaPrevisao}</h3><DataTable rows={previsaoMensal.serie.filter((x) => x.tipo === "Previsão")} columns={["ano_mes", "conservador", "previsao", "otimista", "tipo"]} metricColumns={{ conservador: metricaPrevisao, previsao: metricaPrevisao, otimista: metricaPrevisao }} /></div>
