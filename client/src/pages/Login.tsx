@@ -2,7 +2,7 @@ import React, { FormEvent, useState } from "react";
 import { LockKeyhole, Mail, ShieldCheck, Eye, EyeOff, AlertCircle } from "lucide-react";
 import { trpc } from "../lib/trpc";
 
-const EMAIL_CEMAG_REGEX = /^[^\s@]+@cemag\.com\.br$/i;
+const EMAIL_CEMAG_REGEX = /^[^\s@]+@(cemag|itaueira)\.com\.br$/i;
 const SENHA_PADRAO = "000000";
 const ADMIN_EMAIL = "pcp1@cemag.com.br";
 
@@ -24,7 +24,7 @@ export default function Login({ onAuthenticated }: LoginProps) {
     const emailNormalizado = email.trim().toLowerCase();
 
     if (!EMAIL_CEMAG_REGEX.test(emailNormalizado)) {
-      setErro("Use um e-mail corporativo terminado em @cemag.com.br.");
+      setErro("Use um e-mail corporativo terminado em @cemag.com.br ou @itaueira.com.br.");
       return;
     }
     if (senha !== SENHA_PADRAO) {
@@ -87,7 +87,7 @@ export default function Login({ onAuthenticated }: LoginProps) {
 
               <form onSubmit={handleSubmit} className="space-y-5" noValidate>
                 <label className="block text-sm font-medium text-slate-300">E-mail corporativo
-                  <span className="relative mt-2 block"><Mail className="pointer-events-none absolute left-3 top-3 h-4 w-4 text-slate-500" /><input autoFocus type="email" value={email} onChange={(event) => setEmail(event.target.value)} placeholder="seu.nome@cemag.com.br" autoComplete="email" className="w-full rounded-xl border border-slate-700 bg-slate-950/70 py-3 pl-10 pr-3 text-sm text-white outline-none transition focus:border-orange-500 focus:ring-2 focus:ring-orange-500/20" /></span>
+                  <span className="relative mt-2 block"><Mail className="pointer-events-none absolute left-3 top-3 h-4 w-4 text-slate-500" /><input autoFocus type="email" value={email} onChange={(event) => setEmail(event.target.value)} placeholder="seu.nome@cemag.com.br ou @itaueira.com.br" autoComplete="email" className="w-full rounded-xl border border-slate-700 bg-slate-950/70 py-3 pl-10 pr-3 text-sm text-white outline-none transition focus:border-orange-500 focus:ring-2 focus:ring-orange-500/20" /></span>
                 </label>
                 <label className="block text-sm font-medium text-slate-300">Senha
                   <span className="relative mt-2 block"><LockKeyhole className="pointer-events-none absolute left-3 top-3 h-4 w-4 text-slate-500" /><input type={mostrarSenha ? "text" : "password"} value={senha} onChange={(event) => setSenha(event.target.value)} placeholder="Digite sua senha" autoComplete="current-password" className="w-full rounded-xl border border-slate-700 bg-slate-950/70 py-3 pl-10 pr-11 text-sm text-white outline-none transition focus:border-orange-500 focus:ring-2 focus:ring-orange-500/20" /><button type="button" onClick={() => setMostrarSenha((value) => !value)} className="absolute right-3 top-2.5 rounded p-1 text-slate-500 hover:text-slate-200" aria-label={mostrarSenha ? "Ocultar senha" : "Mostrar senha"}>{mostrarSenha ? <EyeOff className="h-4 w-4" /> : <Eye className="h-4 w-4" />}</button></span>
@@ -96,7 +96,7 @@ export default function Login({ onAuthenticated }: LoginProps) {
                 <button type="submit" disabled={enviando} className="w-full rounded-xl bg-orange-600 px-4 py-3 text-sm font-semibold text-white shadow-lg shadow-orange-950/30 transition hover:bg-orange-500 disabled:cursor-wait disabled:opacity-70">{enviando ? "Entrando..." : "Entrar no painel"}</button>
               </form>
 
-              <div className="mt-6 rounded-xl border border-slate-800 bg-slate-950/50 px-4 py-3 text-xs leading-5 text-slate-500"><strong className="text-slate-300">Acesso inicial:</strong> utilize a senha padrão fornecida pela administração e um e-mail terminado em <span className="text-orange-400">@cemag.com.br</span>. A sessão expira após 48 horas sem atividade.</div>
+              <div className="mt-6 rounded-xl border border-slate-800 bg-slate-950/50 px-4 py-3 text-xs leading-5 text-slate-500"><strong className="text-slate-300">Acesso inicial:</strong> utilize a senha padrão fornecida pela administração e um e-mail terminado em <span className="text-orange-400">@cemag.com.br</span> ou <span className="text-orange-400">@itaueira.com.br</span>. A sessão expira após 48 horas sem atividade.</div>
               <p className="mt-8 text-center text-[11px] text-slate-600">Acesso restrito à equipe CEMAG</p>
             </div>
           </section>

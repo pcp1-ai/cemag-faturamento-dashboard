@@ -6,7 +6,7 @@ import { ENV } from "./_core/env";
 export const CEMAG_ADMIN_EMAIL = "pcp1@cemag.com.br";
 export const CEMAG_SESSION_COOKIE = "cemag_session";
 export const CEMAG_SESSION_MAX_AGE_SECONDS = 48 * 60 * 60;
-const CEMAG_EMAIL_REGEX = /^[^\s@]+@cemag\.com\.br$/i;
+const CEMAG_EMAIL_REGEX = /^[^\s@]+@(cemag|itaueira)\.com\.br$/i;
 const CEMAG_PASSWORD = "000000";
 
 function parseCookieHeader(header: string) {

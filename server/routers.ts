@@ -27,7 +27,7 @@ export const appRouter = router({
       .mutation(async ({ input, ctx }) => {
         const email = input.email.trim().toLowerCase();
         if (!validateCemagCredentials(email, input.password)) {
-          return { success: false as const, message: "E-mail CEMAG ou senha inválidos." };
+          return { success: false as const, message: "E-mail corporativo ou senha inválidos. Use @cemag.com.br ou @itaueira.com.br." };
         }
         await createCemagSession(ctx.res, ctx.req, email);
         return { success: true as const, email };

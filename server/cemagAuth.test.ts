@@ -20,6 +20,8 @@ describe("autenticação central CEMAG", () => {
   it("aceita somente credenciais CEMAG e identifica pcp1 como administradora", () => {
     expect(validateCemagCredentials(CEMAG_ADMIN_EMAIL, "000000")).toBe(true);
     expect(validateCemagCredentials("analista@cemag.com.br", "000000")).toBe(true);
+    expect(validateCemagCredentials("analista@itaueira.com.br", "000000")).toBe(true);
+    expect(validateCemagCredentials("ANALISTA@ITAUEIRA.COM.BR", "000000")).toBe(true);
     expect(validateCemagCredentials("analista@gmail.com", "000000")).toBe(false);
     expect(validateCemagCredentials(CEMAG_ADMIN_EMAIL, "senha-incorreta")).toBe(false);
   });
