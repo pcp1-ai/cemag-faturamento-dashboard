@@ -9,12 +9,15 @@ export type FatoresExternosResult = {
   latitude: number | null;
   longitude: number | null;
   meses: FatorExternoMensal[];
+  previsao_chuva: Array<{ data: string; chuva_mm: number | null; probabilidade_chuva_pct: number | null }>;
+  expectativas_selic: Array<{ data_consulta: string; reuniao: string; media_pct: number | null; mediana_pct: number | null; respondentes: number | null }>;
   fontes: string[];
   avisos: string[];
   atualizado_em: string;
 };
 
 type BcbRow = { data?: string; valor?: string | number };
+type BcbFocusRow = { Indicador?: string; Data?: string; Reuniao?: string; Media?: number; Mediana?: number; numeroRespondentes?: number; baseCalculo?: number };
 
 type GeocodeResult = { name?: string; latitude?: number; longitude?: number; admin1?: string; country?: string };
 
@@ -95,6 +98,8 @@ export async function obterFatoresExternos(input: { dataInicio: string; dataFim:
   const porMes = new Map<string, FatorExternoMensal>(meses.map((anoMes) => [anoMes, { ano_mes: anoMes, selic_media_pct: null, chuva_mm: null }]));
   const fontes: string[] = [];
   const avisos: string[] = [];
+  const previsao_chuva: FatoresExternosResult["previsao_chuva"] = [];
+  const expectativas_selic: FatoresExternosResult["expectativas_selic"] = [];
 
   try {
     const bcbUrl = `https://api.bcb.gov.br/dados/serie/bcdata.sgs.1178/dados?formato=json&dataInicial=${encodeURIComponent(toBcbDate(input.dataInicio))}&dataFinal=${encodeURIComponent(toBcbDate(input.dataFim))}`;
@@ -106,6 +111,21 @@ export async function obterFatoresExternos(input: { dataInicio: string; dataFim:
     fontes.push("Banco Central do Brasil — SGS série 1178 (Selic anualizada base 252)");
   } catch (error) {
     avisos.push(`Selic indisponível no momento: ${error instanceof Error ? error.message : "erro de consulta"}`);
+  }
+
+  try {
+    const focusUrl = "https://olinda.bcb.gov.br/olinda/servico/Expectativas/versao/v1/odata/ExpectativasMercadoSelic?$filter=Indicador%20eq%20%27Selic%27&$orderby=Data%20desc&$top=200&$format=json";
+    const focus = await fetchJson<{ value?: BcbFocusRow[] }>(focusUrl);
+    const vistos = new Set<string>();
+    for (const row of focus.value || []) {
+      if (!row.Reuniao || vistos.has(row.Reuniao)) continue;
+      vistos.add(row.Reuniao);
+      expectativas_selic.push({ data_consulta: row.Data || "", reuniao: row.Reuniao, media_pct: Number.isFinite(row.Media) ? Number(row.Media) : null, mediana_pct: Number.isFinite(row.Mediana) ? Number(row.Mediana) : null, respondentes: Number.isFinite(row.numeroRespondentes) ? Number(row.numeroRespondentes) : null });
+      if (expectativas_selic.length >= 12) break;
+    }
+    if (expectativas_selic.length) fontes.push("Banco Central do Brasil — Boletim Focus / Expectativas de Mercado (Selic por reunião)");
+  } catch (error) {
+    avisos.push(`Expectativa futura da Selic indisponível: ${error instanceof Error ? error.message : "erro de consulta"}`);
   }
 
   let localidade: GeocodeResult | null = null;
@@ -121,6 +141,11 @@ export async function obterFatoresExternos(input: { dataInicio: string; dataFim:
         if (row) row.chuva_mm = value;
       }
       fontes.push("NASA POWER — precipitação corrigida MERRA-2 (PRECTOTCORR)");
+      const forecastUrl = `https://api.open-meteo.com/v1/forecast?latitude=${localidade.latitude}&longitude=${localidade.longitude}&daily=precipitation_sum,precipitation_probability_mean&forecast_days=16&timezone=auto`;
+      const forecast = await fetchJson<{ daily?: { time?: string[]; precipitation_sum?: Array<number | null>; precipitation_probability_mean?: Array<number | null> } }>(forecastUrl, 30_000);
+      const times = forecast.daily?.time || [];
+      for (let i = 0; i < times.length; i++) previsao_chuva.push({ data: times[i], chuva_mm: forecast.daily?.precipitation_sum?.[i] ?? null, probabilidade_chuva_pct: forecast.daily?.precipitation_probability_mean?.[i] ?? null });
+      if (previsao_chuva.length) fontes.push("Open-Meteo — previsão meteorológica diária (até 16 dias)");
     } catch (error) {
       avisos.push(`Chuva indisponível para ${input.cidade}: ${error instanceof Error ? error.message : "erro de consulta"}`);
     }
@@ -133,6 +158,8 @@ export async function obterFatoresExternos(input: { dataInicio: string; dataFim:
     latitude: Number.isFinite(localidade?.latitude) ? Number(localidade?.latitude) : null,
     longitude: Number.isFinite(localidade?.longitude) ? Number(localidade?.longitude) : null,
     meses: Array.from(porMes.values()),
+    previsao_chuva,
+    expectativas_selic,
     fontes,
     avisos,
     atualizado_em: new Date().toISOString(),
