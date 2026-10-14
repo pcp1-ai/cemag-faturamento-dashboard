@@ -1,0 +1,140 @@
+export type FatorExternoMensal = {
+  ano_mes: string;
+  selic_media_pct: number | null;
+  chuva_mm: number | null;
+};
+
+export type FatoresExternosResult = {
+  localidade: string | null;
+  latitude: number | null;
+  longitude: number | null;
+  meses: FatorExternoMensal[];
+  fontes: string[];
+  avisos: string[];
+  atualizado_em: string;
+};
+
+type BcbRow = { data?: string; valor?: string | number };
+
+type GeocodeResult = { name?: string; latitude?: number; longitude?: number; admin1?: string; country?: string };
+
+function parsePtDate(value: string) {
+  const [day, month, year] = value.split("/").map(Number);
+  return year && month && day ? new Date(Date.UTC(year, month - 1, day)) : null;
+}
+
+function monthKeyFromDate(date: Date) {
+  return `${date.getUTCFullYear()}-${String(date.getUTCMonth() + 1).padStart(2, "0")}`;
+}
+
+function monthKeys(start: string, end: string) {
+  const result: string[] = [];
+  const cursor = new Date(`${start}T00:00:00Z`);
+  const limit = new Date(`${end}T00:00:00Z`);
+  cursor.setUTCDate(1);
+  while (cursor <= limit) {
+    result.push(monthKeyFromDate(cursor));
+    cursor.setUTCMonth(cursor.getUTCMonth() + 1);
+  }
+  return result;
+}
+
+function toBcbDate(value: string) {
+  const [year, month, day] = value.split("-");
+  return `${day}/${month}/${year}`;
+}
+
+function toPowerDate(value: string) {
+  return value.replaceAll("-", "");
+}
+
+async function fetchJson<T>(url: string, timeoutMs = 30_000): Promise<T> {
+  const controller = new AbortController();
+  const timeout = setTimeout(() => controller.abort(), timeoutMs);
+  try {
+    const response = await fetch(url, { signal: controller.signal, headers: { Accept: "application/json" } });
+    if (!response.ok) throw new Error(`HTTP ${response.status}`);
+    return await response.json() as T;
+  } finally {
+    clearTimeout(timeout);
+  }
+}
+
+export function agregarSelicMensal(rows: BcbRow[]) {
+  const acumulado = new Map<string, number[]>();
+  for (const row of rows) {
+    const date = row.data ? parsePtDate(row.data) : null;
+    const value = Number(row.valor);
+    if (!date || !Number.isFinite(value)) continue;
+    const key = monthKeyFromDate(date);
+    acumulado.set(key, [...(acumulado.get(key) || []), value]);
+  }
+  return new Map(Array.from(acumulado.entries()).map(([key, values]) => [key, values.reduce((sum, value) => sum + value, 0) / values.length]));
+}
+
+export function agregarChuvaMensal(parameters: Record<string, number>) {
+  const acumulado = new Map<string, number>();
+  for (const [rawDate, rawValue] of Object.entries(parameters)) {
+    const value = Number(rawValue);
+    if (!/^\d{8}$/.test(rawDate) || !Number.isFinite(value) || value < -900) continue;
+    const key = `${rawDate.slice(0, 4)}-${rawDate.slice(4, 6)}`;
+    acumulado.set(key, (acumulado.get(key) || 0) + value);
+  }
+  return acumulado;
+}
+
+async function buscarCoordenadas(cidade: string, uf?: string) {
+  const query = encodeURIComponent(`${cidade}${uf ? `, ${uf}` : ""}, Brasil`);
+  const data = await fetchJson<{ results?: GeocodeResult[] }>(`https://geocoding-api.open-meteo.com/v1/search?name=${query}&count=5&language=pt&format=json`);
+  const results = data.results || [];
+  return results.find((item) => item.country?.toLowerCase() === "brasil") || results[0] || null;
+}
+
+export async function obterFatoresExternos(input: { dataInicio: string; dataFim: string; cidade: string; uf?: string }): Promise<FatoresExternosResult> {
+  const meses = monthKeys(input.dataInicio, input.dataFim);
+  const porMes = new Map<string, FatorExternoMensal>(meses.map((anoMes) => [anoMes, { ano_mes: anoMes, selic_media_pct: null, chuva_mm: null }]));
+  const fontes: string[] = [];
+  const avisos: string[] = [];
+
+  try {
+    const bcbUrl = `https://api.bcb.gov.br/dados/serie/bcdata.sgs.1178/dados?formato=json&dataInicial=${encodeURIComponent(toBcbDate(input.dataInicio))}&dataFinal=${encodeURIComponent(toBcbDate(input.dataFim))}`;
+    const selic = agregarSelicMensal(await fetchJson<BcbRow[]>(bcbUrl));
+    for (const [key, value] of selic) {
+      const row = porMes.get(key);
+      if (row) row.selic_media_pct = value;
+    }
+    fontes.push("Banco Central do Brasil — SGS série 1178 (Selic anualizada base 252)");
+  } catch (error) {
+    avisos.push(`Selic indisponível no momento: ${error instanceof Error ? error.message : "erro de consulta"}`);
+  }
+
+  let localidade: GeocodeResult | null = null;
+  if (input.cidade && input.cidade !== "Não identificado") {
+    try {
+      localidade = await buscarCoordenadas(input.cidade, input.uf);
+      if (!localidade?.latitude || !localidade.longitude) throw new Error("município não localizado");
+      const powerUrl = `https://power.larc.nasa.gov/api/temporal/daily/point?parameters=PRECTOTCORR&community=AG&longitude=${localidade.longitude}&latitude=${localidade.latitude}&start=${toPowerDate(input.dataInicio)}&end=${toPowerDate(input.dataFim)}&format=JSON`;
+      const power = await fetchJson<{ properties?: { parameter?: { PRECTOTCORR?: Record<string, number> } } }>(powerUrl, 45_000);
+      const chuva = agregarChuvaMensal(power.properties?.parameter?.PRECTOTCORR || {});
+      for (const [key, value] of chuva) {
+        const row = porMes.get(key);
+        if (row) row.chuva_mm = value;
+      }
+      fontes.push("NASA POWER — precipitação corrigida MERRA-2 (PRECTOTCORR)");
+    } catch (error) {
+      avisos.push(`Chuva indisponível para ${input.cidade}: ${error instanceof Error ? error.message : "erro de consulta"}`);
+    }
+  } else {
+    avisos.push("Selecione um município identificado para consultar a chuva.");
+  }
+
+  return {
+    localidade: localidade?.name || null,
+    latitude: Number.isFinite(localidade?.latitude) ? Number(localidade?.latitude) : null,
+    longitude: Number.isFinite(localidade?.longitude) ? Number(localidade?.longitude) : null,
+    meses: Array.from(porMes.values()),
+    fontes,
+    avisos,
+    atualizado_em: new Date().toISOString(),
+  };
+}

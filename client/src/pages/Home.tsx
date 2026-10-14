@@ -650,6 +650,7 @@ export default function Home({ onLogout, emailAutenticado, isAdmin = false }: { 
   const [metricaRep, setMetricaRep] = useState<string>("Faturamento");
   const [metricaPrevisao, setMetricaPrevisao] = useState<string>("Faturamento");
   const [horizontePrevisao, setHorizontePrevisao] = useState<number>(6);
+  const [cidadeFatoresExternos, setCidadeFatoresExternos] = useState<string>("");
   const [repEscolhido, setRepEscolhido] = useState<string>("");
 
   // Base tratada: colunas visíveis
@@ -811,6 +812,32 @@ export default function Home({ onLogout, emailAutenticado, isAdmin = false }: { 
     agg.sort((a, b) => a.ano_mes_data.localeCompare(b.ano_mes_data));
     return agg;
   }, [dadosMetas]);
+
+  const cidadesFatoresExternos = opcoesFiltros.cidades;
+  useEffect(() => {
+    setCidadeFatoresExternos((atual) => atual && cidadesFatoresExternos.includes(atual) ? atual : (cidadesFatoresExternos[0] || ""));
+  }, [cidadesFatoresExternos]);
+  const ufCidadeFatoresExternos = useMemo(() => dados.find((item) => item.cidade === cidadeFatoresExternos)?.uf || undefined, [dados, cidadeFatoresExternos]);
+  const fatoresExternosInput = useMemo(() => ({
+    dataInicio: filtros.dataInicio || meta?.data_min?.toISOString().slice(0, 10) || "2022-01-01",
+    dataFim: filtros.dataFim || meta?.data_max?.toISOString().slice(0, 10) || new Date().toISOString().slice(0, 10),
+    cidade: cidadeFatoresExternos,
+    uf: ufCidadeFatoresExternos,
+  }), [filtros.dataInicio, filtros.dataFim, meta?.data_min, meta?.data_max, cidadeFatoresExternos, ufCidadeFatoresExternos]);
+  const fatoresExternosQuery = trpc.cemag.fatoresExternos.useQuery(fatoresExternosInput, {
+    enabled: abaAtiva === "previsoes" && Boolean(cidadeFatoresExternos),
+    retry: false,
+    staleTime: 15 * 60 * 1000,
+  });
+  const serieFatoresExternos = useMemo(() => {
+    const porMes = new Map((fatoresExternosQuery.data?.meses || []).map((item) => [item.ano_mes, item]));
+    return dadosMensais.map((item: any) => ({
+      ano_mes: item.ano_mes,
+      vendas: valorMetrica(item, metricaPrevisao),
+      chuva_mm: porMes.get(item.ano_mes)?.chuva_mm ?? null,
+      selic_media_pct: porMes.get(item.ano_mes)?.selic_media_pct ?? null,
+    }));
+  }, [dadosMensais, fatoresExternosQuery.data?.meses, metricaPrevisao]);
 
   const atingimentoMensal = useMemo(() => {
     const mapa = new Map<string, any>();
@@ -2336,6 +2363,17 @@ export default function Home({ onLogout, emailAutenticado, isAdmin = false }: { 
                 <div className="space-y-6">
                   <div className="bg-slate-900/60 p-5 rounded-xl border border-slate-800">
                     <div className="flex flex-wrap items-start justify-between gap-4"><div><h2 className="text-lg font-bold text-white">Previsão mensal por métrica</h2><p className="text-xs text-slate-400 mt-1">Estimativa baseada no histórico filtrado, tendência recente e sazonalidade por mês. Não substitui a análise comercial.</p></div><div className="flex flex-wrap gap-3"><label className="flex items-center gap-2 text-xs text-slate-300">Métrica<select value={metricaPrevisao} onChange={(e) => setMetricaPrevisao(e.target.value)} className="bg-slate-800 border border-slate-700 text-white rounded px-2 py-1.5">{METRICAS_PAINEL.map((metrica) => <option key={metrica} value={metrica}>{metrica}</option>)}</select></label><label className="flex items-center gap-2 text-xs text-slate-300">Horizonte<select value={horizontePrevisao} onChange={(e) => setHorizontePrevisao(Number(e.target.value))} className="bg-slate-800 border border-slate-700 text-white rounded px-2 py-1.5"><option value={3}>3 meses</option><option value={6}>6 meses</option><option value={12}>12 meses</option></select></label></div></div>
+                  </div>
+                  <div className="bg-slate-900/80 border border-slate-800 rounded-xl p-5">
+                    <div className="flex flex-wrap items-start justify-between gap-4">
+                      <div><h3 className="text-sm font-bold text-white">Fatores externos: chuva e Selic</h3><p className="text-xs text-slate-400 mt-1">Cruza a métrica selecionada com a chuva estimada do município e a Selic média mensal. Associação não prova causalidade.</p></div>
+                      <label className="flex items-center gap-2 text-xs text-slate-300">Município<select value={cidadeFatoresExternos} onChange={(e) => setCidadeFatoresExternos(e.target.value)} className="max-w-[220px] bg-slate-800 border border-slate-700 text-white rounded px-2 py-1.5"><option value="">Selecione</option>{cidadesFatoresExternos.map((cidade) => <option key={cidade} value={cidade}>{cidade}</option>)}</select></label>
+                    </div>
+                    {fatoresExternosQuery.isFetching && <p className="mt-3 text-xs text-sky-300">Consultando fontes oficiais e meteorológicas...</p>}
+                    {fatoresExternosQuery.error && <p className="mt-3 text-xs text-amber-300">Não foi possível consultar os fatores externos agora. A previsão histórica continua disponível.</p>}
+                    {fatoresExternosQuery.data?.avisos.map((aviso) => <p key={aviso} className="mt-2 text-xs text-amber-300">{aviso}</p>)}
+                    {serieFatoresExternos.length > 0 && <div className="mt-4 h-80"><ResponsiveContainer width="100%" height="100%"><LineChart data={serieFatoresExternos} margin={{ top: 10, right: 24, left: 20, bottom: 34 }}><CartesianGrid strokeDasharray="3 3" stroke="#334155" opacity={0.5} /><XAxis dataKey="ano_mes" interval="preserveStartEnd" angle={-18} textAnchor="end" height={42} stroke="#94A3B8" fontSize={10} /><YAxis yAxisId="vendas" stroke={CEMAG_BLUE} fontSize={10} tickFormatter={(v) => formatarMetrica(v, metricaPrevisao)} /><YAxis yAxisId="fatores" orientation="right" stroke="#34D399" fontSize={10} tickFormatter={(v) => `${Number(v).toFixed(0)}`} /><RechartsTooltip contentStyle={{ backgroundColor: "#0F172A", borderColor: "#334155" }} formatter={(value: any, name: any) => name === "Chuva (mm)" ? [`${Number(value).toFixed(1)} mm`, name] : name === "Selic média" ? [`${Number(value).toFixed(2)}%`, name] : [formatarMetrica(value, metricaPrevisao), metricaPrevisao]} /><Legend wrapperStyle={{ paddingTop: 10, fontSize: 11 }} /><Line yAxisId="vendas" type="monotone" dataKey="vendas" name={metricaPrevisao} stroke={CEMAG_BLUE} strokeWidth={2.5} dot={false} connectNulls={false} /><Line yAxisId="fatores" type="monotone" dataKey="chuva_mm" name="Chuva (mm)" stroke="#34D399" strokeWidth={1.8} dot={false} connectNulls={false} /><Line yAxisId="fatores" type="monotone" dataKey="selic_media_pct" name="Selic média" stroke="#FBBF24" strokeWidth={1.8} dot={false} connectNulls={false} /></LineChart></ResponsiveContainer></div>}
+                    {fatoresExternosQuery.data && <div className="mt-4 space-y-3"><DataTable rows={fatoresExternosQuery.data.meses} exportName="fatores_externos_mensais" columns={["ano_mes", "selic_media_pct", "chuva_mm"]} percentColumns={[]} /><div className="text-[10px] leading-5 text-slate-500">Localidade meteorológica: {fatoresExternosQuery.data.localidade || cidadeFatoresExternos}{fatoresExternosQuery.data.latitude != null ? ` (${fatoresExternosQuery.data.latitude.toFixed(3)}, ${fatoresExternosQuery.data.longitude?.toFixed(3)})` : ""}. Fontes: {fatoresExternosQuery.data.fontes.join("; ") || "nenhuma resposta disponível"}.</div></div>}
                   </div>
                   <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
                     <div className="bg-slate-900/80 border border-slate-800 rounded-xl p-4"><div className="text-[10px] uppercase text-slate-500">Métrica</div><div className="text-sm font-semibold text-orange-300 mt-2">{metricaPrevisao}</div></div>

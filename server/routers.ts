@@ -6,6 +6,7 @@ import { getSessionCookieOptions } from "./_core/cookies";
 import { systemRouter } from "./_core/systemRouter";
 import { adminProcedure, protectedProcedure, publicProcedure, router } from "./_core/trpc";
 import { storagePut } from "./storage";
+import { obterFatoresExternos } from "./externalFactors";
 
 const sharedFileInput = z.object({
   kind: z.enum(["base", "metas"]),
@@ -40,6 +41,14 @@ export const appRouter = router({
     }),
   }),
   cemag: router({
+    fatoresExternos: protectedProcedure
+      .input(z.object({
+        dataInicio: z.string().regex(/^\d{4}-\d{2}-\d{2}$/),
+        dataFim: z.string().regex(/^\d{4}-\d{2}-\d{2}$/),
+        cidade: z.string().min(1).max(120),
+        uf: z.string().max(2).optional(),
+      }))
+      .query(({ input }) => obterFatoresExternos(input)),
     currentFiles: protectedProcedure.query(async () => {
       const [base, metas] = await Promise.all([getSharedFile("base"), getSharedFile("metas")]);
       return {
