@@ -92,6 +92,28 @@ export function periodoSazonal(initYear: number, initMonth: number, season: numb
   return `${monthKeyFromDate(start)} a ${monthKeyFromDate(end)}`;
 }
 
+export function agregarFatoresNacionais(resultados: FatoresExternosResult[]): FatoresExternosResult {
+  const media = (values: Array<number | null | undefined>) => {
+    const validos = values.filter((value): value is number => value != null && Number.isFinite(value));
+    return validos.length ? validos.reduce((sum, value) => sum + value, 0) / validos.length : null;
+  };
+  const porMes = new Map<string, FatorExternoMensal[]>();
+  for (const resultado of resultados) for (const mes of resultado.meses) porMes.set(mes.ano_mes, [...(porMes.get(mes.ano_mes) || []), mes]);
+  const meses = Array.from(porMes.entries()).sort(([a], [b]) => a.localeCompare(b)).map(([ano_mes, rows]) => ({ ano_mes, selic_media_pct: media(rows.map((row) => row.selic_media_pct)), chuva_mm: media(rows.map((row) => row.chuva_mm)) }));
+  const porData = new Map<string, FatoresExternosResult["previsao_chuva"]>();
+  for (const resultado of resultados) for (const item of resultado.previsao_chuva) porData.set(item.data, [...(porData.get(item.data) || []), item]);
+  const previsao_chuva = Array.from(porData.entries()).sort(([a], [b]) => a.localeCompare(b)).map(([data, rows]) => ({ data, chuva_mm: media(rows.map((row) => row.chuva_mm)), probabilidade_chuva_pct: media(rows.map((row) => row.probabilidade_chuva_pct)) }));
+  const porTemporada = new Map<string, FatoresExternosResult["previsao_sazonal"]>();
+  for (const resultado of resultados) for (const item of resultado.previsao_sazonal) porTemporada.set(item.temporada, [...(porTemporada.get(item.temporada) || []), item]);
+  const previsao_sazonal = Array.from(porTemporada.values()).map((rows) => {
+    const primeira = rows[0];
+    const valor_sinal = media(rows.map((row) => row.valor_sinal));
+    return { modelo: primeira.modelo, temporada: primeira.temporada, periodo: primeira.periodo, chuva_total_mm: media(rows.map((row) => row.chuva_total_mm)), sinal_tercil: valor_sinal == null ? null : valor_sinal > 0 ? "Acima do normal" : valor_sinal < 0 ? "Abaixo do normal" : "Sem sinal predominante", valor_sinal, atualizado_em: new Date().toISOString() };
+  });
+  const base = resultados[0];
+  return { localidade: "Brasil — média de referências regionais", latitude: null, longitude: null, meses, previsao_chuva, expectativas_selic: base?.expectativas_selic || [], previsao_sazonal, fontes: Array.from(new Set([...resultados.flatMap((resultado) => resultado.fontes), "Agregação nacional: média simples de cinco referências regionais"])), avisos: ["A visão Brasil é uma média simples de cinco referências regionais (Manaus, Recife, Brasília, São Paulo e Porto Alegre); não é uma média areal oficial do território nacional."], atualizado_em: new Date().toISOString() };
+}
+
 async function buscarPrevisaoSazonal(latitude: number, longitude: number) {
   const hoje = new Date();
   for (let recuo = 1; recuo <= 4; recuo++) {
@@ -147,6 +169,11 @@ async function buscarCoordenadas(cidade: string, uf?: string) {
 }
 
 export async function obterFatoresExternos(input: { dataInicio: string; dataFim: string; cidade: string; uf?: string }): Promise<FatoresExternosResult> {
+  if (input.cidade.trim().toLowerCase() === "brasil") {
+    const referencias = [["Manaus", "AM"], ["Recife", "PE"], ["Brasília", "DF"], ["São Paulo", "SP"], ["Porto Alegre", "RS"]] as const;
+    const respostas = await Promise.all(referencias.map(([cidade, uf]) => obterFatoresExternos({ ...input, cidade, uf })));
+    return agregarFatoresNacionais(respostas);
+  }
   const meses = monthKeys(input.dataInicio, input.dataFim);
   const porMes = new Map<string, FatorExternoMensal>(meses.map((anoMes) => [anoMes, { ano_mes: anoMes, selic_media_pct: null, chuva_mm: null }]));
   const fontes: string[] = [];

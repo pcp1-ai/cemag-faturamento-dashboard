@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { agregarChuvaMensal, agregarSelicMensal, periodoSazonal } from "./externalFactors";
+import { agregarChuvaMensal, agregarFatoresNacionais, agregarSelicMensal, periodoSazonal } from "./externalFactors";
 
 describe("fatores externos", () => {
   it("calcula a média mensal da Selic a partir da série diária do BCB", () => {
@@ -21,5 +21,25 @@ describe("fatores externos", () => {
   it("calcula o período dos trimestres sazonais a partir da rodada", () => {
     expect(periodoSazonal(2026, 9, 1)).toBe("2026-10 a 2026-12");
     expect(periodoSazonal(2026, 9, 2)).toBe("2027-01 a 2027-03");
+  });
+
+  it("agrega a visão Brasil pela média das referências regionais", () => {
+    const base = (chuva_mm: number, selic_media_pct: number) => ({
+      localidade: "Referência",
+      latitude: 0,
+      longitude: 0,
+      meses: [{ ano_mes: "2026-01", chuva_mm, selic_media_pct }],
+      previsao_chuva: [{ data: "2026-10-16", chuva_mm, probabilidade_chuva_pct: 50 }],
+      expectativas_selic: [],
+      previsao_sazonal: [],
+      fontes: [],
+      avisos: [],
+      atualizado_em: "2026-01-01T00:00:00.000Z",
+    });
+    const result = agregarFatoresNacionais([base(10, 10), base(20, 12)]);
+    expect(result.localidade).toContain("Brasil");
+    expect(result.meses[0]).toMatchObject({ chuva_mm: 15, selic_media_pct: 11 });
+    expect(result.previsao_chuva[0].chuva_mm).toBe(15);
+    expect(result.avisos[0]).toContain("média simples");
   });
 });
