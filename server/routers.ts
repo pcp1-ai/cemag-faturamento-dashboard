@@ -1,7 +1,7 @@
 import { z } from "zod";
 import { COOKIE_NAME } from "@shared/const";
 import { clearCemagSession, createCemagSession, validateCemagCredentials } from "./cemagAuth";
-import { getSharedFile, upsertSharedFile } from "./db";
+import { getSharedFile, upsertExternalSnapshot, upsertSharedFile } from "./db";
 import { getSessionCookieOptions } from "./_core/cookies";
 import { systemRouter } from "./_core/systemRouter";
 import { adminProcedure, protectedProcedure, publicProcedure, router } from "./_core/trpc";
@@ -48,7 +48,15 @@ export const appRouter = router({
         cidade: z.string().min(1).max(120),
         uf: z.string().max(2).optional(),
       }))
-      .query(({ input }) => obterFatoresExternos(input)),
+      .query(async ({ input }) => {
+        const result = await obterFatoresExternos(input);
+        try {
+          await upsertExternalSnapshot({ cidade: input.cidade, uf: input.uf || null, payload: JSON.stringify({ input, result }) });
+        } catch (error) {
+          console.warn("[ExternalFactors] Não foi possível persistir o snapshot:", error);
+        }
+        return result;
+      }),
     currentFiles: protectedProcedure.query(async () => {
       const [base, metas] = await Promise.all([getSharedFile("base"), getSharedFile("metas")]);
       return {

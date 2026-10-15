@@ -840,6 +840,7 @@ export default function Home({ onLogout, emailAutenticado, isAdmin = false }: { 
   }, [dadosMensais, fatoresExternosQuery.data?.meses, metricaPrevisao]);
   const previsaoChuvaFutura = fatoresExternosQuery.data?.previsao_chuva || [];
   const expectativasSelicFuturas = fatoresExternosQuery.data?.expectativas_selic || [];
+  const previsaoSazonal = fatoresExternosQuery.data?.previsao_sazonal || [];
 
   const atingimentoMensal = useMemo(() => {
     const mapa = new Map<string, any>();
@@ -2380,6 +2381,7 @@ export default function Home({ onLogout, emailAutenticado, isAdmin = false }: { 
                       <div className="rounded-lg border border-emerald-900/60 bg-emerald-950/20 p-4"><h4 className="text-sm font-semibold text-emerald-300">Previsão de chuva — próximos {previsaoChuvaFutura.length || 16} dias</h4><p className="mt-1 text-[11px] text-slate-400">Previsão meteorológica diária do Open-Meteo. Não é usada para inventar meses além do horizonte meteorológico disponível.</p><DataTable rows={previsaoChuvaFutura} exportName="previsao_chuva_futura" columns={["data", "chuva_mm", "probabilidade_chuva_pct"]} percentColumns={["probabilidade_chuva_pct"]} /></div>
                       <div className="rounded-lg border border-amber-900/60 bg-amber-950/20 p-4"><h4 className="text-sm font-semibold text-amber-300">Expectativa de Selic — Boletim Focus</h4><p className="mt-1 text-[11px] text-slate-400">Medianas/médias de mercado por reunião futura. São expectativas do mercado, não uma decisão garantida do Banco Central.</p><DataTable rows={expectativasSelicFuturas} exportName="expectativas_selic_focus" columns={["data_consulta", "reuniao", "media_pct", "mediana_pct", "respondentes"]} percentColumns={[]} /></div>
                     </div>}
+                    {fatoresExternosQuery.data && <div className="mt-4 rounded-lg border border-sky-900/60 bg-sky-950/20 p-4"><h4 className="text-sm font-semibold text-sky-300">Previsão climática sazonal — próximos trimestres</h4><p className="mt-1 text-[11px] text-slate-400">CPTEC/INPE BAM-1.2. É uma previsão probabilística regional de três meses, não uma promessa de chuva exata no município.</p><DataTable rows={previsaoSazonal} exportName="previsao_sazonal_cptec" columns={["modelo", "temporada", "periodo", "chuva_total_mm", "sinal_tercil", "valor_sinal", "atualizado_em"]} /></div>}
                   </div>
                   <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
                     <div className="bg-slate-900/80 border border-slate-800 rounded-xl p-4"><div className="text-[10px] uppercase text-slate-500">Métrica</div><div className="text-sm font-semibold text-orange-300 mt-2">{metricaPrevisao}</div></div>

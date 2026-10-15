@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { agregarChuvaMensal, agregarSelicMensal } from "./externalFactors";
+import { agregarChuvaMensal, agregarSelicMensal, periodoSazonal } from "./externalFactors";
 
 describe("fatores externos", () => {
   it("calcula a média mensal da Selic a partir da série diária do BCB", () => {
@@ -16,5 +16,10 @@ describe("fatores externos", () => {
     const result = agregarChuvaMensal({ "20250101": 2.5, "20250102": 7.5, "20250201": 1, "20250202": -999 });
     expect(result.get("2025-01")).toBe(10);
     expect(result.get("2025-02")).toBe(1);
+  });
+
+  it("calcula o período dos trimestres sazonais a partir da rodada", () => {
+    expect(periodoSazonal(2026, 9, 1)).toBe("2026-10 a 2026-12");
+    expect(periodoSazonal(2026, 9, 2)).toBe("2027-01 a 2027-03");
   });
 });

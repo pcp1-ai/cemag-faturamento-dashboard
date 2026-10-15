@@ -11,6 +11,7 @@ export type FatoresExternosResult = {
   meses: FatorExternoMensal[];
   previsao_chuva: Array<{ data: string; chuva_mm: number | null; probabilidade_chuva_pct: number | null }>;
   expectativas_selic: Array<{ data_consulta: string; reuniao: string; media_pct: number | null; mediana_pct: number | null; respondentes: number | null }>;
+  previsao_sazonal: Array<{ modelo: string; temporada: string; periodo: string; chuva_total_mm: number | null; sinal_tercil: string | null; valor_sinal: number | null; atualizado_em: string }>;
   fontes: string[];
   avisos: string[];
   atualizado_em: string;
@@ -63,6 +64,58 @@ async function fetchJson<T>(url: string, timeoutMs = 30_000): Promise<T> {
   }
 }
 
+async function fetchBytes(url: string, timeoutMs = 45_000) {
+  const controller = new AbortController();
+  const timeout = setTimeout(() => controller.abort(), timeoutMs);
+  try {
+    const response = await fetch(url, { signal: controller.signal });
+    if (!response.ok) throw new Error(`HTTP ${response.status}`);
+    return new Uint8Array(await response.arrayBuffer());
+  } finally {
+    clearTimeout(timeout);
+  }
+}
+
+function valorGradeCptec(bytes: Uint8Array, latitude: number, longitude: number) {
+  const lon360 = longitude < 0 ? longitude + 360 : longitude;
+  const x = Math.max(0, Math.min(383, Math.round(lon360 / 0.9375)));
+  const y = Math.max(0, Math.min(191, Math.round((latitude + 89.531) / 0.9375)));
+  const offset = (y * 384 + x) * 4;
+  if (offset + 4 > bytes.length) return null;
+  const value = new DataView(bytes.buffer, bytes.byteOffset, bytes.byteLength).getFloat32(offset, true);
+  return !Number.isFinite(value) || value < -900000 ? null : value;
+}
+
+export function periodoSazonal(initYear: number, initMonth: number, season: number) {
+  const start = new Date(Date.UTC(initYear, initMonth - 1 + 1 + (season - 1) * 3, 1));
+  const end = new Date(Date.UTC(start.getUTCFullYear(), start.getUTCMonth() + 2, 1));
+  return `${monthKeyFromDate(start)} a ${monthKeyFromDate(end)}`;
+}
+
+async function buscarPrevisaoSazonal(latitude: number, longitude: number) {
+  const hoje = new Date();
+  for (let recuo = 1; recuo <= 4; recuo++) {
+    const init = new Date(Date.UTC(hoje.getUTCFullYear(), hoje.getUTCMonth() - recuo, 1));
+    const ano = init.getUTCFullYear();
+    const mes = String(init.getUTCMonth() + 1).padStart(2, "0");
+    const data = `${ano}${mes}0100`;
+    try {
+      const resposta: FatoresExternosResult["previsao_sazonal"] = [];
+      for (const temporada of [1, 2]) {
+        const base = "https://dataserver.cptec.inpe.br/dataserver_sazonal/calibrated/prec_seas";
+        const nome = `BAM12_CALB_${data}_SEAS0${temporada}`;
+        const total = valorGradeCptec(await fetchBytes(`${base}/totals/${ano}/${mes}/01/${nome}.dat`), latitude, longitude);
+        const sinal = valorGradeCptec(await fetchBytes(`${base}/prob_terciles/${ano}/${mes}/01/${nome}.dat`), latitude, longitude);
+        resposta.push({ modelo: "CPTEC/INPE BAM-1.2", temporada: `SEAS0${temporada}`, periodo: periodoSazonal(ano, init.getUTCMonth() + 1, temporada), chuva_total_mm: total, sinal_tercil: sinal == null ? null : sinal > 0 ? "Acima do normal" : sinal < 0 ? "Abaixo do normal" : "Sem sinal predominante", valor_sinal: sinal, atualizado_em: new Date().toISOString() });
+      }
+      return resposta;
+    } catch {
+      // A rodada mais recente pode ainda não estar publicada; tenta a anterior.
+    }
+  }
+  return [];
+}
+
 export function agregarSelicMensal(rows: BcbRow[]) {
   const acumulado = new Map<string, number[]>();
   for (const row of rows) {
@@ -100,6 +153,7 @@ export async function obterFatoresExternos(input: { dataInicio: string; dataFim:
   const avisos: string[] = [];
   const previsao_chuva: FatoresExternosResult["previsao_chuva"] = [];
   const expectativas_selic: FatoresExternosResult["expectativas_selic"] = [];
+  const previsao_sazonal: FatoresExternosResult["previsao_sazonal"] = [];
 
   try {
     const bcbUrl = `https://api.bcb.gov.br/dados/serie/bcdata.sgs.1178/dados?formato=json&dataInicial=${encodeURIComponent(toBcbDate(input.dataInicio))}&dataFinal=${encodeURIComponent(toBcbDate(input.dataFim))}`;
@@ -146,6 +200,10 @@ export async function obterFatoresExternos(input: { dataInicio: string; dataFim:
       const times = forecast.daily?.time || [];
       for (let i = 0; i < times.length; i++) previsao_chuva.push({ data: times[i], chuva_mm: forecast.daily?.precipitation_sum?.[i] ?? null, probabilidade_chuva_pct: forecast.daily?.precipitation_probability_mean?.[i] ?? null });
       if (previsao_chuva.length) fontes.push("Open-Meteo — previsão meteorológica diária (até 16 dias)");
+      const sazonal = await buscarPrevisaoSazonal(Number(localidade.latitude), Number(localidade.longitude));
+      previsao_sazonal.push(...sazonal);
+      if (sazonal.length) fontes.push("CPTEC/INPE — previsão sazonal de precipitação (trimestres)");
+      else avisos.push("Previsão sazonal do CPTEC/INPE ainda não disponível para a rodada mais recente.");
     } catch (error) {
       avisos.push(`Chuva indisponível para ${input.cidade}: ${error instanceof Error ? error.message : "erro de consulta"}`);
     }
@@ -160,6 +218,7 @@ export async function obterFatoresExternos(input: { dataInicio: string; dataFim:
     meses: Array.from(porMes.values()),
     previsao_chuva,
     expectativas_selic,
+    previsao_sazonal,
     fontes,
     avisos,
     atualizado_em: new Date().toISOString(),

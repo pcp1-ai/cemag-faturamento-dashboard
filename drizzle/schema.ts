@@ -1,4 +1,4 @@
-import { int, mysqlEnum, mysqlTable, text, timestamp, varchar } from "drizzle-orm/mysql-core";
+import { int, mysqlEnum, mysqlTable, text, timestamp, varchar, uniqueIndex } from "drizzle-orm/mysql-core";
 
 /**
  * Core user table backing auth flow.
@@ -31,3 +31,16 @@ export const cemagSharedFiles = mysqlTable("cemag_shared_files", {
 
 export type CemagSharedFile = typeof cemagSharedFiles.$inferSelect;
 export type InsertCemagSharedFile = typeof cemagSharedFiles.$inferInsert;
+
+/** Último retrato consultado automaticamente para cada município selecionado. */
+export const cemagExternalSnapshots = mysqlTable("cemag_external_snapshots", {
+  id: int("id").autoincrement().primaryKey(),
+  cidade: varchar("cidade", { length: 120 }).notNull(),
+  uf: varchar("uf", { length: 2 }),
+  payload: text("payload").notNull(),
+  updatedAt: timestamp("updatedAt").defaultNow().onUpdateNow().notNull(),
+  scheduleCronTaskUid: varchar("schedule_cron_task_uid", { length: 65 }),
+}, (table) => ({ cidadeUfIdx: uniqueIndex("cemag_external_city_uf_idx").on(table.cidade, table.uf) }));
+
+export type CemagExternalSnapshot = typeof cemagExternalSnapshots.$inferSelect;
+export type InsertCemagExternalSnapshot = typeof cemagExternalSnapshots.$inferInsert;

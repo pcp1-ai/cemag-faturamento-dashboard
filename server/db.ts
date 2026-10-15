@@ -1,6 +1,6 @@
 import { eq } from "drizzle-orm";
 import { drizzle } from "drizzle-orm/mysql2";
-import { CemagSharedFile, InsertCemagSharedFile, InsertUser, cemagSharedFiles, users } from "../drizzle/schema";
+import { CemagExternalSnapshot, CemagSharedFile, InsertCemagExternalSnapshot, InsertCemagSharedFile, InsertUser, cemagExternalSnapshots, cemagSharedFiles, users } from "../drizzle/schema";
 import { ENV } from './_core/env';
 
 let _db: ReturnType<typeof drizzle> | null = null;
@@ -101,4 +101,23 @@ export async function upsertSharedFile(file: InsertCemagSharedFile): Promise<voi
   if (!db) throw new Error("Banco de dados indisponível para salvar o arquivo compartilhado.");
   const { kind, ...updateFields } = file;
   await db.insert(cemagSharedFiles).values(file).onDuplicateKeyUpdate({ set: updateFields });
+}
+
+export async function getExternalSnapshot(cidade: string, uf?: string): Promise<CemagExternalSnapshot | undefined> {
+  const db = await getDb();
+  if (!db) return undefined;
+  const rows = await db.select().from(cemagExternalSnapshots).where(eq(cemagExternalSnapshots.cidade, cidade)).limit(20);
+  return rows.find((row) => (row.uf || "") === (uf || ""));
+}
+
+export async function listExternalSnapshots(): Promise<CemagExternalSnapshot[]> {
+  const db = await getDb();
+  if (!db) return [];
+  return db.select().from(cemagExternalSnapshots);
+}
+
+export async function upsertExternalSnapshot(snapshot: InsertCemagExternalSnapshot): Promise<void> {
+  const db = await getDb();
+  if (!db) throw new Error("Banco de dados indisponível para salvar fatores externos.");
+  await db.insert(cemagExternalSnapshots).values(snapshot).onDuplicateKeyUpdate({ set: { payload: snapshot.payload, updatedAt: new Date() } });
 }
