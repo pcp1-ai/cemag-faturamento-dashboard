@@ -630,6 +630,11 @@ export default function Home({ onLogout, emailAutenticado, isAdmin = false }: { 
   // Mês x Mês
   const [metricaMoM, setMetricaMoM] = useState<string>("Faturamento");
   const [mesesComparativoSelecionados, setMesesComparativoSelecionados] = useState<string[]>([]);
+  const [temaDashboard, setTemaDashboard] = useState<"claro" | "black">(() => (localStorage.getItem("cemag_tema_dashboard") as "claro" | "black") || "claro");
+
+  useEffect(() => {
+    localStorage.setItem("cemag_tema_dashboard", temaDashboard);
+  }, [temaDashboard]);
 
   // Produtos
   const [metricaProd, setMetricaProd] = useState<string>("Faturamento");
@@ -1072,7 +1077,7 @@ export default function Home({ onLogout, emailAutenticado, isAdmin = false }: { 
   }
 
   return (
-    <div className="min-h-screen bg-[#0E1117] text-slate-100 flex flex-col font-sans">
+    <div className={`cemag-dashboard ${temaDashboard === "black" ? "tema-black" : ""} min-h-screen bg-[#f4f4f2] text-[#222222] flex flex-col font-sans`}>
       {/* Top Header CEMAG */}
       <header className="bg-[#111827] border-b border-slate-800 px-4 py-3 sticky top-0 z-30 shadow-md">
         <div className="max-w-[1700px] mx-auto flex items-center justify-between gap-4">
@@ -1102,6 +1107,10 @@ export default function Home({ onLogout, emailAutenticado, isAdmin = false }: { 
 
           <div className="flex items-center gap-3">
             {emailAutenticado && <span className="hidden xl:inline max-w-[220px] truncate text-[11px] text-slate-400" title={emailAutenticado}>{emailAutenticado}</span>}
+            <button type="button" onClick={() => setTemaDashboard((tema) => tema === "claro" ? "black" : "claro")} className="flex items-center gap-1.5 text-xs bg-slate-800 hover:bg-slate-700 text-slate-200 px-3 py-1.5 rounded-lg border border-slate-700 transition-colors shadow-sm" title="Alternar tema visual">
+              <span className="h-3 w-3 rounded-full border border-orange-300 bg-orange-500" />
+              <span className="hidden sm:inline">{temaDashboard === "black" ? "Tema claro" : "Black"}</span>
+            </button>
             <button
               onClick={() => setSidebarOculta((v) => !v)}
               className="hidden lg:flex items-center gap-1.5 text-xs bg-slate-800 hover:bg-slate-700 text-slate-200 px-3 py-1.5 rounded-lg border border-slate-700 transition-colors shadow-sm"

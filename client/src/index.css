@@ -190,6 +190,154 @@
   .visualizacao-ampliada [class*="recharts-wrapper"] { min-height: 100%; }
 }
 
+/* Tema CEMAG: o painel interno segue a linguagem do site oficial,
+   com superfícies claras, grafite e laranja institucional. */
+@layer components {
+  .cemag-dashboard {
+    --cemag-orange: #ff4e09;
+    --cemag-ink: #222222;
+    --cemag-muted: #666666;
+    --cemag-surface: #ffffff;
+    --cemag-surface-soft: #fafaf8;
+    --cemag-border: #e4e4e1;
+  }
+
+  .cemag-dashboard .bg-\[\#111827\],
+  .cemag-dashboard .bg-slate-950,
+  .cemag-dashboard .bg-slate-950\/50,
+  .cemag-dashboard .bg-slate-950\/60,
+  .cemag-dashboard .bg-slate-950\/70,
+  .cemag-dashboard .bg-slate-950\/80,
+  .cemag-dashboard .bg-slate-900,
+  .cemag-dashboard .bg-slate-900\/60,
+  .cemag-dashboard .bg-slate-900\/80,
+  .cemag-dashboard .bg-slate-800,
+  .cemag-dashboard .bg-slate-800\/40,
+  .cemag-dashboard .bg-slate-800\/80 {
+    background-color: var(--cemag-surface) !important;
+  }
+
+  .cemag-dashboard .bg-\[\#0E1117\],
+  .cemag-dashboard .bg-\[\#0B1220\],
+  .cemag-dashboard .bg-\[\#102036\] {
+    background-color: var(--cemag-surface-soft) !important;
+  }
+
+  .cemag-dashboard [class*="border-slate-"],
+  .cemag-dashboard [class*="border-\["],
+  .cemag-dashboard .border-slate-800\/80,
+  .cemag-dashboard .border-slate-700\/40 {
+    border-color: var(--cemag-border) !important;
+  }
+
+  .cemag-dashboard [class*="text-slate-100"],
+  .cemag-dashboard [class*="text-slate-200"],
+  .cemag-dashboard [class*="text-slate-300"],
+  .cemag-dashboard [class*="text-white"] {
+    color: var(--cemag-ink) !important;
+  }
+
+  .cemag-dashboard [class*="text-slate-400"],
+  .cemag-dashboard [class*="text-slate-500"],
+  .cemag-dashboard [class*="text-slate-600"] {
+    color: var(--cemag-muted) !important;
+  }
+
+  .cemag-dashboard [class*="bg-orange-"][class*="text-white"],
+  .cemag-dashboard [class*="bg-orange-"] [class*="text-white"] {
+    color: #ffffff !important;
+  }
+
+  .cemag-dashboard [class*="hover\\:bg-slate-"]:hover {
+    background-color: #f1f1ef !important;
+  }
+
+  .cemag-dashboard input,
+  .cemag-dashboard select,
+  .cemag-dashboard textarea {
+    background-color: #ffffff !important;
+    color: var(--cemag-ink) !important;
+    border-color: #d9d9d6 !important;
+  }
+
+  .cemag-dashboard input::placeholder,
+  .cemag-dashboard textarea::placeholder {
+    color: #999999 !important;
+  }
+
+  .cemag-dashboard .recharts-cartesian-grid-horizontal line,
+  .cemag-dashboard .recharts-cartesian-grid-vertical line {
+    stroke: #dededb;
+  }
+
+  .cemag-dashboard .recharts-text,
+  .cemag-dashboard .recharts-cartesian-axis-tick-value {
+    fill: #555555;
+  }
+
+  .cemag-dashboard.tema-black {
+    --cemag-ink: #f5f5f4;
+    --cemag-muted: #a8a8a3;
+    --cemag-surface: #171717;
+    --cemag-surface-soft: #0f0f0f;
+    --cemag-border: #343434;
+    background-color: #0f0f0f !important;
+    color: #f5f5f4 !important;
+  }
+
+  .cemag-dashboard.tema-black .bg-\[\#111827\],
+  .cemag-dashboard.tema-black .bg-slate-950,
+  .cemag-dashboard.tema-black .bg-slate-950\/50,
+  .cemag-dashboard.tema-black .bg-slate-950\/60,
+  .cemag-dashboard.tema-black .bg-slate-950\/70,
+  .cemag-dashboard.tema-black .bg-slate-950\/80,
+  .cemag-dashboard.tema-black .bg-slate-900,
+  .cemag-dashboard.tema-black .bg-slate-900\/60,
+  .cemag-dashboard.tema-black .bg-slate-900\/80,
+  .cemag-dashboard.tema-black .bg-slate-800,
+  .cemag-dashboard.tema-black .bg-slate-800\/40,
+  .cemag-dashboard.tema-black .bg-slate-800\/80 {
+    background-color: #171717 !important;
+  }
+
+  .cemag-dashboard.tema-black .bg-\[\#0E1117\],
+  .cemag-dashboard.tema-black .bg-\[\#0B1220\],
+  .cemag-dashboard.tema-black .bg-\[\#102036\] {
+    background-color: #0f0f0f !important;
+  }
+
+  .cemag-dashboard.tema-black [class*="text-slate-100"],
+  .cemag-dashboard.tema-black [class*="text-slate-200"],
+  .cemag-dashboard.tema-black [class*="text-slate-300"],
+  .cemag-dashboard.tema-black [class*="text-white"] {
+    color: #f5f5f4 !important;
+  }
+
+  .cemag-dashboard.tema-black [class*="text-slate-400"],
+  .cemag-dashboard.tema-black [class*="text-slate-500"],
+  .cemag-dashboard.tema-black [class*="text-slate-600"] {
+    color: #a8a8a3 !important;
+  }
+
+  .cemag-dashboard.tema-black input,
+  .cemag-dashboard.tema-black select,
+  .cemag-dashboard.tema-black textarea {
+    background-color: #101010 !important;
+    color: #f5f5f4 !important;
+    border-color: #3b3b3b !important;
+  }
+
+  .cemag-dashboard.tema-black .recharts-cartesian-grid-horizontal line,
+  .cemag-dashboard.tema-black .recharts-cartesian-grid-vertical line {
+    stroke: #3a3a3a;
+  }
+
+  .cemag-dashboard.tema-black .recharts-text,
+  .cemag-dashboard.tema-black .recharts-cartesian-axis-tick-value {
+    fill: #d0d0ca;
+  }
+}
+
 
 @layer components {
   /* Protege títulos, cartões e gráficos contra sobreposição em larguras menores. */
