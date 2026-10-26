@@ -78,6 +78,9 @@ const CEMAG_GREEN = "#22C55E";
 const CEMAG_RED = "#EF4444";
 const CEMAG_MUTED = "#64748B";
 
+const CAPITAIS_ESTADOS: Record<string, string> = { AC: "Rio Branco", AL: "Maceió", AP: "Macapá", AM: "Manaus", BA: "Salvador", CE: "Fortaleza", DF: "Brasília", ES: "Vitória", GO: "Goiânia", MA: "São Luís", MT: "Cuiabá", MS: "Campo Grande", MG: "Belo Horizonte", PA: "Belém", PB: "João Pessoa", PR: "Curitiba", PE: "Recife", PI: "Teresina", RJ: "Rio de Janeiro", RN: "Natal", RS: "Porto Alegre", RO: "Porto Velho", RR: "Boa Vista", SC: "Florianópolis", SP: "São Paulo", SE: "Aracaju", TO: "Palmas" };
+const REGIOES_BRASIL = ["Norte", "Nordeste", "Centro-Oeste", "Sudeste", "Sul"];
+
 const ROTULOS_METRICA_YOY: Record<MetricaComparativoAnual, string> = {
   faturamento: "Faturamento",
   quantidade: "Quantidade",
@@ -650,6 +653,10 @@ export default function Home({ onLogout, emailAutenticado, isAdmin = false }: { 
   const [metricaRep, setMetricaRep] = useState<string>("Faturamento");
   const [metricaPrevisao, setMetricaPrevisao] = useState<string>("Faturamento");
   const [horizontePrevisao, setHorizontePrevisao] = useState<number>(6);
+  const [abrangenciaFatores, setAbrangenciaFatores] = useState<string>("cidade");
+  const [regiaoFatores, setRegiaoFatores] = useState<string>(REGIOES_BRASIL[0]);
+  const [ufsFatores, setUfsFatores] = useState<string[]>([]);
+  const [cidadesSelecionadasFatores, setCidadesSelecionadasFatores] = useState<string[]>([]);
   const [cidadeFatoresExternos, setCidadeFatoresExternos] = useState<string>("");
   const [repEscolhido, setRepEscolhido] = useState<string>("");
 
@@ -813,19 +820,36 @@ export default function Home({ onLogout, emailAutenticado, isAdmin = false }: { 
     return agg;
   }, [dadosMetas]);
 
-  const cidadesFatoresExternos = useMemo(() => ["Brasil", ...opcoesFiltros.cidades], [opcoesFiltros.cidades]);
+  const cidadesFatoresExternos = opcoesFiltros.cidades;
   useEffect(() => {
     setCidadeFatoresExternos((atual) => atual && cidadesFatoresExternos.includes(atual) ? atual : (cidadesFatoresExternos[0] || ""));
   }, [cidadesFatoresExternos]);
-  const ufCidadeFatoresExternos = useMemo(() => cidadeFatoresExternos === "Brasil" ? undefined : dados.find((item) => item.cidade === cidadeFatoresExternos)?.uf || undefined, [dados, cidadeFatoresExternos]);
+  const cidadesClientesFatores = useMemo(() => Array.from(new Map(dados.filter((item) => item.cidade && item.uf).map((item) => [`${item.cidade}|${item.uf}`, { cidade: item.cidade, uf: item.uf }])).values()).sort((a, b) => `${a.cidade}|${a.uf}`.localeCompare(`${b.cidade}|${b.uf}`)), [dados]);
+  useEffect(() => {
+    setCidadesSelecionadasFatores((atuais) => atuais.length ? atuais.filter((key) => cidadesClientesFatores.some((item) => `${item.cidade}|${item.uf}` === key)) : cidadesClientesFatores.slice(0, 40).map((item) => `${item.cidade}|${item.uf}`));
+  }, [cidadesClientesFatores]);
+  const localidadesFatoresSelecionadas = useMemo(() => {
+    if (abrangenciaFatores === "brasil") return Object.entries(CAPITAIS_ESTADOS).map(([uf, cidade]) => ({ cidade, uf }));
+    if (abrangenciaFatores === "regiao") {
+      const ufs = new Set(dados.filter((item) => item.regiao === regiaoFatores).map((item) => item.uf));
+      return Array.from(ufs).filter((uf) => CAPITAIS_ESTADOS[uf]).map((uf) => ({ cidade: CAPITAIS_ESTADOS[uf], uf }));
+    }
+    if (abrangenciaFatores === "uf") return ufsFatores.filter((uf) => CAPITAIS_ESTADOS[uf]).map((uf) => ({ cidade: CAPITAIS_ESTADOS[uf], uf }));
+    if (abrangenciaFatores === "clientes") return cidadesSelecionadasFatores.map((key) => { const [cidade, uf] = key.split("|"); return { cidade, uf }; }).filter((item) => item.cidade && item.uf).slice(0, 40);
+    const uf = dados.find((item) => item.cidade === cidadeFatoresExternos)?.uf;
+    return cidadeFatoresExternos ? [{ cidade: cidadeFatoresExternos, uf }] : [];
+  }, [abrangenciaFatores, cidadesSelecionadasFatores, cidadeFatoresExternos, dados, regiaoFatores, ufsFatores]);
+  const descricaoAbrangenciaFatores = abrangenciaFatores === "brasil" ? "Brasil — capitais dos 27 estados" : abrangenciaFatores === "regiao" ? `${regiaoFatores} — capitais dos estados com clientes` : abrangenciaFatores === "uf" ? `Estados selecionados — ${ufsFatores.join(", ")}` : abrangenciaFatores === "clientes" ? `Cidades dos clientes — ${localidadesFatoresSelecionadas.length} localidades` : cidadeFatoresExternos;
   const fatoresExternosInput = useMemo(() => ({
     dataInicio: filtros.dataInicio || meta?.data_min?.toISOString().slice(0, 10) || "2022-01-01",
     dataFim: filtros.dataFim || meta?.data_max?.toISOString().slice(0, 10) || new Date().toISOString().slice(0, 10),
-    cidade: cidadeFatoresExternos,
-    uf: ufCidadeFatoresExternos,
-  }), [filtros.dataInicio, filtros.dataFim, meta?.data_min, meta?.data_max, cidadeFatoresExternos, ufCidadeFatoresExternos]);
+    cidade: abrangenciaFatores === "cidade" ? cidadeFatoresExternos : "Brasil",
+    uf: abrangenciaFatores === "cidade" ? localidadesFatoresSelecionadas[0]?.uf : undefined,
+    localidades: abrangenciaFatores === "cidade" ? undefined : localidadesFatoresSelecionadas,
+    descricaoAbrangencia: descricaoAbrangenciaFatores,
+  }), [abrangenciaFatores, cidadeFatoresExternos, descricaoAbrangenciaFatores, filtros.dataInicio, filtros.dataFim, localidadesFatoresSelecionadas, meta?.data_min, meta?.data_max]);
   const fatoresExternosQuery = trpc.cemag.fatoresExternos.useQuery(fatoresExternosInput, {
-    enabled: abaAtiva === "previsoes" && Boolean(cidadeFatoresExternos),
+    enabled: abaAtiva === "previsoes" && localidadesFatoresSelecionadas.length > 0,
     retry: false,
     staleTime: 15 * 60 * 1000,
   });
@@ -2370,7 +2394,13 @@ export default function Home({ onLogout, emailAutenticado, isAdmin = false }: { 
                   <div className="bg-slate-900/80 border border-slate-800 rounded-xl p-5">
                     <div className="flex flex-wrap items-start justify-between gap-4">
                       <div><h3 className="text-sm font-bold text-white">Fatores externos: histórico e futuro</h3><p className="text-xs text-slate-400 mt-1">Cruza a métrica selecionada com chuva e Selic históricas e também mostra previsões futuras. Associação não prova causalidade.</p></div>
-                      <label className="flex items-center gap-2 text-xs text-slate-300">Abrangência<select value={cidadeFatoresExternos} onChange={(e) => setCidadeFatoresExternos(e.target.value)} className="max-w-[220px] bg-slate-800 border border-slate-700 text-white rounded px-2 py-1.5"><option value="">Selecione</option>{cidadesFatoresExternos.map((cidade) => <option key={cidade} value={cidade}>{cidade}</option>)}</select></label>
+                      <div className="flex flex-wrap items-end gap-3 text-xs text-slate-300">
+                        <label className="flex flex-col gap-1">Abrangência<select value={abrangenciaFatores} onChange={(e) => setAbrangenciaFatores(e.target.value)} className="min-w-[190px] bg-slate-800 border border-slate-700 text-white rounded px-2 py-1.5"><option value="cidade">Município individual</option><option value="clientes">Cidades dos clientes</option><option value="uf">Estados selecionados</option><option value="regiao">Região</option><option value="brasil">Todo o Brasil</option></select></label>
+                        {abrangenciaFatores === "cidade" && <label className="flex flex-col gap-1">Município<select value={cidadeFatoresExternos} onChange={(e) => setCidadeFatoresExternos(e.target.value)} className="min-w-[190px] max-w-[240px] bg-slate-800 border border-slate-700 text-white rounded px-2 py-1.5"><option value="">Selecione</option>{cidadesFatoresExternos.map((cidade) => <option key={cidade} value={cidade}>{cidade}</option>)}</select></label>}
+                        {abrangenciaFatores === "regiao" && <label className="flex flex-col gap-1">Região<select value={regiaoFatores} onChange={(e) => setRegiaoFatores(e.target.value)} className="min-w-[150px] bg-slate-800 border border-slate-700 text-white rounded px-2 py-1.5">{REGIOES_BRASIL.map((regiao) => <option key={regiao} value={regiao}>{regiao}</option>)}</select></label>}
+                        {abrangenciaFatores === "uf" && <div className="max-w-[360px]"><div className="mb-1 flex items-center gap-2"><span>Estados</span><button type="button" className="text-[10px] text-sky-300 hover:text-white" onClick={() => setUfsFatores(opcoesFiltros.ufs)}>Selecionar todos</button><button type="button" className="text-[10px] text-slate-400 hover:text-white" onClick={() => setUfsFatores([])}>Limpar</button></div><div className="flex max-h-20 flex-wrap gap-x-2 gap-y-1 overflow-y-auto">{opcoesFiltros.ufs.map((uf) => <label key={uf} className="flex items-center gap-1"><input type="checkbox" checked={ufsFatores.includes(uf)} onChange={(e) => setUfsFatores((atuais) => e.target.checked ? [...atuais, uf] : atuais.filter((item) => item !== uf))} />{uf}</label>)}</div></div>}
+                        {abrangenciaFatores === "clientes" && <div className="max-w-[420px]"><div className="mb-1 flex items-center gap-2"><span>Cidades dos clientes</span><button type="button" className="text-[10px] text-sky-300 hover:text-white" onClick={() => setCidadesSelecionadasFatores(cidadesClientesFatores.slice(0, 40).map((item) => `${item.cidade}|${item.uf}`))}>Selecionar até 40</button><button type="button" className="text-[10px] text-slate-400 hover:text-white" onClick={() => setCidadesSelecionadasFatores([])}>Limpar</button></div><div className="flex max-h-20 flex-wrap gap-x-2 gap-y-1 overflow-y-auto">{cidadesClientesFatores.slice(0, 40).map((item) => { const key = `${item.cidade}|${item.uf}`; return <label key={key} className="flex items-center gap-1"><input type="checkbox" checked={cidadesSelecionadasFatores.includes(key)} onChange={(e) => setCidadesSelecionadasFatores((atuais) => e.target.checked ? [...atuais, key].slice(0, 40) : atuais.filter((value) => value !== key))} />{item.cidade}/{item.uf}</label>; })}</div></div>}
+                      </div>
                     </div>
                     {fatoresExternosQuery.isFetching && <p className="mt-3 text-xs text-sky-300">Consultando fontes oficiais e meteorológicas...</p>}
                     {fatoresExternosQuery.error && <p className="mt-3 text-xs text-amber-300">Não foi possível consultar os fatores externos agora. A previsão histórica continua disponível.</p>}

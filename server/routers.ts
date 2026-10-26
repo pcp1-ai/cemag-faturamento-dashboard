@@ -47,6 +47,8 @@ export const appRouter = router({
         dataFim: z.string().regex(/^\d{4}-\d{2}-\d{2}$/),
         cidade: z.string().min(1).max(120),
         uf: z.string().max(2).optional(),
+        localidades: z.array(z.object({ cidade: z.string().min(1).max(120), uf: z.string().max(2).optional() })).max(40).optional(),
+        descricaoAbrangencia: z.string().max(180).optional(),
       }))
       .query(async ({ input }) => {
         const result = await obterFatoresExternos(input);

@@ -92,7 +92,7 @@ export function periodoSazonal(initYear: number, initMonth: number, season: numb
   return `${monthKeyFromDate(start)} a ${monthKeyFromDate(end)}`;
 }
 
-export function agregarFatoresNacionais(resultados: FatoresExternosResult[]): FatoresExternosResult {
+export function agregarFatoresNacionais(resultados: FatoresExternosResult[], descricao = "Brasil — média de localidades selecionadas"): FatoresExternosResult {
   const media = (values: Array<number | null | undefined>) => {
     const validos = values.filter((value): value is number => value != null && Number.isFinite(value));
     return validos.length ? validos.reduce((sum, value) => sum + value, 0) / validos.length : null;
@@ -111,7 +111,7 @@ export function agregarFatoresNacionais(resultados: FatoresExternosResult[]): Fa
     return { modelo: primeira.modelo, temporada: primeira.temporada, periodo: primeira.periodo, chuva_total_mm: media(rows.map((row) => row.chuva_total_mm)), sinal_tercil: valor_sinal == null ? null : valor_sinal > 0 ? "Acima do normal" : valor_sinal < 0 ? "Abaixo do normal" : "Sem sinal predominante", valor_sinal, atualizado_em: new Date().toISOString() };
   });
   const base = resultados[0];
-  return { localidade: "Brasil — média de referências regionais", latitude: null, longitude: null, meses, previsao_chuva, expectativas_selic: base?.expectativas_selic || [], previsao_sazonal, fontes: Array.from(new Set([...resultados.flatMap((resultado) => resultado.fontes), "Agregação nacional: média simples de cinco referências regionais"])), avisos: ["A visão Brasil é uma média simples de cinco referências regionais (Manaus, Recife, Brasília, São Paulo e Porto Alegre); não é uma média areal oficial do território nacional."], atualizado_em: new Date().toISOString() };
+  return { localidade: descricao, latitude: null, longitude: null, meses, previsao_chuva, expectativas_selic: base?.expectativas_selic || [], previsao_sazonal, fontes: Array.from(new Set([...resultados.flatMap((resultado) => resultado.fontes), `Agregação: média simples de ${resultados.length} localidades selecionadas`])), avisos: [`A abrangência usa média simples das ${resultados.length} localidades selecionadas. Ela representa os pontos escolhidos, não uma média areal oficial de todo o território.`], atualizado_em: new Date().toISOString() };
 }
 
 async function buscarPrevisaoSazonal(latitude: number, longitude: number) {
@@ -168,11 +168,16 @@ async function buscarCoordenadas(cidade: string, uf?: string) {
   return results.find((item) => item.country?.toLowerCase() === "brasil") || results[0] || null;
 }
 
-export async function obterFatoresExternos(input: { dataInicio: string; dataFim: string; cidade: string; uf?: string }): Promise<FatoresExternosResult> {
+export async function obterFatoresExternos(input: { dataInicio: string; dataFim: string; cidade: string; uf?: string; localidades?: Array<{ cidade: string; uf?: string }>; descricaoAbrangencia?: string }): Promise<FatoresExternosResult> {
+  if (input.localidades?.length) {
+    const localidades = input.localidades.filter((localidade) => localidade.cidade && localidade.cidade !== "Brasil");
+    const respostas = await Promise.all(localidades.map((localidade) => obterFatoresExternos({ dataInicio: input.dataInicio, dataFim: input.dataFim, cidade: localidade.cidade, uf: localidade.uf })));
+    return agregarFatoresNacionais(respostas, input.descricaoAbrangencia || "Abrangência selecionada");
+  }
   if (input.cidade.trim().toLowerCase() === "brasil") {
     const referencias = [["Manaus", "AM"], ["Recife", "PE"], ["Brasília", "DF"], ["São Paulo", "SP"], ["Porto Alegre", "RS"]] as const;
     const respostas = await Promise.all(referencias.map(([cidade, uf]) => obterFatoresExternos({ ...input, cidade, uf })));
-    return agregarFatoresNacionais(respostas);
+    return agregarFatoresNacionais(respostas, "Brasil — referências regionais padrão");
   }
   const meses = monthKeys(input.dataInicio, input.dataFim);
   const porMes = new Map<string, FatorExternoMensal>(meses.map((anoMes) => [anoMes, { ano_mes: anoMes, selic_media_pct: null, chuva_mm: null }]));
