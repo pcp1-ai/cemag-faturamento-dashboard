@@ -211,6 +211,7 @@
   .cemag-dashboard .bg-slate-900,
   .cemag-dashboard .bg-slate-900\/60,
   .cemag-dashboard .bg-slate-900\/80,
+  .cemag-dashboard .bg-slate-900\/90,
   .cemag-dashboard .bg-slate-800,
   .cemag-dashboard .bg-slate-800\/40,
   .cemag-dashboard .bg-slate-800\/80 {
@@ -219,8 +220,16 @@
 
   .cemag-dashboard .bg-\[\#0E1117\],
   .cemag-dashboard .bg-\[\#0B1220\],
-  .cemag-dashboard .bg-\[\#102036\] {
+  .cemag-dashboard .bg-\[\#102036\],
+  .cemag-dashboard .bg-\[\#0E131F\],
+  .cemag-dashboard [class*="bg-gradient-to-br"][class*="from-\[\#111827\]"] {
     background-color: var(--cemag-surface-soft) !important;
+  }
+
+  .cemag-dashboard [class*="bg-gradient-to-br"][class*="from-\[\#111827\]"] {
+    background-image: none !important;
+    background-color: #ffffff !important;
+    border-color: var(--cemag-border) !important;
   }
 
   .cemag-dashboard [class*="border-slate-"],
@@ -294,6 +303,7 @@
   .cemag-dashboard.tema-black .bg-slate-900,
   .cemag-dashboard.tema-black .bg-slate-900\/60,
   .cemag-dashboard.tema-black .bg-slate-900\/80,
+  .cemag-dashboard.tema-black .bg-slate-900\/90,
   .cemag-dashboard.tema-black .bg-slate-800,
   .cemag-dashboard.tema-black .bg-slate-800\/40,
   .cemag-dashboard.tema-black .bg-slate-800\/80 {
@@ -302,8 +312,15 @@
 
   .cemag-dashboard.tema-black .bg-\[\#0E1117\],
   .cemag-dashboard.tema-black .bg-\[\#0B1220\],
-  .cemag-dashboard.tema-black .bg-\[\#102036\] {
+  .cemag-dashboard.tema-black .bg-\[\#102036\],
+  .cemag-dashboard.tema-black .bg-\[\#0E131F\] {
     background-color: #0f0f0f !important;
+  }
+
+  .cemag-dashboard.tema-black [class*="bg-gradient-to-br"][class*="from-\[\#111827\]"] {
+    background-image: linear-gradient(135deg, #171717, #0f0f0f) !important;
+    background-color: #171717 !important;
+    border-color: #343434 !important;
   }
 
   .cemag-dashboard.tema-black [class*="text-slate-100"],
