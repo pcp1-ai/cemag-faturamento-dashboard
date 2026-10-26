@@ -630,7 +630,7 @@ export default function Home({ onLogout, emailAutenticado, isAdmin = false }: { 
   // Mês x Mês
   const [metricaMoM, setMetricaMoM] = useState<string>("Faturamento");
   const [mesesComparativoSelecionados, setMesesComparativoSelecionados] = useState<string[]>([]);
-  const [temaDashboard, setTemaDashboard] = useState<"claro" | "black">(() => (localStorage.getItem("cemag_tema_dashboard") as "claro" | "black") || "claro");
+  const [temaDashboard, setTemaDashboard] = useState<"claro" | "black">(() => (localStorage.getItem("cemag_tema_dashboard") as "claro" | "black") || "black");
 
   useEffect(() => {
     localStorage.setItem("cemag_tema_dashboard", temaDashboard);
