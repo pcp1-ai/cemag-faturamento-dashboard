@@ -44,6 +44,10 @@ export function calcularMetricaComparativo(registros: RegistroComparativoAnual[]
   return pedidos ? faturamento / pedidos : 0;
 }
 
+export function calcularVariacaoComparativo(valorA: number, valorB: number) {
+  return { delta: valorB - valorA, percentual: valorA ? (valorB - valorA) / Math.abs(valorA) : null };
+}
+
 export function gerarComparativoAnual(
   registros: RegistroComparativoAnual[],
   anos: number[],

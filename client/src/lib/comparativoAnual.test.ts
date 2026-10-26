@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { calcularMetricaComparativo, gerarComparativoAnual } from "./comparativoAnual";
+import { calcularMetricaComparativo, calcularVariacaoComparativo, gerarComparativoAnual } from "./comparativoAnual";
 
 describe("gerarComparativoAnual", () => {
   it("cria doze meses e mantém uma coluna independente para cada ano", () => {
@@ -45,5 +45,11 @@ describe("gerarComparativoAnual", () => {
     const registros = [{ ano: 2025, mes_num: 1, faturamento: 100 }];
     expect(calcularMetricaComparativo(registros, "ticket_unitario")).toBe(0);
     expect(calcularMetricaComparativo(registros, "valor_medio_pedido")).toBe(0);
+  });
+
+  it("calcula a variação absoluta e percentual entre dois meses", () => {
+    expect(calcularVariacaoComparativo(100, 125)).toEqual({ delta: 25, percentual: 0.25 });
+    expect(calcularVariacaoComparativo(100, 75)).toEqual({ delta: -25, percentual: -0.25 });
+    expect(calcularVariacaoComparativo(0, 50)).toEqual({ delta: 50, percentual: null });
   });
 });

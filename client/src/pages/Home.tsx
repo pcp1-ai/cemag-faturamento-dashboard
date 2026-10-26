@@ -40,7 +40,7 @@ import { SidebarFilters, FiltrosState } from "../components/SidebarFilters";
 import { MapBrasil } from "../components/MapBrasil";
 import { MapMunicipios } from "../components/MapMunicipios";
 import { trpc } from "../lib/trpc";
-import { calcularMetricaComparativo, gerarComparativoAnual, MetricaComparativoAnual } from "../lib/comparativoAnual";
+import { calcularMetricaComparativo, calcularVariacaoComparativo, gerarComparativoAnual, MetricaComparativoAnual } from "../lib/comparativoAnual";
 import {
   Menu,
   Download,
@@ -629,6 +629,8 @@ export default function Home({ onLogout, emailAutenticado, isAdmin = false }: { 
 
   // Mês x Mês
   const [metricaMoM, setMetricaMoM] = useState<string>("Faturamento");
+  const [mesComparativoA, setMesComparativoA] = useState<string>("");
+  const [mesComparativoB, setMesComparativoB] = useState<string>("");
 
   // Produtos
   const [metricaProd, setMetricaProd] = useState<string>("Faturamento");
@@ -794,6 +796,42 @@ export default function Home({ onLogout, emailAutenticado, isAdmin = false }: { 
     agg.sort((a, b) => a.ano_mes_data.localeCompare(b.ano_mes_data));
     return agg;
   }, [dadosFiltrados]);
+
+  const mesesDisponiveisMoM = useMemo(() => dadosMensais.map((item: any) => ({ value: item.ano_mes, label: `${item.mes}/${item.ano}`, data: item.ano_mes_data })), [dadosMensais]);
+  useEffect(() => {
+    if (mesesDisponiveisMoM.length < 2) return;
+    setMesComparativoA((atual) => mesesDisponiveisMoM.some((mes) => mes.value === atual) ? atual : mesesDisponiveisMoM[mesesDisponiveisMoM.length - 2].value);
+    setMesComparativoB((atual) => mesesDisponiveisMoM.some((mes) => mes.value === atual) ? atual : mesesDisponiveisMoM[mesesDisponiveisMoM.length - 1].value);
+  }, [mesesDisponiveisMoM]);
+  const dadosMesComparativoA = useMemo(() => dadosFiltrados.filter((item) => item.ano_mes === mesComparativoA), [dadosFiltrados, mesComparativoA]);
+  const dadosMesComparativoB = useMemo(() => dadosFiltrados.filter((item) => item.ano_mes === mesComparativoB), [dadosFiltrados, mesComparativoB]);
+  const linhaComparativoMoM = useMemo(() => {
+    const valorA = valorMetrica(agregar(dadosMesComparativoA, [])[0] as any, metricaMoM);
+    const valorB = valorMetrica(agregar(dadosMesComparativoB, [])[0] as any, metricaMoM);
+    const variacao = calcularVariacaoComparativo(valorA, valorB);
+    return { valorA, valorB, delta: variacao.delta, variacao: variacao.percentual };
+  }, [dadosMesComparativoA, dadosMesComparativoB, metricaMoM]);
+  const detalhesComparativoMoM = useMemo(() => {
+    const dimensoes = [
+      ["Produtos", "produto"],
+      ["Clientes", "cliente"],
+      ["Regiões", "regiao"],
+      ["Representantes", "representante"],
+      ["Tipos de venda", "tipo_venda"],
+      ["Tipos de produto", "tipo_produto"],
+    ] as const;
+    return dimensoes.map(([dimensao, chave]) => {
+      const a = new Map(agregar(dadosMesComparativoA, [chave]).map((row: any) => [String(row[chave] || "Não informado"), valorMetrica(row, metricaMoM)]));
+      const b = new Map(agregar(dadosMesComparativoB, [chave]).map((row: any) => [String(row[chave] || "Não informado"), valorMetrica(row, metricaMoM)]));
+      const itens = Array.from(new Set([...a.keys(), ...b.keys()])).map((item) => {
+        const valorA = a.get(item) || 0;
+        const valorB = b.get(item) || 0;
+        const variacao = calcularVariacaoComparativo(valorA, valorB);
+        return { dimensao, item, valor_a: valorA, valor_b: valorB, delta: variacao.delta, variacao_pct: variacao.percentual };
+      }).sort((x, y) => Math.abs(y.delta) - Math.abs(x.delta));
+      return { dimensao, itens };
+    });
+  }, [dadosMesComparativoA, dadosMesComparativoB, metricaMoM]);
 
   // A análise de metas mostra todo o histórico disponível, sem obedecer ao período global.
   const dadosMetas = useMemo(() => dados.filter((item) => {
@@ -1792,27 +1830,44 @@ export default function Home({ onLogout, emailAutenticado, isAdmin = false }: { 
                   <div className="flex flex-wrap items-center justify-between gap-4 bg-slate-900/60 p-4 rounded-xl border border-slate-800">
                     <div>
                       <h2 className="text-lg font-bold text-white">Evolução Mês a Mês (MoM)</h2>
-                      <div className="mt-2"><SeletorMetrica value={metricaMoM} onChange={setMetricaMoM} /></div>
                       <p className="text-xs text-slate-400">
-                        Acompanhe oscilações mensais, ritmo recente e produtos com maiores aumentos e quedas.
+                        Escolha quaisquer dois meses para comparar os resultados, a variação absoluta e a contribuição por dimensão.
                       </p>
+                    </div>
+                    <div className="flex flex-wrap items-end gap-3 text-xs">
+                      <SeletorMetrica value={metricaMoM} onChange={setMetricaMoM} />
+                      <label className="flex flex-col gap-1 text-slate-400">Mês A<select value={mesComparativoA} onChange={(e) => setMesComparativoA(e.target.value)} className="min-w-[145px] rounded border border-slate-700 bg-slate-800 px-2 py-1.5 text-white">{mesesDisponiveisMoM.map((mes) => <option key={mes.value} value={mes.value}>{mes.label}</option>)}</select></label>
+                      <label className="flex flex-col gap-1 text-slate-400">Mês B<select value={mesComparativoB} onChange={(e) => setMesComparativoB(e.target.value)} className="min-w-[145px] rounded border border-slate-700 bg-slate-800 px-2 py-1.5 text-white">{mesesDisponiveisMoM.map((mes) => <option key={mes.value} value={mes.value}>{mes.label}</option>)}</select></label>
                     </div>
                   </div>
 
-                  <div className="bg-slate-900/80 border border-slate-800 p-5 rounded-xl">
-                    <h3 className="text-sm font-bold text-white mb-4">{metricaMoM} mensal e variações recentes</h3>
-                    <div className="h-72 w-full">
+                  {mesComparativoA && mesComparativoB ? <>
+                    <div className="grid grid-cols-1 gap-3 md:grid-cols-4">
+                      <div className="rounded-xl border border-slate-800 bg-slate-900 p-4"><div className="text-[10px] uppercase text-slate-500">Mês A · {mesComparativoA}</div><div className="mt-2 text-xl font-bold text-sky-300">{formatarMetrica(linhaComparativoMoM.valorA, metricaMoM)}</div><div className="mt-1 text-[11px] text-slate-500">{dadosMesComparativoA.length.toLocaleString("pt-BR")} linhas</div></div>
+                      <div className="rounded-xl border border-slate-800 bg-slate-900 p-4"><div className="text-[10px] uppercase text-slate-500">Mês B · {mesComparativoB}</div><div className="mt-2 text-xl font-bold text-orange-300">{formatarMetrica(linhaComparativoMoM.valorB, metricaMoM)}</div><div className="mt-1 text-[11px] text-slate-500">{dadosMesComparativoB.length.toLocaleString("pt-BR")} linhas</div></div>
+                      <div className="rounded-xl border border-slate-800 bg-slate-900 p-4"><div className="text-[10px] uppercase text-slate-500">Variação absoluta</div><div className={`mt-2 text-xl font-bold ${linhaComparativoMoM.delta >= 0 ? "text-emerald-300" : "text-red-300"}`}>{formatarMetrica(linhaComparativoMoM.delta, metricaMoM)}</div><div className="mt-1 text-[11px] text-slate-500">B − A</div></div>
+                      <div className="rounded-xl border border-slate-800 bg-slate-900 p-4"><div className="text-[10px] uppercase text-slate-500">Variação percentual</div><div className={`mt-2 text-xl font-bold ${linhaComparativoMoM.variacao == null || linhaComparativoMoM.variacao >= 0 ? "text-emerald-300" : "text-red-300"}`}>{linhaComparativoMoM.variacao == null ? "-" : formatarPercentual(linhaComparativoMoM.variacao)}</div><div className="mt-1 text-[11px] text-slate-500">Base: Mês A</div></div>
+                    </div>
+
+                    <div className="bg-slate-900/80 border border-slate-800 p-5 rounded-xl">
+                      <h3 className="text-sm font-bold text-white mb-4">Comparação direta — {metricaMoM}</h3>
+                      <div className="h-72 w-full">
                       <ResponsiveContainer width="100%" height="100%">
-                        <BarChart data={dadosMensais} margin={{ top: 10, right: 30, left: 30, bottom: 20 }}>
+                        <BarChart data={[{ periodo: mesComparativoA, valor: linhaComparativoMoM.valorA }, { periodo: mesComparativoB, valor: linhaComparativoMoM.valorB }]} margin={{ top: 10, right: 30, left: 30, bottom: 20 }}>
                           <CartesianGrid strokeDasharray="3 3" stroke="#334155" opacity={0.5} />
-                          <XAxis dataKey="ano_mes" interval="preserveStartEnd" angle={-18} textAnchor="end" height={42} stroke="#94A3B8" fontSize={10} />
+                          <XAxis dataKey="periodo" stroke="#94A3B8" fontSize={11} />
                           <YAxis stroke="#94A3B8" fontSize={11} tickFormatter={(v) => resumirMetrica(v, metricaMoM)} />
                           <RechartsTooltip contentStyle={{ backgroundColor: "#0F172A", borderColor: "#334155" }} formatter={(v: any) => [formatarMetrica(v, metricaMoM), metricaMoM]} />
-                          <Bar dataKey={campoMetrica(metricaMoM)} fill={CEMAG_ORANGE} radius={[4, 4, 0, 0]} />
+                          <Bar dataKey="valor" fill={CEMAG_ORANGE} radius={[4, 4, 0, 0]} />
                         </BarChart>
                       </ResponsiveContainer>
+                      </div>
                     </div>
-                  </div>
+
+                    <div className="rounded-xl border border-slate-800 bg-slate-900/80 p-5"><div className="mb-3"><h3 className="text-sm font-bold text-white">Resumo auditável da comparação</h3><p className="text-[11px] text-slate-400">Os valores respeitam os filtros gerais ativos e podem ser exportados.</p></div><DataTable exportName="comparativo_mom_resumo" rows={[{ metrica: metricaMoM, mes_a: mesComparativoA, mes_b: mesComparativoB, valor_a: linhaComparativoMoM.valorA, valor_b: linhaComparativoMoM.valorB, delta: linhaComparativoMoM.delta, variacao_pct: linhaComparativoMoM.variacao }]} columns={["metrica", "mes_a", "mes_b", "valor_a", "valor_b", "delta", "variacao_pct"]} metricColumns={{ valor_a: metricaMoM, valor_b: metricaMoM, delta: metricaMoM }} percentColumns={["variacao_pct"]} /></div>
+
+                    <div className="grid grid-cols-1 gap-5 xl:grid-cols-2">{detalhesComparativoMoM.map(({ dimensao, itens }) => <div key={dimensao} className="rounded-xl border border-slate-800 bg-slate-900/80 p-5"><div className="mb-3 flex items-center justify-between gap-2"><div><h3 className="text-sm font-bold text-white">Detalhamento por {dimensao}</h3><p className="text-[11px] text-slate-400">Ordenado pela maior alteração absoluta.</p></div><span className="text-[10px] text-slate-500">{itens.length} itens</span></div><DataTable exportName={`comparativo_mom_${dimensao.toLowerCase().replaceAll(" ", "_")}`} rows={itens.slice(0, 100)} columns={["item", "valor_a", "valor_b", "delta", "variacao_pct"]} metricColumns={{ valor_a: metricaMoM, valor_b: metricaMoM, delta: metricaMoM }} percentColumns={["variacao_pct"]} /></div>)}</div>
+                  </> : <div className="rounded-xl border border-dashed border-slate-700 p-8 text-center text-sm text-slate-400">Selecione dois meses com dados para iniciar a comparação.</div>}
                 </div>
               )}
 
