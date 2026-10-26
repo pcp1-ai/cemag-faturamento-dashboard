@@ -1084,12 +1084,12 @@ export default function Home({ onLogout, emailAutenticado, isAdmin = false }: { 
               <Menu className="w-5 h-5" />
             </button>
             <div className="flex items-center gap-2">
-              <span className="text-2xl">📊</span>
+              <div className="rounded-lg bg-white px-2 py-1 shadow-sm"><img src="/manus-storage/cemag-logo-orange_4de005c2.png" alt="CEMAG" className="h-7 w-auto object-contain" /></div>
               <div>
                 <h1 className="text-base md:text-lg font-bold text-white tracking-tight flex items-center gap-2">
-                  <span>Análise de Faturamento</span>
+                  <span>Inteligência Comercial</span>
                   <span className="text-xs px-2 py-0.5 rounded bg-orange-500/20 text-orange-400 border border-orange-500/30">
-                    Carretas CEMAG
+                    CEMAG Carretas Agrícolas
                   </span>
                   {emailAutenticado && <span className={`hidden lg:inline-flex items-center rounded border px-2 py-0.5 text-[10px] ${isAdmin ? "border-emerald-500/30 bg-emerald-500/10 text-emerald-300" : "border-slate-700 bg-slate-800 text-slate-300"}`} title={emailAutenticado}>{isAdmin ? "Administrador" : "Consulta"}</span>}
                 </h1>

@@ -119,6 +119,13 @@
   }
   body {
     @apply bg-background text-foreground;
+    font-family: "Open Sans", Arial, sans-serif;
+    -webkit-font-smoothing: antialiased;
+  }
+
+  ::selection {
+    background: #ff4e09;
+    color: #ffffff;
   }
   button:not(:disabled),
   [role="button"]:not([aria-disabled="true"]),
