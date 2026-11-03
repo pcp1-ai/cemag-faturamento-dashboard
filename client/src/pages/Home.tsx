@@ -633,6 +633,8 @@ export default function Home({ onLogout, emailAutenticado, isAdmin = false }: { 
   const [metricaMoM, setMetricaMoM] = useState<string>("Faturamento");
   const [mesesComparativoSelecionados, setMesesComparativoSelecionados] = useState<string[]>([]);
   const [temaDashboard, setTemaDashboard] = useState<"claro" | "black">(() => (localStorage.getItem("cemag_tema_dashboard") as "claro" | "black") || "black");
+  const [relatorioAberto, setRelatorioAberto] = useState(false);
+  const [tipoRelatorio, setTipoRelatorio] = useState<"executivo" | "mensal" | "auditoria">("executivo");
 
   useEffect(() => {
     localStorage.setItem("cemag_tema_dashboard", temaDashboard);
@@ -1104,6 +1106,33 @@ export default function Home({ onLogout, emailAutenticado, isAdmin = false }: { 
     return { mesAtual, atual, anterior, meta: metaEncontrada?.meta || 0, projecao, variacao, atingimento, necessarioDia, estaNoMesVigente, diasRestantes, topCliente: top("cliente"), topProduto: top("produto"), topRegiao: top("regiao") };
   }, [dadosFiltrados, metasImportadas, metaManualSalva, hoje]);
 
+  const dadosRelatorio = useMemo(() => {
+    const totalFaturamento = dadosFiltrados.reduce((sum, item) => sum + Number(item.faturamento || 0), 0);
+    const totalQuantidade = dadosFiltrados.reduce((sum, item) => sum + Number(item.quantidade || 0), 0);
+    const agrupar = (campo: keyof TransacaoTratada) => {
+      const mapa = new Map<string, { nome: string; faturamento: number; quantidade: number }>();
+      dadosFiltrados.forEach((item) => {
+        const nome = String(item[campo] || "Não informado");
+        const atual = mapa.get(nome) || { nome, faturamento: 0, quantidade: 0 };
+        atual.faturamento += Number(item.faturamento || 0);
+        atual.quantidade += Number(item.quantidade || 0);
+        mapa.set(nome, atual);
+      });
+      return Array.from(mapa.values()).sort((a, b) => b.faturamento - a.faturamento).slice(0, 10);
+    };
+    return {
+      totalFaturamento,
+      totalQuantidade,
+      pedidos: new Set(dadosFiltrados.map((item) => item.pedido).filter(Boolean)).size,
+      clientes: new Set(dadosFiltrados.map((item) => item.cliente).filter(Boolean)).size,
+      linhas: dadosFiltrados.length,
+      topClientes: agrupar("cliente"),
+      topProdutos: agrupar("produto"),
+      topRegioes: agrupar("regiao"),
+      meses: dadosMensais.map((item: any) => ({ mes: item.ano_mes, faturamento: item.faturamento, quantidade: item.quantidade, pedidos: item.pedidos, clientes: item.clientes })).slice(-24),
+    };
+  }, [dadosFiltrados, dadosMensais]);
+
   if (loading) {
     return (
       <div className="min-h-screen bg-[#0E1117] text-white flex flex-col items-center justify-center p-6">
@@ -1149,9 +1178,9 @@ export default function Home({ onLogout, emailAutenticado, isAdmin = false }: { 
               <span className="h-3 w-3 rounded-full border border-orange-300 bg-orange-500" />
               <span className="hidden sm:inline">{temaDashboard === "black" ? "Tema claro" : "Black"}</span>
             </button>
-            <button type="button" onClick={imprimirRelatorio} className="no-print flex items-center gap-1.5 text-xs bg-slate-800 hover:bg-slate-700 text-slate-200 px-3 py-1.5 rounded-lg border border-slate-700 transition-colors shadow-sm" title="Imprimir relatório da aba atual">
-              <Printer className="w-3.5 h-3.5 text-orange-300" />
-              <span className="hidden sm:inline">Imprimir</span>
+            <button type="button" onClick={() => setRelatorioAberto(true)} className="no-print flex items-center gap-1.5 text-xs bg-orange-600 hover:bg-orange-500 text-white px-3 py-1.5 rounded-lg border border-orange-500 transition-colors shadow-sm" title="Gerar relatório para impressão">
+              <Printer className="w-3.5 h-3.5" />
+              <span className="hidden sm:inline">Gerar relatório</span>
             </button>
             <button
               onClick={() => setSidebarOculta((v) => !v)}
@@ -2765,6 +2794,24 @@ export default function Home({ onLogout, emailAutenticado, isAdmin = false }: { 
           )}
         </main>
       </div>
+      {relatorioAberto && (
+        <div className="relatorio-modal fixed inset-0 z-[80] overflow-y-auto bg-black/80 p-4 md:p-8">
+          <div className="mx-auto max-w-6xl rounded-2xl bg-white text-slate-900 shadow-2xl">
+            <div className="report-config flex flex-wrap items-center justify-between gap-3 border-b border-slate-200 p-4">
+              <div><h2 className="text-lg font-bold">Gerar relatório para impressão</h2><p className="text-xs text-slate-500">O relatório usa os filtros atuais e não altera os dados do dashboard.</p></div>
+              <div className="flex flex-wrap gap-2"><select value={tipoRelatorio} onChange={(event) => setTipoRelatorio(event.target.value as typeof tipoRelatorio)} className="rounded-lg border border-slate-300 bg-white px-3 py-2 text-sm"><option value="executivo">Relatório executivo</option><option value="mensal">Relatório mensal detalhado</option><option value="auditoria">Relatório de auditoria</option></select><button type="button" onClick={imprimirRelatorio} className="inline-flex items-center gap-2 rounded-lg bg-orange-600 px-3 py-2 text-sm font-semibold text-white hover:bg-orange-500"><Printer className="h-4 w-4" /> Imprimir relatório</button><button type="button" onClick={() => setRelatorioAberto(false)} className="rounded-lg border border-slate-300 px-3 py-2 text-sm text-slate-700 hover:bg-slate-100">Fechar</button></div>
+            </div>
+            <article className="relatorio-gerado p-6 md:p-10">
+              <div className="mb-6 flex flex-wrap items-start justify-between gap-4 border-b-2 border-orange-500 pb-4"><div><div className="text-2xl font-black tracking-tight text-orange-600">cemag</div><h1 className="mt-1 text-2xl font-bold">{tipoRelatorio === "executivo" ? "Relatório Executivo Comercial" : tipoRelatorio === "mensal" ? "Relatório Mensal Detalhado" : "Relatório de Auditoria da Base"}</h1><p className="mt-1 text-sm text-slate-500">Inteligência Comercial · Período: {periodoEfetivo}</p></div><div className="text-right text-xs text-slate-500">Gerado em {hoje.toLocaleString("pt-BR")}<br />Aba de origem: {abaAtiva}</div></div>
+              <div className="mb-6 grid grid-cols-2 gap-3 md:grid-cols-5">{[["Faturamento", formatarMoeda(dadosRelatorio.totalFaturamento)], ["Quantidade", formatarInteiro(dadosRelatorio.totalQuantidade)], ["Pedidos", dadosRelatorio.pedidos.toLocaleString("pt-BR")], ["Clientes", dadosRelatorio.clientes.toLocaleString("pt-BR")], ["Linhas", dadosRelatorio.linhas.toLocaleString("pt-BR")]].map(([label, value]) => <div key={label} className="rounded-lg border border-slate-200 bg-slate-50 p-3"><span className="text-[10px] uppercase tracking-wide text-slate-500">{label}</span><strong className="mt-1 block text-lg text-slate-900">{value}</strong></div>)}</div>
+              {tipoRelatorio === "executivo" && <div className="space-y-6"><section><h2 className="mb-3 text-lg font-bold">Resumo executivo</h2><p className="text-sm leading-6 text-slate-700">O período analisado registrou <strong>{formatarMoeda(dadosRelatorio.totalFaturamento)}</strong> em faturamento, distribuído em <strong>{dadosRelatorio.pedidos.toLocaleString("pt-BR")}</strong> pedidos e <strong>{dadosRelatorio.clientes.toLocaleString("pt-BR")}</strong> clientes. Este relatório considera exatamente as linhas resultantes dos filtros aplicados no dashboard.</p></section><div className="grid gap-6 md:grid-cols-3">{[["Top clientes", dadosRelatorio.topClientes], ["Top produtos", dadosRelatorio.topProdutos], ["Top regiões", dadosRelatorio.topRegioes]].map(([titulo, lista]) => <section key={titulo as string}><h2 className="mb-2 text-sm font-bold">{titulo as string}</h2><table className="w-full text-xs"><tbody>{(lista as typeof dadosRelatorio.topClientes).slice(0, 5).map((item) => <tr key={item.nome} className="border-b border-slate-200"><td className="py-2 pr-2">{item.nome}</td><td className="py-2 text-right font-semibold">{formatarMoeda(item.faturamento)}</td></tr>)}</tbody></table></section>)}</div></div>}
+              {tipoRelatorio === "mensal" && <section><h2 className="mb-3 text-lg font-bold">Evolução mensal detalhada</h2><table className="w-full border-collapse text-sm"><thead><tr className="bg-slate-100 text-left"><th className="p-2">Mês</th><th className="p-2 text-right">Faturamento</th><th className="p-2 text-right">Quantidade</th><th className="p-2 text-right">Pedidos</th><th className="p-2 text-right">Clientes</th></tr></thead><tbody>{dadosRelatorio.meses.map((item) => <tr key={item.mes} className="border-b border-slate-200"><td className="p-2">{item.mes}</td><td className="p-2 text-right font-semibold">{formatarMoeda(item.faturamento)}</td><td className="p-2 text-right">{formatarInteiro(item.quantidade)}</td><td className="p-2 text-right">{item.pedidos}</td><td className="p-2 text-right">{item.clientes}</td></tr>)}</tbody></table></section>}
+              {tipoRelatorio === "auditoria" && <section className="space-y-4"><h2 className="text-lg font-bold">Memória de cálculo e auditoria</h2><div className="rounded-lg border border-slate-200 bg-slate-50 p-4 text-sm leading-6"><p><strong>Linhas consideradas:</strong> {dadosRelatorio.linhas.toLocaleString("pt-BR")}</p><p><strong>Período aplicado:</strong> {periodoEfetivo}</p><p><strong>Data utilizada:</strong> movimentação, com fallback para emissão</p><p><strong>Filtros:</strong> todos os filtros gerais ativos no momento da geração</p></div><table className="w-full border-collapse text-xs"><thead><tr className="bg-slate-100 text-left"><th className="p-2">Indicador</th><th className="p-2 text-right">Valor</th></tr></thead><tbody>{[["Faturamento total", formatarMoeda(dadosRelatorio.totalFaturamento)], ["Quantidade total", formatarInteiro(dadosRelatorio.totalQuantidade)], ["Pedidos únicos", dadosRelatorio.pedidos.toLocaleString("pt-BR")], ["Clientes únicos", dadosRelatorio.clientes.toLocaleString("pt-BR")], ["Linhas filtradas", dadosRelatorio.linhas.toLocaleString("pt-BR")]].map(([label, value]) => <tr key={label} className="border-b border-slate-200"><td className="p-2">{label}</td><td className="p-2 text-right font-semibold">{value}</td></tr>)}</tbody></table></section>}
+              <footer className="mt-8 border-t border-slate-200 pt-3 text-[10px] text-slate-500">Documento gerado pelo painel CEMAG · Os valores refletem os filtros selecionados no momento da geração.</footer>
+            </article>
+          </div>
+        </div>
+      )}
     </div>
   );
 }

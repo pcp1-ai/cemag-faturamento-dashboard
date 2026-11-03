@@ -397,6 +397,22 @@
 @media print {
   @page { size: A4 landscape; margin: 12mm; }
 
+  .cemag-dashboard > *:not(.relatorio-modal) { display: none !important; }
+  .cemag-dashboard .relatorio-modal {
+    position: static !important;
+    display: block !important;
+    overflow: visible !important;
+    padding: 0 !important;
+    background: #ffffff !important;
+  }
+  .cemag-dashboard .relatorio-modal > div {
+    max-width: none !important;
+    border-radius: 0 !important;
+    box-shadow: none !important;
+  }
+  .cemag-dashboard .relatorio-modal .report-config { display: none !important; }
+  .cemag-dashboard .relatorio-gerado { padding: 0 !important; }
+
   html, body {
     background: #ffffff !important;
     color: #111111 !important;
