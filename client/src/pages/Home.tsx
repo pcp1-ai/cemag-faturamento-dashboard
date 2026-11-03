@@ -56,6 +56,7 @@ import {
   Eye,
   Tv,
   LogOut,
+  Printer,
 } from "lucide-react";
 import {
   ResponsiveContainer,
@@ -637,6 +638,8 @@ export default function Home({ onLogout, emailAutenticado, isAdmin = false }: { 
     localStorage.setItem("cemag_tema_dashboard", temaDashboard);
   }, [temaDashboard]);
 
+  const imprimirRelatorio = () => window.print();
+
   // Produtos
   const [metricaProd, setMetricaProd] = useState<string>("Faturamento");
   const [agrupamentoProd, setAgrupamentoProd] = useState<string>("produto");
@@ -1146,6 +1149,10 @@ export default function Home({ onLogout, emailAutenticado, isAdmin = false }: { 
               <span className="h-3 w-3 rounded-full border border-orange-300 bg-orange-500" />
               <span className="hidden sm:inline">{temaDashboard === "black" ? "Tema claro" : "Black"}</span>
             </button>
+            <button type="button" onClick={imprimirRelatorio} className="no-print flex items-center gap-1.5 text-xs bg-slate-800 hover:bg-slate-700 text-slate-200 px-3 py-1.5 rounded-lg border border-slate-700 transition-colors shadow-sm" title="Imprimir relatório da aba atual">
+              <Printer className="w-3.5 h-3.5 text-orange-300" />
+              <span className="hidden sm:inline">Imprimir</span>
+            </button>
             <button
               onClick={() => setSidebarOculta((v) => !v)}
               className="hidden lg:flex items-center gap-1.5 text-xs bg-slate-800 hover:bg-slate-700 text-slate-200 px-3 py-1.5 rounded-lg border border-slate-700 transition-colors shadow-sm"
@@ -1241,10 +1248,10 @@ export default function Home({ onLogout, emailAutenticado, isAdmin = false }: { 
         )}
 
         {/* Área Central Principal */}
-        <main className={`${visualizacaoExpandida ? "visualizacao-ampliada fixed inset-0 z-50 bg-[#0E1117] overflow-y-auto" : "flex-1"} p-4 md:p-6 overflow-x-hidden`}>
+        <main className={`printable-content ${visualizacaoExpandida ? "visualizacao-ampliada fixed inset-0 z-50 bg-[#0E1117] overflow-y-auto" : "flex-1"} p-4 md:p-6 overflow-x-hidden`}>
           {visualizacaoExpandida && <div className="sticky top-0 z-20 flex justify-end pb-3"><button type="button" onClick={() => setVisualizacaoExpandida(false)} className="flex items-center gap-2 rounded-lg border border-orange-500/40 bg-slate-900 px-3 py-2 text-xs font-semibold text-orange-300 shadow-lg hover:bg-slate-800"><Eye className="h-4 w-4" /> Sair da visualização ampliada</button></div>}
           {/* Navegação Superior de Abas (Idêntica ao st.radio PAGINAS) */}
-          <div className="mb-5 overflow-x-auto pb-1 scrollbar-thin">
+          <div className="no-print mb-5 overflow-x-auto pb-1 scrollbar-thin">
             <div className="flex items-center gap-1.5 min-w-max bg-slate-900/80 p-1.5 rounded-xl border border-slate-800">
               {ABAS.map((aba) => {
                 const isSelected = abaAtiva === aba.id;

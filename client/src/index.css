@@ -393,3 +393,89 @@
     }
   }
 }
+
+@media print {
+  @page { size: A4 landscape; margin: 12mm; }
+
+  html, body {
+    background: #ffffff !important;
+    color: #111111 !important;
+  }
+
+  body {
+    -webkit-print-color-adjust: exact;
+    print-color-adjust: exact;
+  }
+
+  .cemag-dashboard {
+    display: block !important;
+    min-height: auto !important;
+    background: #ffffff !important;
+    color: #111111 !important;
+  }
+
+  .cemag-dashboard > header,
+  .cemag-dashboard aside,
+  .cemag-dashboard .no-print,
+  .cemag-dashboard button,
+  .cemag-dashboard input,
+  .cemag-dashboard select,
+  .cemag-dashboard textarea,
+  .cemag-dashboard [role="button"] { display: none !important; }
+
+  .cemag-dashboard main,
+  .cemag-dashboard .printable-content {
+    display: block !important;
+    width: 100% !important;
+    max-width: none !important;
+    min-height: auto !important;
+    padding: 0 !important;
+    overflow: visible !important;
+    background: #ffffff !important;
+    color: #111111 !important;
+  }
+
+  .cemag-dashboard .printable-content::before {
+    content: "CEMAG — Relatório analítico";
+    display: block;
+    margin-bottom: 4mm;
+    padding-bottom: 2mm;
+    border-bottom: 2px solid #ff4e09;
+    color: #222222;
+    font-size: 18pt;
+    font-weight: 700;
+  }
+
+  .cemag-dashboard [class*="bg-slate-"],
+  .cemag-dashboard [class*="bg-\[#"],
+  .cemag-dashboard [class*="bg-orange-"] {
+    background: #ffffff !important;
+    color: #111111 !important;
+    box-shadow: none !important;
+  }
+
+  .cemag-dashboard [class*="text-white"],
+  .cemag-dashboard [class*="text-slate-"],
+  .cemag-dashboard [class*="text-orange-"] { color: #222222 !important; }
+
+  .cemag-dashboard [class*="border-slate-"],
+  .cemag-dashboard [class*="border-orange-"] { border-color: #d6d6d2 !important; }
+
+  .cemag-dashboard .recharts-responsive-container {
+    min-height: 240px;
+    break-inside: avoid;
+  }
+
+  .cemag-dashboard .recharts-wrapper,
+  .cemag-dashboard .recharts-surface { overflow: visible !important; }
+
+  .cemag-dashboard .recharts-cartesian-grid line { stroke: #ddddda !important; }
+  .cemag-dashboard .recharts-text,
+  .cemag-dashboard .recharts-cartesian-axis-tick-value { fill: #444444 !important; }
+
+  .cemag-dashboard .rounded-xl,
+  .cemag-dashboard .rounded-lg { break-inside: avoid; }
+
+  .cemag-dashboard table { color: #222222 !important; font-size: 8pt; }
+  .cemag-dashboard table th { background: #f0f0ed !important; color: #222222 !important; }
+}
