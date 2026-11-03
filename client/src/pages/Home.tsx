@@ -1066,6 +1066,40 @@ export default function Home({ onLogout, emailAutenticado, isAdmin = false }: { 
     return `${formatarDataResumo(datas[0])} a ${formatarDataResumo(datas[datas.length - 1])}`;
   }, [dadosFiltrados]);
 
+  // Resumo rápido para decisões: usa o último mês disponível no filtro e compara
+  // automaticamente com o mesmo mês do ano anterior.
+  const painelAgora = useMemo(() => {
+    const meses = Array.from(new Set(dadosFiltrados.map((item) => item.ano_mes))).sort();
+    const mesAtual = meses[meses.length - 1] || "";
+    const [anoAtualTexto, mesAtualTexto] = mesAtual.split("-");
+    const anoAtual = Number(anoAtualTexto);
+    const mesAtualNumero = Number(mesAtualTexto);
+    const registrosAtual = dadosFiltrados.filter((item) => item.ano_mes === mesAtual);
+    const registrosAnterior = dadosFiltrados.filter((item) => item.ano === anoAtual - 1 && item.mes_num === mesAtualNumero);
+    const soma = (registros: TransacaoTratada[]) => {
+      const pedidos = new Set(registros.map((item) => item.pedido).filter(Boolean));
+      const clientes = new Set(registros.map((item) => item.cliente).filter(Boolean));
+      return { faturamento: registros.reduce((total, item) => total + item.faturamento, 0), quantidade: registros.reduce((total, item) => total + item.quantidade, 0), pedidos: pedidos.size, clientes: clientes.size };
+    };
+    const atual = soma(registrosAtual);
+    const anterior = soma(registrosAnterior);
+    const metaEncontrada = [...metasImportadas, ...(metaManualSalva ? [metaManualSalva] : [])].find((item) => item.ano === anoAtual && item.mes === mesAtualNumero);
+    const diasRegistrados = registrosAtual.reduce((maior, item) => Math.max(maior, item.dia_mes || 0), 0);
+    const diasNoMes = mesAtual ? new Date(anoAtual, mesAtualNumero, 0).getDate() : 0;
+    const estaNoMesVigente = anoAtual === hoje.getFullYear() && mesAtualNumero === hoje.getMonth() + 1;
+    const projecao = estaNoMesVigente && diasRegistrados > 0 ? (atual.faturamento / diasRegistrados) * diasNoMes : atual.faturamento;
+    const variacao = anterior.faturamento ? ((atual.faturamento - anterior.faturamento) / Math.abs(anterior.faturamento)) * 100 : null;
+    const atingimento = metaEncontrada && metaEncontrada.meta > 0 ? atual.faturamento / metaEncontrada.meta : null;
+    const diasRestantes = estaNoMesVigente ? Math.max(0, diasNoMes - hoje.getDate()) : 0;
+    const necessarioDia = metaEncontrada && diasRestantes > 0 ? Math.max(0, metaEncontrada.meta - atual.faturamento) / diasRestantes : 0;
+    const top = (campo: keyof TransacaoTratada) => {
+      const mapa = new Map<string, number>();
+      for (const item of registrosAtual) { const nome = String(item[campo] || "Não informado"); mapa.set(nome, (mapa.get(nome) || 0) + item.faturamento); }
+      return Array.from(mapa.entries()).sort((a, b) => b[1] - a[1])[0] || ["—", 0] as [string, number];
+    };
+    return { mesAtual, atual, anterior, meta: metaEncontrada?.meta || 0, projecao, variacao, atingimento, necessarioDia, estaNoMesVigente, diasRestantes, topCliente: top("cliente"), topProduto: top("produto"), topRegiao: top("regiao") };
+  }, [dadosFiltrados, metasImportadas, metaManualSalva, hoje]);
+
   if (loading) {
     return (
       <div className="min-h-screen bg-[#0E1117] text-white flex flex-col items-center justify-center p-6">
@@ -1284,6 +1318,43 @@ export default function Home({ onLogout, emailAutenticado, isAdmin = false }: { 
                         <option value="Ticket unitário">Ticket unitário</option>
                         <option value="Valor médio por pedido">Valor médio por pedido</option>
                       </select>
+                    </div>
+                  </div>
+
+                  {/* Painel Agora: números essenciais sem navegar pelas demais abas. */}
+                  <div className="rounded-xl border border-orange-500/30 bg-orange-500/5 p-4 shadow-sm">
+                    <div className="flex flex-wrap items-start justify-between gap-3 mb-4">
+                      <div>
+                        <h3 className="text-base font-bold text-white">Painel Agora</h3>
+                        <p className="text-xs text-slate-400">Leitura rápida de {painelAgora.mesAtual || periodoEfetivo}, meta, ritmo e principais destaques.</p>
+                      </div>
+                      <span className="rounded-full border border-orange-500/30 bg-orange-500/10 px-2.5 py-1 text-[11px] font-semibold text-orange-300">Resumo executivo</span>
+                    </div>
+                    <div className="grid grid-cols-2 gap-3 md:grid-cols-4 xl:grid-cols-7">
+                      <div className="rounded-lg border border-slate-700/60 bg-slate-900/70 p-3"><span className="text-[10px] uppercase tracking-wide text-slate-400">Faturamento</span><strong className="mt-1 block text-base text-white">{formatarMoeda(painelAgora.atual.faturamento)}</strong><span className={`text-[10px] font-semibold ${painelAgora.variacao !== null && painelAgora.variacao >= 0 ? "text-emerald-400" : "text-red-400"}`}>{painelAgora.variacao === null ? "Sem comparação" : `${painelAgora.variacao >= 0 ? "▲" : "▼"} ${Math.abs(painelAgora.variacao).toFixed(1)}% vs ano anterior`}</span></div>
+                      <div className="rounded-lg border border-slate-700/60 bg-slate-900/70 p-3"><span className="text-[10px] uppercase tracking-wide text-slate-400">Pedidos</span><strong className="mt-1 block text-base text-white">{formatarInteiro(painelAgora.atual.pedidos)}</strong><span className="text-[10px] text-slate-400">no período atual</span></div>
+                      <div className="rounded-lg border border-slate-700/60 bg-slate-900/70 p-3"><span className="text-[10px] uppercase tracking-wide text-slate-400">Clientes</span><strong className="mt-1 block text-base text-white">{formatarInteiro(painelAgora.atual.clientes)}</strong><span className="text-[10px] text-slate-400">compradores ativos</span></div>
+                      <div className="rounded-lg border border-slate-700/60 bg-slate-900/70 p-3"><span className="text-[10px] uppercase tracking-wide text-slate-400">Meta</span><strong className="mt-1 block text-base text-white">{painelAgora.meta ? formatarPercentual(painelAgora.atingimento || 0) : "—"}</strong><span className="text-[10px] text-slate-400">{painelAgora.meta ? `${formatarMoeda(painelAgora.meta)} definida` : "cadastre uma meta"}</span></div>
+                      <div className="rounded-lg border border-slate-700/60 bg-slate-900/70 p-3"><span className="text-[10px] uppercase tracking-wide text-slate-400">Projeção</span><strong className="mt-1 block text-base text-white">{formatarMoeda(painelAgora.projecao)}</strong><span className="text-[10px] text-slate-400">fechamento estimado</span></div>
+                      <div className="rounded-lg border border-slate-700/60 bg-slate-900/70 p-3"><span className="text-[10px] uppercase tracking-wide text-slate-400">Falta para meta</span><strong className="mt-1 block text-base text-white">{painelAgora.meta ? formatarMoeda(Math.max(0, painelAgora.meta - painelAgora.atual.faturamento)) : "—"}</strong><span className="text-[10px] text-slate-400">valor restante</span></div>
+                      <div className="rounded-lg border border-slate-700/60 bg-slate-900/70 p-3"><span className="text-[10px] uppercase tracking-wide text-slate-400">Ritmo diário</span><strong className="mt-1 block text-base text-white">{painelAgora.necessarioDia ? formatarMoeda(painelAgora.necessarioDia) : "—"}</strong><span className="text-[10px] text-slate-400">{painelAgora.diasRestantes ? `${painelAgora.diasRestantes} dias restantes` : "período fechado"}</span></div>
+                    </div>
+                    <div className="mt-3 grid grid-cols-1 gap-2 md:grid-cols-3">
+                      <div className="rounded-lg border border-slate-700/50 bg-slate-900/40 px-3 py-2 text-xs"><span className="text-slate-400">Cliente líder: </span><strong className="text-orange-300">{painelAgora.topCliente[0]}</strong><span className="ml-1 text-slate-400">{formatarMoeda(painelAgora.topCliente[1])}</span></div>
+                      <div className="rounded-lg border border-slate-700/50 bg-slate-900/40 px-3 py-2 text-xs"><span className="text-slate-400">Produto líder: </span><strong className="text-orange-300">{painelAgora.topProduto[0]}</strong><span className="ml-1 text-slate-400">{formatarMoeda(painelAgora.topProduto[1])}</span></div>
+                      <div className="rounded-lg border border-slate-700/50 bg-slate-900/40 px-3 py-2 text-xs"><span className="text-slate-400">Região líder: </span><strong className="text-orange-300">{painelAgora.topRegiao[0]}</strong><span className="ml-1 text-slate-400">{formatarMoeda(painelAgora.topRegiao[1])}</span></div>
+                    </div>
+                    <div className="mt-3 grid grid-cols-1 gap-3 lg:grid-cols-[1fr_2fr]">
+                      {(() => {
+                        const percentual = painelAgora.atingimento || 0;
+                        const projecaoAtingimento = painelAgora.meta ? painelAgora.projecao / painelAgora.meta : 0;
+                        const verde = painelAgora.meta > 0 && (percentual >= 1 || projecaoAtingimento >= 1);
+                        const amarelo = painelAgora.meta > 0 && !verde && (percentual >= 0.75 || projecaoAtingimento >= 0.9);
+                        const estilo = verde ? { borda: "border-emerald-500/30", fundo: "bg-emerald-500/10", texto: "text-emerald-300", ponto: "bg-emerald-400", trilho: "bg-emerald-950/60", suave: "text-emerald-200" } : amarelo ? { borda: "border-amber-500/30", fundo: "bg-amber-500/10", texto: "text-amber-300", ponto: "bg-amber-400", trilho: "bg-amber-950/60", suave: "text-amber-200" } : { borda: "border-red-500/30", fundo: "bg-red-500/10", texto: "text-red-300", ponto: "bg-red-400", trilho: "bg-red-950/60", suave: "text-red-200" };
+                        const titulo = !painelAgora.meta ? "Meta não cadastrada" : verde ? "No ritmo para atingir a meta" : amarelo ? "Meta exige atenção" : "Ritmo abaixo do esperado";
+                        return <div className={`rounded-lg border ${estilo.borda} ${estilo.fundo} p-3`}><div className="flex items-center justify-between gap-2"><span className={`text-xs font-bold ${estilo.texto}`}>{titulo}</span><span className={`h-2.5 w-2.5 rounded-full ${estilo.ponto}`} /></div><div className={`mt-2 h-2 overflow-hidden rounded-full ${estilo.trilho}`}><div className={`h-full rounded-full ${estilo.ponto}`} style={{ width: `${Math.min(100, Math.max(0, Math.round((painelAgora.meta ? Math.max(percentual, projecaoAtingimento) : 0) * 100)))}%` }} /></div><p className={`mt-2 text-[10px] ${estilo.suave}`}>{painelAgora.meta ? `Realizado ${formatarPercentual(percentual)} · projeção ${formatarPercentual(projecaoAtingimento)}` : "Informe uma meta mensal para ativar o semáforo."}</p></div>;
+                      })()}
+                      <div className="rounded-lg border border-slate-700/50 bg-slate-900/40 p-3"><div className="mb-2 text-xs font-bold text-white">O que mudou?</div><div className="grid grid-cols-1 gap-1.5 text-[11px] text-slate-300 sm:grid-cols-3"><span><b className="text-orange-300">{painelAgora.variacao === null ? "—" : `${painelAgora.variacao >= 0 ? "+" : ""}${painelAgora.variacao.toFixed(1)}%`}</b> vs mesmo mês do ano anterior</span><span><b className="text-orange-300">{formatarMoeda(painelAgora.topProduto[1])}</b> no produto líder</span><span><b className="text-orange-300">{formatarMoeda(painelAgora.topCliente[1])}</b> no cliente líder</span></div></div>
                     </div>
                   </div>
 
