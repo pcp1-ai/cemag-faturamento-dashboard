@@ -7,6 +7,7 @@ import ErrorBoundary from "./components/ErrorBoundary";
 import { ThemeProvider } from "./contexts/ThemeContext";
 import Home from "./pages/Home";
 import Login, { ADMIN_EMAIL } from "./pages/Login";
+import { trpc } from "./lib/trpc";
 
 const INATIVIDADE_MAXIMA_MS = 48 * 60 * 60 * 1000;
 const CHAVE_ULTIMA_ATIVIDADE = "cemag_login_ultima_atividade";
@@ -42,6 +43,7 @@ function App() {
     }
     return window.localStorage.getItem("cemag_login_email");
   });
+  const sessaoQuery = trpc.auth.me.useQuery(undefined, { enabled: Boolean(emailAutenticado), retry: false, staleTime: 30_000 });
 
   useEffect(() => {
     if (!emailAutenticado) return;
@@ -70,6 +72,16 @@ function App() {
       window.clearInterval(intervalo);
     };
   }, [emailAutenticado]);
+
+  useEffect(() => {
+    if (!emailAutenticado || !sessaoQuery.isFetched || sessaoQuery.isFetching) return;
+    if (!sessaoQuery.data) {
+      localStorage.removeItem("cemag_login_autenticado");
+      localStorage.removeItem("cemag_login_email");
+      localStorage.removeItem(CHAVE_ULTIMA_ATIVIDADE);
+      setEmailAutenticado(null);
+    }
+  }, [emailAutenticado, sessaoQuery.data, sessaoQuery.isFetched, sessaoQuery.isFetching]);
 
   const sair = () => {
     localStorage.removeItem("cemag_login_autenticado");
