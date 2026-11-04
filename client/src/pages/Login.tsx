@@ -8,14 +8,15 @@ const ADMIN_EMAIL = "pcp1@cemag.com.br";
 
 interface LoginProps {
   onAuthenticated: (email: string) => void;
+  mensagemInicial?: string;
 }
 
-export default function Login({ onAuthenticated }: LoginProps) {
+export default function Login({ onAuthenticated, mensagemInicial = "" }: LoginProps) {
   const loginMutation = trpc.auth.login.useMutation();
   const [email, setEmail] = useState("");
   const [senha, setSenha] = useState("");
   const [mostrarSenha, setMostrarSenha] = useState(false);
-  const [erro, setErro] = useState("");
+  const [erro, setErro] = useState(mensagemInicial);
   const [enviando, setEnviando] = useState(false);
 
   const handleSubmit = async (event: FormEvent<HTMLFormElement>) => {

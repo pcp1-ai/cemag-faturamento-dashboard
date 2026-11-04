@@ -30,6 +30,7 @@ function Router({ onLogout, email }: { onLogout: () => void; email: string }) {
 // - If you want to make theme switchable, pass `switchable` ThemeProvider and use `useTheme` hook
 
 function App() {
+  const [avisoSessao, setAvisoSessao] = useState("");
   const [emailAutenticado, setEmailAutenticado] = useState<string | null>(() => {
     if (typeof window === "undefined") return null;
     const autenticado = window.localStorage.getItem("cemag_login_autenticado") === "true";
@@ -76,6 +77,7 @@ function App() {
   useEffect(() => {
     if (!emailAutenticado || !sessaoQuery.isFetched || sessaoQuery.isFetching) return;
     if (!sessaoQuery.data) {
+      setAvisoSessao("Sua sessão corporativa expirou ou foi desconectada. Entre novamente para continuar.");
       localStorage.removeItem("cemag_login_autenticado");
       localStorage.removeItem("cemag_login_email");
       localStorage.removeItem(CHAVE_ULTIMA_ATIVIDADE);
@@ -98,7 +100,7 @@ function App() {
       >
         <TooltipProvider>
           <Toaster />
-          {emailAutenticado ? <Router onLogout={sair} email={emailAutenticado} /> : <Login onAuthenticated={setEmailAutenticado} />}
+          {emailAutenticado ? <Router onLogout={sair} email={emailAutenticado} /> : <Login mensagemInicial={avisoSessao} onAuthenticated={(email) => { setAvisoSessao(""); setEmailAutenticado(email); }} />}
         </TooltipProvider>
       </ThemeProvider>
     </ErrorBoundary>
