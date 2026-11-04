@@ -1447,7 +1447,7 @@ export function gerarPrevisaoMensal(dados: TransacaoTratada[], horizonte = 6, me
   return { serie: serieComCenarios, mape, metodo: mesVigente ? "Run-rate do mês vigente + tendência linear + sazonalidade mensal" : "Tendência linear + sazonalidade mensal", historicoMeses: chaves.length, metrica };
 }
 
-export function validarPrevisaoMensal(dados: TransacaoTratada[], metrica = "Faturamento"): { mape: number | null; mae: number | null; pontos: number } {
+export function validarPrevisaoMensal(dados: TransacaoTratada[], metrica = "Faturamento"): { mape: number | null; mae: number | null; wape: number | null; pontos: number } {
   const porMes = new Map<string, TransacaoTratada[]>();
   for (const d of dados) {
     if (!porMes.has(d.ano_mes)) porMes.set(d.ano_mes, []);
@@ -1458,6 +1458,8 @@ export function validarPrevisaoMensal(dados: TransacaoTratada[], metrica = "Fatu
   const inicioTeste = Math.max(6, valores.length - 3);
   const errosPct: number[] = [];
   const errosAbs: number[] = [];
+  let somaErroAbs = 0;
+  let somaRealizadoAbs = 0;
   for (let i = inicioTeste; i < valores.length; i++) {
     const treino = valores.slice(0, i);
     if (treino.length < 6 || valores[i] === 0) continue;
@@ -1470,8 +1472,11 @@ export function validarPrevisaoMensal(dados: TransacaoTratada[], metrica = "Fatu
     const den = xs.reduce((a, x) => a + (x - xbar) ** 2, 0) || 1;
     const slope = xs.reduce((a, x, j) => a + (x - xbar) * (janela[j] - ybar), 0) / den;
     const previsao = Math.max(0, ybar + slope * (ultimos + 1));
-    errosAbs.push(Math.abs(valores[i] - previsao));
-    errosPct.push(Math.abs(valores[i] - previsao) / Math.abs(valores[i]) * 100);
+    const erroAbs = Math.abs(valores[i] - previsao);
+    errosAbs.push(erroAbs);
+    errosPct.push(erroAbs / Math.abs(valores[i]) * 100);
+    somaErroAbs += erroAbs;
+    somaRealizadoAbs += Math.abs(valores[i]);
   }
-  return { mape: errosPct.length ? errosPct.reduce((a, b) => a + b, 0) / errosPct.length : null, mae: errosAbs.length ? errosAbs.reduce((a, b) => a + b, 0) / errosAbs.length : null, pontos: errosPct.length };
+  return { mape: errosPct.length ? errosPct.reduce((a, b) => a + b, 0) / errosPct.length : null, mae: errosAbs.length ? errosAbs.reduce((a, b) => a + b, 0) / errosAbs.length : null, wape: somaRealizadoAbs ? (somaErroAbs / somaRealizadoAbs) * 100 : null, pontos: errosPct.length };
 }

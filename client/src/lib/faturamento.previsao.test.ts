@@ -40,5 +40,6 @@ describe("previsão mensal por métrica", () => {
     expect(validacao.pontos).toBe(3);
     expect(validacao.mape).toBe(0);
     expect(validacao.mae).toBe(0);
+    expect(validacao.wape).toBe(0);
   });
 });
