@@ -1350,7 +1350,7 @@ function valorMensalPrevisao(rows: TransacaoTratada[], metrica: string): number 
   return faturamento;
 }
 
-export function gerarPrevisaoMensal(dados: TransacaoTratada[], horizonte = 6, metrica = "Faturamento"): { serie: PrevisaoMensal[]; mape: number | null; metodo: string; historicoMeses: number; metrica: string } {
+export function gerarPrevisaoMensal(dados: TransacaoTratada[], horizonte = 6, metrica = "Faturamento", opcoes?: { incluirMesVigente?: boolean }): { serie: PrevisaoMensal[]; mape: number | null; metodo: string; historicoMeses: number; metrica: string } {
   const mensal = new Map<string, number>();
   const porMes = new Map<string, TransacaoTratada[]>();
   for (const d of dados) {
@@ -1360,14 +1360,15 @@ export function gerarPrevisaoMensal(dados: TransacaoTratada[], horizonte = 6, me
   for (const [mes, rows] of porMes) mensal.set(mes, valorMensalPrevisao(rows, metrica));
   const chaves = Array.from(mensal.keys()).sort();
   if (chaves.length < 6) return { serie: [], mape: null, metodo: "Histórico insuficiente", historicoMeses: chaves.length, metrica };
+  const incluirMesVigente = opcoes?.incluirMesVigente ?? true;
   const agora = new Date();
   const mesAtual = `${agora.getFullYear()}-${String(agora.getMonth() + 1).padStart(2, "0")}`;
-  if (chaves[chaves.length - 1] < mesAtual) {
+  if (incluirMesVigente && chaves[chaves.length - 1] < mesAtual) {
     chaves.push(mesAtual);
     mensal.set(mesAtual, 0);
   }
   const valores = chaves.map((k) => mensal.get(k) || 0);
-  const mesVigente = chaves[chaves.length - 1] === mesAtual;
+  const mesVigente = incluirMesVigente && chaves[chaves.length - 1] === mesAtual;
   const valoresTreino = mesVigente ? valores.slice(0, -1) : valores;
   const ultimos = Math.min(24, valoresTreino.length);
   const inicio = valoresTreino.length - ultimos;
