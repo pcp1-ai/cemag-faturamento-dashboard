@@ -926,6 +926,42 @@ export default function Home({ onLogout, emailAutenticado, isAdmin = false }: { 
   const previsaoChuvaFutura = fatoresExternosQuery.data?.previsao_chuva || [];
   const expectativasSelicFuturas = fatoresExternosQuery.data?.expectativas_selic || [];
   const previsaoSazonal = fatoresExternosQuery.data?.previsao_sazonal || [];
+  const indiceAgro = useMemo(() => {
+    const dadosExternos = fatoresExternosQuery.data;
+    if (!dadosExternos) return null;
+    let pontuacao = 50;
+    const componentes: Array<{ nome: string; valor: number; explicacao: string }> = [];
+    const chuvaValida = previsaoChuvaFutura.map((item) => Number(item.chuva_mm)).filter(Number.isFinite);
+    if (chuvaValida.length) {
+      const mediaChuva = chuvaValida.reduce((sum, value) => sum + value, 0) / chuvaValida.length;
+      const ajuste = mediaChuva >= 2 && mediaChuva <= 12 ? 8 : mediaChuva > 25 ? -8 : 0;
+      pontuacao += ajuste;
+      componentes.push({ nome: "Chuva de curto prazo", valor: ajuste, explicacao: `${mediaChuva.toFixed(1)} mm/dia em média nos dias consultados` });
+    }
+    const selicHistorica = dadosExternos.meses.map((item) => Number(item.selic_media_pct)).filter(Number.isFinite).at(-1);
+    const selicFutura = expectativasSelicFuturas.map((item) => Number(item.mediana_pct ?? item.media_pct)).filter(Number.isFinite);
+    if (selicHistorica != null && selicFutura.length) {
+      const mediaFutura = selicFutura.reduce((sum, value) => sum + value, 0) / selicFutura.length;
+      const ajuste = mediaFutura <= selicHistorica - 0.5 ? 8 : mediaFutura >= selicHistorica + 0.5 ? -8 : 0;
+      pontuacao += ajuste;
+      componentes.push({ nome: "Juros futuros", valor: ajuste, explicacao: `Focus ${mediaFutura.toFixed(2)}% versus Selic histórica ${selicHistorica.toFixed(2)}%` });
+    }
+    const sinais = previsaoSazonal.map((item) => Number(item.valor_sinal)).filter(Number.isFinite);
+    if (sinais.length) {
+      const sinal = sinais.reduce((sum, value) => sum + value, 0) / sinais.length;
+      const ajuste = sinal > 0.15 ? 6 : sinal < -0.15 ? -6 : 0;
+      pontuacao += ajuste;
+      componentes.push({ nome: "Sinal climático sazonal", valor: ajuste, explicacao: sinal > 0.15 ? "predominância acima do normal" : sinal < -0.15 ? "predominância abaixo do normal" : "sem sinal predominante" });
+    }
+    const credito = dadosExternos.indicadores_agro.credito_status;
+    if (credito === "consultado") pontuacao += 5;
+    if (credito === "indisponivel") pontuacao -= 5;
+    componentes.push({ nome: "Crédito rural", valor: credito === "consultado" ? 5 : credito === "indisponivel" ? -5 : 0, explicacao: `status ${credito}` });
+    const score = Math.max(0, Math.min(100, Math.round(pontuacao)));
+    const classe = score >= 65 ? "favorável" : score <= 35 ? "atenção" : "neutro";
+    const alertas = componentes.filter((item) => item.valor < 0).map((item) => `${item.nome}: ${item.explicacao}.`);
+    return { score, classe, componentes, alertas };
+  }, [expectativasSelicFuturas, fatoresExternosQuery.data, previsaoChuvaFutura, previsaoSazonal]);
 
   const atingimentoMensal = useMemo(() => {
     const mapa = new Map<string, any>();
@@ -2629,6 +2665,7 @@ export default function Home({ onLogout, emailAutenticado, isAdmin = false }: { 
                   {fatoresExternosQuery.isFetching && <div className="rounded-xl border border-sky-900/60 bg-sky-950/20 p-4 text-sm text-sky-300">Consultando APIs oficiais e fontes de mercado...</div>}
                   {fatoresExternosQuery.error && <div className="rounded-xl border border-amber-900/60 bg-amber-950/20 p-4 text-sm text-amber-300">As fontes externas não responderam completamente. O painel preserva os dados disponíveis e tentará novamente.</div>}
                   {fatoresExternosQuery.data && <>
+                    {indiceAgro && <div className="rounded-xl border border-orange-900/60 bg-orange-950/20 p-5"><div className="flex flex-wrap items-center justify-between gap-4"><div><h3 className="text-sm font-bold text-orange-300">Índice de Ambiente Agropecuário</h3><p className="mt-1 text-[11px] text-slate-400">Indicador de contexto de 0 a 100. Não é probabilidade de venda e não altera automaticamente a previsão comercial.</p></div><div className={`rounded-full px-4 py-2 text-lg font-black ${indiceAgro.score >= 65 ? "bg-emerald-500/20 text-emerald-300" : indiceAgro.score <= 35 ? "bg-red-500/20 text-red-300" : "bg-amber-500/20 text-amber-300"}`}>{indiceAgro.score}/100 · {indiceAgro.classe}</div></div><div className="mt-4 grid gap-3 md:grid-cols-2 xl:grid-cols-4">{indiceAgro.componentes.map((item) => <div key={item.nome} className="rounded-lg border border-slate-800 bg-slate-950/50 p-3"><div className="text-[10px] uppercase text-slate-500">{item.nome}</div><div className={`mt-1 text-lg font-bold ${item.valor > 0 ? "text-emerald-300" : item.valor < 0 ? "text-red-300" : "text-slate-300"}`}>{item.valor > 0 ? "+" : ""}{item.valor} pts</div><div className="text-[10px] leading-4 text-slate-500">{item.explicacao}</div></div>)}</div>{indiceAgro.alertas.length > 0 && <div className="mt-4 rounded-lg border border-red-900/60 bg-red-950/20 p-3 text-xs text-red-200"><strong>Alertas:</strong> {indiceAgro.alertas.join(" ")}</div>}</div>}
                     <div className="grid gap-4 md:grid-cols-2 xl:grid-cols-4"><div className="rounded-xl border border-emerald-900/60 bg-emerald-950/20 p-4"><div className="text-[10px] uppercase text-slate-500">Chuva futura</div><div className="mt-2 text-2xl font-bold text-emerald-300">{previsaoChuvaFutura.length} dias</div><div className="text-[11px] text-slate-400">Open-Meteo</div></div><div className="rounded-xl border border-amber-900/60 bg-amber-950/20 p-4"><div className="text-[10px] uppercase text-slate-500">Selic futura</div><div className="mt-2 text-2xl font-bold text-amber-300">{expectativasSelicFuturas.length} reuniões</div><div className="text-[11px] text-slate-400">Focus / Banco Central</div></div><div className="rounded-xl border border-sky-900/60 bg-sky-950/20 p-4"><div className="text-[10px] uppercase text-slate-500">Clima sazonal</div><div className="mt-2 text-2xl font-bold text-sky-300">{previsaoSazonal.length} períodos</div><div className="text-[11px] text-slate-400">CPTEC/INPE</div></div><div className="rounded-xl border border-violet-900/60 bg-violet-950/20 p-4"><div className="text-[10px] uppercase text-slate-500">Commodities</div><div className="mt-2 text-2xl font-bold text-violet-300">{fatoresExternosQuery.data.indicadores_agro.precos_agro.filter((item) => item.valor_usd != null).length}/3</div><div className="text-[11px] text-slate-400">Café, milho e soja</div></div></div>
                     <div className="grid gap-5 xl:grid-cols-2"><div className="rounded-xl border border-slate-800 bg-slate-900/70 p-4"><h3 className="text-sm font-bold text-white">Clima futuro e sazonal</h3><p className="mt-1 mb-3 text-[11px] text-slate-400">A previsão diária é curta; a sazonal é probabilística.</p><DataTable rows={previsaoChuvaFutura} exportName="agro_chuva_futura" columns={["data", "chuva_mm", "probabilidade_chuva_pct"]} percentColumns={["probabilidade_chuva_pct"]} /><div className="mt-4"><DataTable rows={previsaoSazonal} exportName="agro_clima_sazonal" columns={["modelo", "periodo", "chuva_total_mm", "sinal_tercil", "valor_sinal"]} /></div></div><div className="rounded-xl border border-slate-800 bg-slate-900/70 p-4"><h3 className="text-sm font-bold text-white">Selic e crédito rural</h3><p className="mt-1 mb-3 text-[11px] text-slate-400">Expectativas de mercado e status da consulta SICOR/MDCR.</p><DataTable rows={expectativasSelicFuturas} exportName="agro_selic_focus" columns={["data_consulta", "reuniao", "media_pct", "mediana_pct", "respondentes"]} /><div className="mt-4 rounded-lg border border-slate-800 bg-slate-950/50 p-3"><div className="text-[10px] uppercase text-slate-500">Crédito de investimento</div><div className="mt-1 text-xl font-bold text-white">{fatoresExternosQuery.data.indicadores_agro.credito_investimento_brl == null ? "Não disponível" : `R$ ${fatoresExternosQuery.data.indicadores_agro.credito_investimento_brl.toLocaleString("pt-BR")}`}</div><div className="mt-1 text-[11px] text-slate-500">Status: {fatoresExternosQuery.data.indicadores_agro.credito_status}</div></div></div></div>
                     <div className="grid gap-5 xl:grid-cols-2"><div className="rounded-xl border border-orange-900/60 bg-orange-950/20 p-4"><h3 className="text-sm font-bold text-orange-300">Produção agrícola — IBGE/SIDRA</h3><div className="mt-3 grid grid-cols-2 gap-3"><div><div className="text-[10px] uppercase text-slate-500">Produção de café</div><div className="text-lg font-bold text-white">{fatoresExternosQuery.data.indicadores_agro.cafe_producao_t == null ? "-" : `${fatoresExternosQuery.data.indicadores_agro.cafe_producao_t.toLocaleString("pt-BR")} t`}</div></div><div><div className="text-[10px] uppercase text-slate-500">Área colhida</div><div className="text-lg font-bold text-white">{fatoresExternosQuery.data.indicadores_agro.cafe_area_colhida_ha == null ? "-" : `${fatoresExternosQuery.data.indicadores_agro.cafe_area_colhida_ha.toLocaleString("pt-BR")} ha`}</div></div></div><p className="mt-3 text-[11px] text-slate-500">Último ano: {fatoresExternosQuery.data.indicadores_agro.ano_referencia || "-"}.</p></div><div className="rounded-xl border border-violet-900/60 bg-violet-950/20 p-4"><h3 className="text-sm font-bold text-violet-300">Preços agrícolas de mercado</h3><p className="mt-1 mb-3 text-[11px] text-slate-400">Futuros internacionais em USD; são sinais de mercado, não preços nacionais.</p><DataTable rows={fatoresExternosQuery.data.indicadores_agro.precos_agro} exportName="agro_precos_commodities" columns={["produto", "ticker", "valor_usd", "atualizado_em"]} /></div></div>
