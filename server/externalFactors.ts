@@ -132,11 +132,11 @@ async function buscarPrecosAgro() {
   }));
 }
 
-async function consultarEmLotes<T>(itens: readonly T[], worker: (item: T) => Promise<FatoresExternosResult>, limite = 5) {
+async function consultarEmLotes<T>(itens: readonly T[], worker: (item: T, index: number) => Promise<FatoresExternosResult>, limite = 5) {
   const resultados: PromiseSettledResult<FatoresExternosResult>[] = [];
   for (let inicio = 0; inicio < itens.length; inicio += limite) {
     const lote = itens.slice(inicio, inicio + limite);
-    resultados.push(...await Promise.allSettled(lote.map(worker)));
+    resultados.push(...await Promise.allSettled(lote.map((item, index) => worker(item, inicio + index))));
   }
   return resultados;
 }
@@ -233,17 +233,17 @@ async function buscarCoordenadas(cidade: string, uf?: string) {
   return results.find((item) => item.country?.toLowerCase() === "brasil") || results[0] || null;
 }
 
-export async function obterFatoresExternos(input: { dataInicio: string; dataFim: string; cidade: string; uf?: string; localidades?: Array<{ cidade: string; uf?: string }>; descricaoAbrangencia?: string }): Promise<FatoresExternosResult> {
+export async function obterFatoresExternos(input: { dataInicio: string; dataFim: string; cidade: string; uf?: string; localidades?: Array<{ cidade: string; uf?: string }>; descricaoAbrangencia?: string }, opcoes: { consultaRapida?: boolean; consultaAgregada?: boolean } = {}): Promise<FatoresExternosResult> {
   if (input.localidades?.length) {
     const localidades = input.localidades.filter((localidade) => localidade.cidade && localidade.cidade !== "Brasil");
-    const resultados = await consultarEmLotes(localidades, (localidade) => obterFatoresExternos({ dataInicio: input.dataInicio, dataFim: input.dataFim, cidade: localidade.cidade, uf: localidade.uf }));
+    const resultados = await consultarEmLotes(localidades, (localidade, indice) => obterFatoresExternos({ dataInicio: input.dataInicio, dataFim: input.dataFim, cidade: localidade.cidade, uf: localidade.uf }, { consultaRapida: indice > 0, consultaAgregada: indice === 0 }));
     const respostas = resultados.flatMap((item) => item.status === "fulfilled" ? [item.value] : []);
     const falhas = resultados.filter((item) => item.status === "rejected").length;
-    return agregarFatoresNacionais(respostas, input.descricaoAbrangencia || "Abrangência selecionada", falhas ? [`${falhas} localidade(s) não responderam; os números representam apenas as localidades disponíveis.`] : []);
+    return agregarFatoresNacionais(respostas, input.descricaoAbrangencia || "Abrangência selecionada", [`A primeira localidade recebeu consulta completa; as demais usam coleta territorial rápida para reduzir o tempo de resposta.`, ...(falhas ? [`${falhas} localidade(s) não responderam; os números representam apenas as localidades disponíveis.`] : [])]);
   }
   if (input.cidade.trim().toLowerCase() === "brasil") {
     const referencias = [["Manaus", "AM"], ["Recife", "PE"], ["Brasília", "DF"], ["São Paulo", "SP"], ["Porto Alegre", "RS"]] as const;
-    const resultados = await consultarEmLotes(referencias, ([cidade, uf]) => obterFatoresExternos({ ...input, cidade, uf }));
+    const resultados = await consultarEmLotes(referencias, ([cidade, uf]: readonly [string, string], indice: number) => obterFatoresExternos({ ...input, cidade, uf }, { consultaRapida: indice > 0, consultaAgregada: indice === 0 }));
     const respostas = resultados.flatMap((item) => item.status === "fulfilled" ? [item.value] : []);
     const falhas = resultados.filter((item) => item.status === "rejected").length;
     return agregarFatoresNacionais(respostas, "Brasil — referências regionais padrão", falhas ? [`${falhas} referência(s) regional(is) não respondeu(ram); os números são parciais.`] : []);
@@ -257,18 +257,21 @@ export async function obterFatoresExternos(input: { dataInicio: string; dataFim:
   const previsao_sazonal: FatoresExternosResult["previsao_sazonal"] = [];
   const indicadores_agro: IndicadoresAgro = { ptax_media_brl: null, cafe_producao_t: null, cafe_area_colhida_ha: null, cafe_valor_producao_mil_brl: null, ano_referencia: null, credito_investimento_brl: null, credito_status: "nao_consultado", precos_agro: [] };
 
-  try {
-    const bcbUrl = `https://api.bcb.gov.br/dados/serie/bcdata.sgs.1178/dados?formato=json&dataInicial=${encodeURIComponent(toBcbDate(input.dataInicio))}&dataFinal=${encodeURIComponent(toBcbDate(input.dataFim))}`;
-    const selic = agregarSelicMensal(await fetchJson<BcbRow[]>(bcbUrl));
-    for (const [key, value] of selic) {
-      const row = porMes.get(key);
-      if (row) row.selic_media_pct = value;
+  if (!opcoes.consultaRapida) {
+    try {
+      const bcbUrl = `https://api.bcb.gov.br/dados/serie/bcdata.sgs.1178/dados?formato=json&dataInicial=${encodeURIComponent(toBcbDate(input.dataInicio))}&dataFinal=${encodeURIComponent(toBcbDate(input.dataFim))}`;
+      const selic = agregarSelicMensal(await fetchJson<BcbRow[]>(bcbUrl));
+      for (const [key, value] of selic) {
+        const row = porMes.get(key);
+        if (row) row.selic_media_pct = value;
+      }
+      fontes.push("Banco Central do Brasil — SGS série 1178 (Selic anualizada base 252)");
+    } catch (error) {
+      avisos.push(`Selic indisponível no momento: ${error instanceof Error ? error.message : "erro de consulta"}`);
     }
-    fontes.push("Banco Central do Brasil — SGS série 1178 (Selic anualizada base 252)");
-  } catch (error) {
-    avisos.push(`Selic indisponível no momento: ${error instanceof Error ? error.message : "erro de consulta"}`);
   }
 
+  if (!opcoes.consultaRapida && !opcoes.consultaAgregada) {
   try {
     indicadores_agro.ptax_media_brl = await buscarPtaxMedia(input.dataInicio, input.dataFim);
     if (indicadores_agro.ptax_media_brl != null) fontes.push("Banco Central do Brasil — SGS série 1 (PTAX venda)");
@@ -286,11 +289,15 @@ export async function obterFatoresExternos(input: { dataInicio: string; dataFim:
   indicadores_agro.precos_agro = await buscarPrecosAgro();
   if (indicadores_agro.precos_agro.some((item) => item.valor_usd != null)) fontes.push("Yahoo Finance — futuros internacionais KC=F, ZC=F e ZS=F (USD)" );
 
-  const credito = await buscarCreditoInvestimento(input.cidade, input.uf);
-  indicadores_agro.credito_investimento_brl = credito.value;
-  indicadores_agro.credito_status = credito.status;
-  if (credito.status === "consultado") fontes.push("Banco Central do Brasil — SICOR/MDCR investimento");
-  if (credito.status === "indisponivel") avisos.push("Crédito rural de investimento não respondeu; será mantido como indisponível até a próxima atualização.");
+  if (!opcoes.consultaAgregada) {
+    const credito = await buscarCreditoInvestimento(input.cidade, input.uf);
+    indicadores_agro.credito_investimento_brl = credito.value;
+    indicadores_agro.credito_status = credito.status;
+    if (credito.status === "consultado") fontes.push("Banco Central do Brasil — SICOR/MDCR investimento");
+    if (credito.status === "indisponivel") avisos.push("Crédito rural de investimento não respondeu; será mantido como indisponível até a próxima atualização.");
+  } else {
+    avisos.push("Crédito rural foi omitido na abrangência agregada para evitar timeout; consulte um município para carregar o SICOR/MDCR.");
+  }
 
   try {
     const focusUrl = "https://olinda.bcb.gov.br/olinda/servico/Expectativas/versao/v1/odata/ExpectativasMercadoSelic?$filter=Indicador%20eq%20%27Selic%27&$orderby=Data%20desc&$top=200&$format=json";
@@ -306,29 +313,36 @@ export async function obterFatoresExternos(input: { dataInicio: string; dataFim:
   } catch (error) {
     avisos.push(`Expectativa futura da Selic indisponível: ${error instanceof Error ? error.message : "erro de consulta"}`);
   }
+  } else {
+    avisos.push(opcoes.consultaAgregada ? "Abrangência agregada prioriza Selic histórica e clima futuro; consulte um município para carregar todas as fontes agropecuárias." : "Consulta territorial rápida: PTAX, produção IBGE, commodities, crédito e Focus foram consultados apenas na referência principal.");
+  }
 
   let localidade: GeocodeResult | null = null;
   if (input.cidade && input.cidade !== "Não identificado") {
     try {
       localidade = await buscarCoordenadas(input.cidade, input.uf);
       if (!localidade?.latitude || !localidade.longitude) throw new Error("município não localizado");
-      const powerUrl = `https://power.larc.nasa.gov/api/temporal/daily/point?parameters=PRECTOTCORR&community=AG&longitude=${localidade.longitude}&latitude=${localidade.latitude}&start=${toPowerDate(input.dataInicio)}&end=${toPowerDate(input.dataFim)}&format=JSON`;
-      const power = await fetchJson<{ properties?: { parameter?: { PRECTOTCORR?: Record<string, number> } } }>(powerUrl, 45_000);
-      const chuva = agregarChuvaMensal(power.properties?.parameter?.PRECTOTCORR || {});
-      for (const [key, value] of chuva) {
-        const row = porMes.get(key);
-        if (row) row.chuva_mm = value;
+      if (!opcoes.consultaRapida && !opcoes.consultaAgregada) {
+        const powerUrl = `https://power.larc.nasa.gov/api/temporal/daily/point?parameters=PRECTOTCORR&community=AG&longitude=${localidade.longitude}&latitude=${localidade.latitude}&start=${toPowerDate(input.dataInicio)}&end=${toPowerDate(input.dataFim)}&format=JSON`;
+        const power = await fetchJson<{ properties?: { parameter?: { PRECTOTCORR?: Record<string, number> } } }>(powerUrl, 45_000);
+        const chuva = agregarChuvaMensal(power.properties?.parameter?.PRECTOTCORR || {});
+        for (const [key, value] of chuva) {
+          const row = porMes.get(key);
+          if (row) row.chuva_mm = value;
+        }
+        fontes.push("NASA POWER — precipitação corrigida MERRA-2 (PRECTOTCORR)");
       }
-      fontes.push("NASA POWER — precipitação corrigida MERRA-2 (PRECTOTCORR)");
       const forecastUrl = `https://api.open-meteo.com/v1/forecast?latitude=${localidade.latitude}&longitude=${localidade.longitude}&daily=precipitation_sum,precipitation_probability_mean&forecast_days=16&timezone=auto`;
       const forecast = await fetchJson<{ daily?: { time?: string[]; precipitation_sum?: Array<number | null>; precipitation_probability_mean?: Array<number | null> } }>(forecastUrl, 30_000);
       const times = forecast.daily?.time || [];
       for (let i = 0; i < times.length; i++) previsao_chuva.push({ data: times[i], chuva_mm: forecast.daily?.precipitation_sum?.[i] ?? null, probabilidade_chuva_pct: forecast.daily?.precipitation_probability_mean?.[i] ?? null });
       if (previsao_chuva.length) fontes.push("Open-Meteo — previsão meteorológica diária (até 16 dias)");
-      const sazonal = await buscarPrevisaoSazonal(Number(localidade.latitude), Number(localidade.longitude));
-      previsao_sazonal.push(...sazonal);
-      if (sazonal.length) fontes.push("CPTEC/INPE — previsão sazonal de precipitação (trimestres)");
-      else avisos.push("Previsão sazonal do CPTEC/INPE ainda não disponível para a rodada mais recente.");
+      if (!opcoes.consultaRapida && !opcoes.consultaAgregada) {
+        const sazonal = await buscarPrevisaoSazonal(Number(localidade.latitude), Number(localidade.longitude));
+        previsao_sazonal.push(...sazonal);
+        if (sazonal.length) fontes.push("CPTEC/INPE — previsão sazonal de precipitação (trimestres)");
+        else avisos.push("Previsão sazonal do CPTEC/INPE ainda não disponível para a rodada mais recente.");
+      }
     } catch (error) {
       avisos.push(`Chuva indisponível para ${input.cidade}: ${error instanceof Error ? error.message : "erro de consulta"}`);
     }
