@@ -979,10 +979,8 @@ export default function Home({ onLogout, emailAutenticado, isAdmin = false }: { 
     };
   }), [previsaoMensal, metricaPrevisao]);
   const ultimoMesParcial = useMemo(() => {
-    const historico = previsaoMensal.serie.filter((item) => item.tipo === "Histórico");
-    const ultimo = historico[historico.length - 1];
-    const agora = new Date();
-    return ultimo?.ano_mes === `${agora.getFullYear()}-${String(agora.getMonth() + 1).padStart(2, "0")}` ? ultimo.ano_mes : null;
+    const vigente = previsaoMensal.serie.find((item) => item.mes_vigente);
+    return vigente ? { ano_mes: vigente.ano_mes, parcial: vigente.realizado_parcial, fechamento: vigente.estimativa_fechamento } : null;
   }, [previsaoMensal]);
 
   const diagnosticoBase = useMemo(() => {
@@ -2611,7 +2609,7 @@ export default function Home({ onLogout, emailAutenticado, isAdmin = false }: { 
                   {previsaoMensal.serie.length ? <>
                     <div className="bg-slate-900/80 border border-slate-800 p-5 rounded-xl">
                       <h3 className="text-sm font-bold text-white mb-2">Histórico e próximos {horizontePrevisao} meses — {metricaPrevisao}</h3>
-                      {ultimoMesParcial && <p className="mb-3 text-[11px] text-amber-300">Atenção: {ultimoMesParcial} é o mês vigente e pode estar incompleto. A queda no fim do histórico pode refletir apenas o acumulado parcial; a previsão começa depois dele.</p>}
+                      {ultimoMesParcial && <p className="mb-3 text-[11px] text-amber-300">Mês vigente incluído: {ultimoMesParcial.ano_mes}. Realizado parcial: {formatarMetrica(ultimoMesParcial.parcial || 0, metricaPrevisao)}. Fechamento estimado pelo ritmo diário: {formatarMetrica(ultimoMesParcial.fechamento || 0, metricaPrevisao)}. Os meses seguintes usam tendência e sazonalidade.</p>}
                       <div className="mx-auto h-80 w-full max-w-[1500px]"><ResponsiveContainer width="100%" height="100%"><LineChart data={previsaoMensal.serie} margin={{ top: 10, right: 20, left: 20, bottom: 34 }}><CartesianGrid strokeDasharray="3 3" stroke="#334155" opacity={0.5} /><XAxis dataKey="ano_mes" interval={intervaloEixoMensal(previsaoMensal.serie.length)} angle={previsaoMensal.serie.length > 18 ? -28 : -18} textAnchor="end" height={previsaoMensal.serie.length > 18 ? 48 : 38} stroke="#94A3B8" fontSize={10} /><YAxis stroke="#94A3B8" fontSize={10} tickFormatter={(v) => formatarMetrica(v, metricaPrevisao)} /><RechartsTooltip contentStyle={{ backgroundColor: "#0F172A", borderColor: "#334155" }} formatter={(v: any, name: any) => [formatarMetrica(v, metricaPrevisao), name === "realizado" || name === "Realizado" ? "Realizado" : name === "previsao" || name === "Provável" ? "Provável" : name === "conservador" || name === "Conservador" ? "Conservador" : "Otimista"]} /><Legend wrapperStyle={{ paddingTop: 10, fontSize: 11 }} /><Line type="monotone" dataKey="realizado" name="Realizado" stroke={CEMAG_BLUE} strokeWidth={2.5} dot={false} connectNulls={false} /><Line type="monotone" dataKey="previsao" name="Provável" stroke={CEMAG_ORANGE} strokeWidth={2.5} strokeDasharray="6 4" dot={{ r: 3 }} connectNulls={false} /><Line type="monotone" dataKey="conservador" name="Conservador" stroke="#F87171" strokeWidth={1.5} strokeDasharray="3 3" dot={false} connectNulls={false} /><Line type="monotone" dataKey="otimista" name="Otimista" stroke="#34D399" strokeWidth={1.5} strokeDasharray="3 3" dot={false} connectNulls={false} /></LineChart></ResponsiveContainer></div>
                     </div>
                     <div className="bg-slate-900/80 border border-slate-800 rounded-xl p-5"><h3 className="text-sm font-bold text-white mb-2">Explicação de cada previsão — {metricaPrevisao}</h3><p className="text-xs text-slate-400 mb-3">O cenário <strong className="text-orange-300">Provável</strong> é a estimativa principal do modelo. O <strong className="text-red-300">Conservador</strong> reduz esse valor e o <strong className="text-emerald-300">Otimista</strong> aumenta esse valor usando uma margem baseada no erro histórico.</p><DataTable rows={explicacaoPrevisoes} exportName="explicacao_previsoes" columns={["mes", "metrica", "conservador", "provavel", "otimista", "margem_pct", "explicacao"]} percentColumns={["margem_pct"]} metricColumns={{ conservador: metricaPrevisao, provavel: metricaPrevisao, otimista: metricaPrevisao }} /></div>
