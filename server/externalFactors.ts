@@ -23,6 +23,7 @@ export type FatoresExternosResult = {
   previsao_chuva: Array<{ data: string; chuva_mm: number | null; probabilidade_chuva_pct: number | null }>;
   expectativas_selic: Array<{ data_consulta: string; reuniao: string; media_pct: number | null; mediana_pct: number | null; respondentes: number | null }>;
   previsao_sazonal: Array<{ modelo: string; temporada: string; periodo: string; chuva_total_mm: number | null; sinal_tercil: string | null; valor_sinal: number | null; atualizado_em: string }>;
+  indices_climaticos: Array<{ indice: string; periodo: string; anomalia_c: number | null; classificacao: string }>;
   indicadores_agro: IndicadoresAgro;
   fontes: string[];
   avisos: string[];
@@ -77,6 +78,18 @@ async function fetchJson<T>(url: string, timeoutMs = 30_000): Promise<T> {
   }
 }
 
+async function fetchText(url: string, timeoutMs = 30_000) {
+  const controller = new AbortController();
+  const timeout = setTimeout(() => controller.abort(), timeoutMs);
+  try {
+    const response = await fetch(url, { signal: controller.signal, headers: { Accept: "text/plain" } });
+    if (!response.ok) throw new Error(`HTTP ${response.status}`);
+    return await response.text();
+  } finally {
+    clearTimeout(timeout);
+  }
+}
+
 async function fetchBytes(url: string, timeoutMs = 45_000) {
   const controller = new AbortController();
   const timeout = setTimeout(() => controller.abort(), timeoutMs);
@@ -98,14 +111,24 @@ async function buscarPtaxMedia(dataInicio: string, dataFim: string) {
 
 async function buscarCafeIbge() {
   const ano = new Date().getUTCFullYear() - 1;
-  const url = `https://apisidra.ibge.gov.br/values/t/1613/n3/all/p/${ano}`;
+  const url = `https://apisidra.ibge.gov.br/values/t/1613/n1/1/v/214,215,216/p/${ano}`;
   const rows = await fetchJson<SidraRow[]>(url);
   const find = (codigo: string) => {
-    const row = rows.find((item) => item.D3C === codigo && item.D4C === "0");
+    const row = rows.find((item) => item.D2C === codigo && item.D4C === "0");
     const value = Number(row?.V);
     return Number.isFinite(value) ? value : null;
   };
   return { ano_referencia: ano, cafe_area_colhida_ha: find("216"), cafe_producao_t: find("214"), cafe_valor_producao_mil_brl: find("215") };
+}
+
+async function buscarIndiceOni() {
+  const texto = await fetchText("https://www.cpc.ncep.noaa.gov/data/indices/oni.ascii.txt");
+  const linhas = texto.split(/\r?\n/).map((linha) => linha.trim()).filter((linha) => /^(DJF|JFM|FMA|MAM|AMJ|MJJ|JJA|JAS|ASO|SON|OND|NDJ)\s+\d{4}\s+/.test(linha));
+  return linhas.slice(-12).map((linha) => {
+    const [periodo, ano, , anomalia] = linha.split(/\s+/);
+    const valor = Number(anomalia);
+    return { indice: "ONI / ENSO", periodo: `${periodo} ${ano}`, anomalia_c: Number.isFinite(valor) ? valor : null, classificacao: Number.isFinite(valor) ? valor >= 0.5 ? "El Niño" : valor <= -0.5 ? "La Niña" : "Neutro" : "Sem dado" };
+  });
 }
 
 async function buscarCreditoInvestimento(cidade: string, uf?: string) {
@@ -176,7 +199,7 @@ export function agregarFatoresNacionais(resultados: FatoresExternosResult[], des
     return { modelo: primeira.modelo, temporada: primeira.temporada, periodo: primeira.periodo, chuva_total_mm: media(rows.map((row) => row.chuva_total_mm)), sinal_tercil: valor_sinal == null ? null : valor_sinal > 0 ? "Acima do normal" : valor_sinal < 0 ? "Abaixo do normal" : "Sem sinal predominante", valor_sinal, atualizado_em: new Date().toISOString() };
   });
   const base = resultados[0];
-  return { localidade: descricao, latitude: null, longitude: null, meses, previsao_chuva, expectativas_selic: base?.expectativas_selic || [], previsao_sazonal, indicadores_agro: base?.indicadores_agro || { ptax_media_brl: null, cafe_producao_t: null, cafe_area_colhida_ha: null, cafe_valor_producao_mil_brl: null, ano_referencia: null, credito_investimento_brl: null, credito_status: "nao_consultado", precos_agro: [] }, fontes: Array.from(new Set([...resultados.flatMap((resultado) => resultado.fontes), `Agregação: média simples de ${resultados.length} localidades selecionadas`])), avisos: [`A abrangência usa média simples das ${resultados.length} localidades selecionadas. Ela representa os pontos escolhidos, não uma média areal oficial de todo o território.`, ...avisosExtras, ...resultados.flatMap((resultado) => resultado.avisos)], atualizado_em: new Date().toISOString() };
+  return { localidade: descricao, latitude: null, longitude: null, meses, previsao_chuva, expectativas_selic: base?.expectativas_selic || [], previsao_sazonal, indices_climaticos: base?.indices_climaticos || [], indicadores_agro: base?.indicadores_agro || { ptax_media_brl: null, cafe_producao_t: null, cafe_area_colhida_ha: null, cafe_valor_producao_mil_brl: null, ano_referencia: null, credito_investimento_brl: null, credito_status: "nao_consultado", precos_agro: [] }, fontes: Array.from(new Set([...resultados.flatMap((resultado) => resultado.fontes), `Agregação: média simples de ${resultados.length} localidades selecionadas`])), avisos: [`A abrangência usa média simples das ${resultados.length} localidades selecionadas. Ela representa os pontos escolhidos, não uma média areal oficial de todo o território.`, ...avisosExtras, ...resultados.flatMap((resultado) => resultado.avisos)], atualizado_em: new Date().toISOString() };
 }
 
 async function buscarPrevisaoSazonal(latitude: number, longitude: number) {
@@ -255,23 +278,30 @@ export async function obterFatoresExternos(input: { dataInicio: string; dataFim:
   const previsao_chuva: FatoresExternosResult["previsao_chuva"] = [];
   const expectativas_selic: FatoresExternosResult["expectativas_selic"] = [];
   const previsao_sazonal: FatoresExternosResult["previsao_sazonal"] = [];
+  const indices_climaticos: FatoresExternosResult["indices_climaticos"] = [];
   const indicadores_agro: IndicadoresAgro = { ptax_media_brl: null, cafe_producao_t: null, cafe_area_colhida_ha: null, cafe_valor_producao_mil_brl: null, ano_referencia: null, credito_investimento_brl: null, credito_status: "nao_consultado", precos_agro: [] };
 
   if (!opcoes.consultaRapida) {
     try {
-      const bcbUrl = `https://api.bcb.gov.br/dados/serie/bcdata.sgs.1178/dados?formato=json&dataInicial=${encodeURIComponent(toBcbDate(input.dataInicio))}&dataFinal=${encodeURIComponent(toBcbDate(input.dataFim))}`;
+      const bcbUrl = `https://api.bcb.gov.br/dados/serie/bcdata.sgs.432/dados?formato=json&dataInicial=${encodeURIComponent(toBcbDate(input.dataInicio))}&dataFinal=${encodeURIComponent(toBcbDate(input.dataFim))}`;
       const selic = agregarSelicMensal(await fetchJson<BcbRow[]>(bcbUrl));
       for (const [key, value] of selic) {
         const row = porMes.get(key);
         if (row) row.selic_media_pct = value;
       }
-      fontes.push("Banco Central do Brasil — SGS série 1178 (Selic anualizada base 252)");
+      fontes.push("Banco Central do Brasil — SGS série 432 (meta Selic)");
     } catch (error) {
       avisos.push(`Selic indisponível no momento: ${error instanceof Error ? error.message : "erro de consulta"}`);
     }
   }
 
   if (!opcoes.consultaRapida && !opcoes.consultaAgregada) {
+  try {
+    indices_climaticos.push(...await buscarIndiceOni());
+    if (indices_climaticos.length) fontes.push("NOAA/CPC — índice ONI de El Niño e La Niña");
+  } catch (error) {
+    avisos.push(`Índice climático NOAA/CPC indisponível: ${error instanceof Error ? error.message : "erro de consulta"}`);
+  }
   try {
     indicadores_agro.ptax_media_brl = await buscarPtaxMedia(input.dataInicio, input.dataFim);
     if (indicadores_agro.ptax_media_brl != null) fontes.push("Banco Central do Brasil — SGS série 1 (PTAX venda)");
@@ -358,6 +388,7 @@ export async function obterFatoresExternos(input: { dataInicio: string; dataFim:
     previsao_chuva,
     expectativas_selic,
     previsao_sazonal,
+    indices_climaticos,
     indicadores_agro,
     fontes,
     avisos,
