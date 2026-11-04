@@ -1321,6 +1321,8 @@ export interface PrevisaoMensal {
   realizado_parcial?: number | null;
   estimativa_fechamento?: number | null;
   previsao_retroativa?: number | null;
+  conservador_retroativo?: number | null;
+  otimista_retroativo?: number | null;
   erro_retroativo?: number | null;
   referencia_historica_mes?: number | null;
   dias_decorridos?: number | null;
@@ -1417,7 +1419,7 @@ export function gerarPrevisaoMensal(dados: TransacaoTratada[], horizonte = 6, me
     const atual = previsoes[previsoes.length - 1];
     previsoes[previsoes.length - 1] = { ...atual, realizado: null, realizado_parcial: atual.realizado, estimativa_fechamento: estimativaFechamento, referencia_historica_mes: referenciaHistoricaMes, dias_decorridos: diasDecorridos, dias_periodo: diasNoMes, previsao: estimativaFechamento, mes_vigente: true, tipo: "Previsão" };
   }
-  const ultimo = new Date(Number(chaves[chaves.length - 1].split("-")[0]), Number(chaves[chaves.length - 1].split("-")[1]), 1);
+  const ultimo = new Date(Number(chaves[chaves.length - 1].split("-")[0]), Number(chaves[chaves.length - 1].split("-")[1]) - 1, 1);
   for (let i = 1; i <= horizonte; i++) {
     const dt = new Date(ultimo.getFullYear(), ultimo.getMonth() + i, 1);
     const mes = dt.getMonth() + 1;
@@ -1434,9 +1436,11 @@ export function gerarPrevisaoMensal(dados: TransacaoTratada[], horizonte = 6, me
   }
   const mape = n ? (erro / n) * 100 : null;
   const margem = Math.min(0.35, Math.max(0.08, ((mape ?? 15) / 100) * 1.5));
-  const serieComCenarios = previsoes.map((item) => item.previsao != null
-    ? { ...item, conservador: Math.max(0, item.previsao * (1 - margem)), otimista: item.previsao * (1 + margem) }
-    : item);
+  const serieComCenarios = previsoes.map((item) => {
+    if (item.previsao != null) return { ...item, conservador: Math.max(0, item.previsao * (1 - margem)), otimista: item.previsao * (1 + margem) };
+    if (item.previsao_retroativa != null) return { ...item, conservador_retroativo: Math.max(0, item.previsao_retroativa * (1 - margem)), otimista_retroativo: item.previsao_retroativa * (1 + margem) };
+    return item;
+  });
   return { serie: serieComCenarios, mape, metodo: mesVigente ? "Run-rate do mês vigente + tendência linear + sazonalidade mensal" : "Tendência linear + sazonalidade mensal", historicoMeses: chaves.length, metrica };
 }
 
