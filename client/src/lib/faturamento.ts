@@ -1320,6 +1320,9 @@ export interface PrevisaoMensal {
   realizado: number | null;
   realizado_parcial?: number | null;
   estimativa_fechamento?: number | null;
+  referencia_historica_mes?: number | null;
+  dias_decorridos?: number | null;
+  dias_periodo?: number | null;
   mes_vigente?: boolean;
   previsao: number | null;
   conservador?: number | null;
@@ -1383,8 +1386,12 @@ export function gerarPrevisaoMensal(dados: TransacaoTratada[], horizonte = 6, me
     const diasNoMes = new Date(agora.getFullYear(), agora.getMonth() + 1, 0).getDate();
     const diasDecorridos = Math.max(1, Math.min(diasNoMes, agora.getDate()));
     const estimativaFechamento = Math.max(0, (valores[valores.length - 1] || 0) * diasNoMes / diasDecorridos);
+    const mesNumero = agora.getMonth() + 1;
+    const referencias = dados.filter((item) => item.mes_num === mesNumero && item.ano !== agora.getFullYear());
+    const totaisHistoricos = Array.from(new Set(referencias.map((item) => item.ano))).map((ano) => valorMensalPrevisao(referencias.filter((item) => item.ano === ano), metrica)).filter((value) => Number.isFinite(value));
+    const referenciaHistoricaMes = totaisHistoricos.length ? totaisHistoricos.reduce((sum, value) => sum + value, 0) / totaisHistoricos.length : null;
     const atual = previsoes[previsoes.length - 1];
-    previsoes[previsoes.length - 1] = { ...atual, realizado: null, realizado_parcial: atual.realizado, estimativa_fechamento: estimativaFechamento, previsao: estimativaFechamento, mes_vigente: true, tipo: "Previsão" };
+    previsoes[previsoes.length - 1] = { ...atual, realizado: null, realizado_parcial: atual.realizado, estimativa_fechamento: estimativaFechamento, referencia_historica_mes: referenciaHistoricaMes, dias_decorridos: diasDecorridos, dias_periodo: diasNoMes, previsao: estimativaFechamento, mes_vigente: true, tipo: "Previsão" };
   }
   const ultimo = new Date(Number(chaves[chaves.length - 1].split("-")[0]), Number(chaves[chaves.length - 1].split("-")[1]), 1);
   for (let i = 1; i <= horizonte; i++) {
