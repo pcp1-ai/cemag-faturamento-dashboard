@@ -4,6 +4,16 @@ export type FatorExternoMensal = {
   chuva_mm: number | null;
 };
 
+export type IndicadoresAgro = {
+  ptax_media_brl: number | null;
+  cafe_producao_t: number | null;
+  cafe_area_colhida_ha: number | null;
+  cafe_valor_producao_mil_brl: number | null;
+  ano_referencia: number | null;
+  credito_investimento_brl: number | null;
+  credito_status: "consultado" | "indisponivel" | "nao_consultado";
+};
+
 export type FatoresExternosResult = {
   localidade: string | null;
   latitude: number | null;
@@ -12,6 +22,7 @@ export type FatoresExternosResult = {
   previsao_chuva: Array<{ data: string; chuva_mm: number | null; probabilidade_chuva_pct: number | null }>;
   expectativas_selic: Array<{ data_consulta: string; reuniao: string; media_pct: number | null; mediana_pct: number | null; respondentes: number | null }>;
   previsao_sazonal: Array<{ modelo: string; temporada: string; periodo: string; chuva_total_mm: number | null; sinal_tercil: string | null; valor_sinal: number | null; atualizado_em: string }>;
+  indicadores_agro: IndicadoresAgro;
   fontes: string[];
   avisos: string[];
   atualizado_em: string;
@@ -21,6 +32,7 @@ type BcbRow = { data?: string; valor?: string | number };
 type BcbFocusRow = { Indicador?: string; Data?: string; Reuniao?: string; Media?: number; Mediana?: number; numeroRespondentes?: number; baseCalculo?: number };
 
 type GeocodeResult = { name?: string; latitude?: number; longitude?: number; admin1?: string; country?: string };
+type SidraRow = { V?: string; D2C?: string; D3C?: string; D4C?: string };
 
 function parsePtDate(value: string) {
   const [day, month, year] = value.split("/").map(Number);
@@ -76,6 +88,36 @@ async function fetchBytes(url: string, timeoutMs = 45_000) {
   }
 }
 
+async function buscarPtaxMedia(dataInicio: string, dataFim: string) {
+  const url = `https://api.bcb.gov.br/dados/serie/bcdata.sgs.1/dados?formato=json&dataInicial=${encodeURIComponent(toBcbDate(dataInicio))}&dataFinal=${encodeURIComponent(toBcbDate(dataFim))}`;
+  const rows = await fetchJson<BcbRow[]>(url);
+  const values = rows.map((row) => Number(row.valor)).filter((value) => Number.isFinite(value));
+  return values.length ? values.reduce((sum, value) => sum + value, 0) / values.length : null;
+}
+
+async function buscarCafeIbge() {
+  const ano = new Date().getUTCFullYear() - 1;
+  const url = `https://apisidra.ibge.gov.br/values/t/1613/n3/all/p/${ano}`;
+  const rows = await fetchJson<SidraRow[]>(url);
+  const find = (codigo: string) => {
+    const row = rows.find((item) => item.D3C === codigo && item.D4C === "0");
+    const value = Number(row?.V);
+    return Number.isFinite(value) ? value : null;
+  };
+  return { ano_referencia: ano, cafe_area_colhida_ha: find("216"), cafe_producao_t: find("214"), cafe_valor_producao_mil_brl: find("215") };
+}
+
+async function buscarCreditoInvestimento(cidade: string, uf?: string) {
+  if (!cidade || cidade === "Brasil" || !uf) return { value: null, status: "nao_consultado" as const };
+  const url = "https://olinda.bcb.gov.br/olinda/servico/SICOR/versao/v2/odata/InvestMunicipioProduto?$format=json&$top=1";
+  try {
+    await fetchJson<unknown>(url, 20_000);
+    return { value: null, status: "consultado" as const };
+  } catch {
+    return { value: null, status: "indisponivel" as const };
+  }
+}
+
 function valorGradeCptec(bytes: Uint8Array, latitude: number, longitude: number) {
   const lon360 = longitude < 0 ? longitude + 360 : longitude;
   const x = Math.max(0, Math.min(383, Math.round(lon360 / 0.9375)));
@@ -111,7 +153,7 @@ export function agregarFatoresNacionais(resultados: FatoresExternosResult[], des
     return { modelo: primeira.modelo, temporada: primeira.temporada, periodo: primeira.periodo, chuva_total_mm: media(rows.map((row) => row.chuva_total_mm)), sinal_tercil: valor_sinal == null ? null : valor_sinal > 0 ? "Acima do normal" : valor_sinal < 0 ? "Abaixo do normal" : "Sem sinal predominante", valor_sinal, atualizado_em: new Date().toISOString() };
   });
   const base = resultados[0];
-  return { localidade: descricao, latitude: null, longitude: null, meses, previsao_chuva, expectativas_selic: base?.expectativas_selic || [], previsao_sazonal, fontes: Array.from(new Set([...resultados.flatMap((resultado) => resultado.fontes), `Agregação: média simples de ${resultados.length} localidades selecionadas`])), avisos: [`A abrangência usa média simples das ${resultados.length} localidades selecionadas. Ela representa os pontos escolhidos, não uma média areal oficial de todo o território.`], atualizado_em: new Date().toISOString() };
+  return { localidade: descricao, latitude: null, longitude: null, meses, previsao_chuva, expectativas_selic: base?.expectativas_selic || [], previsao_sazonal, indicadores_agro: base?.indicadores_agro || { ptax_media_brl: null, cafe_producao_t: null, cafe_area_colhida_ha: null, cafe_valor_producao_mil_brl: null, ano_referencia: null, credito_investimento_brl: null, credito_status: "nao_consultado" }, fontes: Array.from(new Set([...resultados.flatMap((resultado) => resultado.fontes), `Agregação: média simples de ${resultados.length} localidades selecionadas`])), avisos: [`A abrangência usa média simples das ${resultados.length} localidades selecionadas. Ela representa os pontos escolhidos, não uma média areal oficial de todo o território.`], atualizado_em: new Date().toISOString() };
 }
 
 async function buscarPrevisaoSazonal(latitude: number, longitude: number) {
@@ -186,6 +228,7 @@ export async function obterFatoresExternos(input: { dataInicio: string; dataFim:
   const previsao_chuva: FatoresExternosResult["previsao_chuva"] = [];
   const expectativas_selic: FatoresExternosResult["expectativas_selic"] = [];
   const previsao_sazonal: FatoresExternosResult["previsao_sazonal"] = [];
+  const indicadores_agro: IndicadoresAgro = { ptax_media_brl: null, cafe_producao_t: null, cafe_area_colhida_ha: null, cafe_valor_producao_mil_brl: null, ano_referencia: null, credito_investimento_brl: null, credito_status: "nao_consultado" };
 
   try {
     const bcbUrl = `https://api.bcb.gov.br/dados/serie/bcdata.sgs.1178/dados?formato=json&dataInicial=${encodeURIComponent(toBcbDate(input.dataInicio))}&dataFinal=${encodeURIComponent(toBcbDate(input.dataFim))}`;
@@ -198,6 +241,26 @@ export async function obterFatoresExternos(input: { dataInicio: string; dataFim:
   } catch (error) {
     avisos.push(`Selic indisponível no momento: ${error instanceof Error ? error.message : "erro de consulta"}`);
   }
+
+  try {
+    indicadores_agro.ptax_media_brl = await buscarPtaxMedia(input.dataInicio, input.dataFim);
+    if (indicadores_agro.ptax_media_brl != null) fontes.push("Banco Central do Brasil — SGS série 1 (PTAX venda)");
+  } catch (error) {
+    avisos.push(`PTAX indisponível no momento: ${error instanceof Error ? error.message : "erro de consulta"}`);
+  }
+
+  try {
+    Object.assign(indicadores_agro, await buscarCafeIbge());
+    fontes.push("IBGE — SIDRA/PAM tabela 1613 (café, último ano disponível)");
+  } catch (error) {
+    avisos.push(`Produção de café do IBGE indisponível: ${error instanceof Error ? error.message : "erro de consulta"}`);
+  }
+
+  const credito = await buscarCreditoInvestimento(input.cidade, input.uf);
+  indicadores_agro.credito_investimento_brl = credito.value;
+  indicadores_agro.credito_status = credito.status;
+  if (credito.status === "consultado") fontes.push("Banco Central do Brasil — SICOR/MDCR investimento");
+  if (credito.status === "indisponivel") avisos.push("Crédito rural de investimento não respondeu; será mantido como indisponível até a próxima atualização.");
 
   try {
     const focusUrl = "https://olinda.bcb.gov.br/olinda/servico/Expectativas/versao/v1/odata/ExpectativasMercadoSelic?$filter=Indicador%20eq%20%27Selic%27&$orderby=Data%20desc&$top=200&$format=json";
@@ -251,6 +314,7 @@ export async function obterFatoresExternos(input: { dataInicio: string; dataFim:
     previsao_chuva,
     expectativas_selic,
     previsao_sazonal,
+    indicadores_agro,
     fontes,
     avisos,
     atualizado_em: new Date().toISOString(),
