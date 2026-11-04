@@ -12,6 +12,7 @@ export type IndicadoresAgro = {
   ano_referencia: number | null;
   credito_investimento_brl: number | null;
   credito_status: "consultado" | "indisponivel" | "nao_consultado";
+  precos_agro: Array<{ produto: string; ticker: string; valor_usd: number | null; atualizado_em: string | null }>;
 };
 
 export type FatoresExternosResult = {
@@ -118,6 +119,19 @@ async function buscarCreditoInvestimento(cidade: string, uf?: string) {
   }
 }
 
+async function buscarPrecosAgro() {
+  const itens = [{ produto: "Café arábica", ticker: "KC=F" }, { produto: "Milho", ticker: "ZC=F" }, { produto: "Soja", ticker: "ZS=F" }];
+  return Promise.all(itens.map(async (item) => {
+    try {
+      const data = await fetchJson<{ chart?: { result?: Array<{ meta?: { regularMarketPrice?: number; regularMarketTime?: number } }> } }>(`https://query1.finance.yahoo.com/v8/finance/chart/${encodeURIComponent(item.ticker)}?range=1y&interval=1mo`);
+      const meta = data.chart?.result?.[0]?.meta;
+      return { produto: item.produto, ticker: item.ticker, valor_usd: Number.isFinite(meta?.regularMarketPrice) ? Number(meta?.regularMarketPrice) : null, atualizado_em: meta?.regularMarketTime ? new Date(meta.regularMarketTime * 1000).toISOString() : null };
+    } catch {
+      return { produto: item.produto, ticker: item.ticker, valor_usd: null, atualizado_em: null };
+    }
+  }));
+}
+
 function valorGradeCptec(bytes: Uint8Array, latitude: number, longitude: number) {
   const lon360 = longitude < 0 ? longitude + 360 : longitude;
   const x = Math.max(0, Math.min(383, Math.round(lon360 / 0.9375)));
@@ -153,7 +167,7 @@ export function agregarFatoresNacionais(resultados: FatoresExternosResult[], des
     return { modelo: primeira.modelo, temporada: primeira.temporada, periodo: primeira.periodo, chuva_total_mm: media(rows.map((row) => row.chuva_total_mm)), sinal_tercil: valor_sinal == null ? null : valor_sinal > 0 ? "Acima do normal" : valor_sinal < 0 ? "Abaixo do normal" : "Sem sinal predominante", valor_sinal, atualizado_em: new Date().toISOString() };
   });
   const base = resultados[0];
-  return { localidade: descricao, latitude: null, longitude: null, meses, previsao_chuva, expectativas_selic: base?.expectativas_selic || [], previsao_sazonal, indicadores_agro: base?.indicadores_agro || { ptax_media_brl: null, cafe_producao_t: null, cafe_area_colhida_ha: null, cafe_valor_producao_mil_brl: null, ano_referencia: null, credito_investimento_brl: null, credito_status: "nao_consultado" }, fontes: Array.from(new Set([...resultados.flatMap((resultado) => resultado.fontes), `Agregação: média simples de ${resultados.length} localidades selecionadas`])), avisos: [`A abrangência usa média simples das ${resultados.length} localidades selecionadas. Ela representa os pontos escolhidos, não uma média areal oficial de todo o território.`], atualizado_em: new Date().toISOString() };
+  return { localidade: descricao, latitude: null, longitude: null, meses, previsao_chuva, expectativas_selic: base?.expectativas_selic || [], previsao_sazonal, indicadores_agro: base?.indicadores_agro || { ptax_media_brl: null, cafe_producao_t: null, cafe_area_colhida_ha: null, cafe_valor_producao_mil_brl: null, ano_referencia: null, credito_investimento_brl: null, credito_status: "nao_consultado", precos_agro: [] }, fontes: Array.from(new Set([...resultados.flatMap((resultado) => resultado.fontes), `Agregação: média simples de ${resultados.length} localidades selecionadas`])), avisos: [`A abrangência usa média simples das ${resultados.length} localidades selecionadas. Ela representa os pontos escolhidos, não uma média areal oficial de todo o território.`], atualizado_em: new Date().toISOString() };
 }
 
 async function buscarPrevisaoSazonal(latitude: number, longitude: number) {
@@ -228,7 +242,7 @@ export async function obterFatoresExternos(input: { dataInicio: string; dataFim:
   const previsao_chuva: FatoresExternosResult["previsao_chuva"] = [];
   const expectativas_selic: FatoresExternosResult["expectativas_selic"] = [];
   const previsao_sazonal: FatoresExternosResult["previsao_sazonal"] = [];
-  const indicadores_agro: IndicadoresAgro = { ptax_media_brl: null, cafe_producao_t: null, cafe_area_colhida_ha: null, cafe_valor_producao_mil_brl: null, ano_referencia: null, credito_investimento_brl: null, credito_status: "nao_consultado" };
+  const indicadores_agro: IndicadoresAgro = { ptax_media_brl: null, cafe_producao_t: null, cafe_area_colhida_ha: null, cafe_valor_producao_mil_brl: null, ano_referencia: null, credito_investimento_brl: null, credito_status: "nao_consultado", precos_agro: [] };
 
   try {
     const bcbUrl = `https://api.bcb.gov.br/dados/serie/bcdata.sgs.1178/dados?formato=json&dataInicial=${encodeURIComponent(toBcbDate(input.dataInicio))}&dataFinal=${encodeURIComponent(toBcbDate(input.dataFim))}`;
@@ -255,6 +269,9 @@ export async function obterFatoresExternos(input: { dataInicio: string; dataFim:
   } catch (error) {
     avisos.push(`Produção de café do IBGE indisponível: ${error instanceof Error ? error.message : "erro de consulta"}`);
   }
+
+  indicadores_agro.precos_agro = await buscarPrecosAgro();
+  if (indicadores_agro.precos_agro.some((item) => item.valor_usd != null)) fontes.push("Yahoo Finance — futuros internacionais KC=F, ZC=F e ZS=F (USD)" );
 
   const credito = await buscarCreditoInvestimento(input.cidade, input.uf);
   indicadores_agro.credito_investimento_brl = credito.value;

@@ -1320,6 +1320,8 @@ export interface PrevisaoMensal {
   realizado: number | null;
   realizado_parcial?: number | null;
   estimativa_fechamento?: number | null;
+  previsao_retroativa?: number | null;
+  erro_retroativo?: number | null;
   referencia_historica_mes?: number | null;
   dias_decorridos?: number | null;
   dias_periodo?: number | null;
@@ -1356,9 +1358,13 @@ export function gerarPrevisaoMensal(dados: TransacaoTratada[], horizonte = 6, me
   for (const [mes, rows] of porMes) mensal.set(mes, valorMensalPrevisao(rows, metrica));
   const chaves = Array.from(mensal.keys()).sort();
   if (chaves.length < 6) return { serie: [], mape: null, metodo: "Histórico insuficiente", historicoMeses: chaves.length, metrica };
-  const valores = chaves.map((k) => mensal.get(k) || 0);
   const agora = new Date();
   const mesAtual = `${agora.getFullYear()}-${String(agora.getMonth() + 1).padStart(2, "0")}`;
+  if (chaves[chaves.length - 1] < mesAtual) {
+    chaves.push(mesAtual);
+    mensal.set(mesAtual, 0);
+  }
+  const valores = chaves.map((k) => mensal.get(k) || 0);
   const mesVigente = chaves[chaves.length - 1] === mesAtual;
   const valoresTreino = mesVigente ? valores.slice(0, -1) : valores;
   const ultimos = Math.min(24, valoresTreino.length);
@@ -1381,7 +1387,25 @@ export function gerarPrevisaoMensal(dados: TransacaoTratada[], horizonte = 6, me
   const den = xs.reduce((a, x) => a + (x - xbar) ** 2, 0) || 1;
   const slope = xs.reduce((a, x, i) => a + (x - xbar) * (janela[i] - ybar), 0) / den;
   const intercept = ybar - slope * xbar;
-  const previsoes: PrevisaoMensal[] = chaves.map((k, i) => ({ ano_mes: k, mes_num: Number(k.split("-")[1]), realizado: valores[i], previsao: null, tipo: "Histórico" }));
+  const previsoes: PrevisaoMensal[] = chaves.map((k, i) => ({ ano_mes: k, mes_num: Number(k.split("-")[1]), realizado: valores[i], previsao: null, previsao_retroativa: null, erro_retroativo: null, tipo: "Histórico" }));
+  // Backtest visual: estima cada mês usando somente os meses anteriores.
+  for (let i = 6; i < chaves.length; i++) {
+    if (mesVigente && i === chaves.length - 1) continue;
+    const treino = valores.slice(0, i);
+    const janelaRetro = treino.slice(-Math.min(24, treino.length));
+    const mediaRetro = janelaRetro.reduce((sum, value) => sum + value, 0) / Math.max(1, janelaRetro.length);
+    const xsRetro = janelaRetro.map((_, index) => index + 1);
+    const xbarRetro = xsRetro.reduce((sum, value) => sum + value, 0) / xsRetro.length;
+    const ybarRetro = janelaRetro.reduce((sum, value) => sum + value, 0) / janelaRetro.length;
+    const denRetro = xsRetro.reduce((sum, value) => sum + (value - xbarRetro) ** 2, 0) || 1;
+    const slopeRetro = xsRetro.reduce((sum, value, index) => sum + (value - xbarRetro) * (janelaRetro[index] - ybarRetro), 0) / denRetro;
+    const interceptRetro = ybarRetro - slopeRetro * xbarRetro;
+    const fatoresRetro: number[] = treino.filter((_, index) => Number(chaves[index].split("-")[1]) === Number(chaves[i].split("-")[1]));
+    const sazonalRetro = fatoresRetro.length && mediaRetro > 0 ? (fatoresRetro.reduce((sum, value) => sum + value, 0) / fatoresRetro.length) / mediaRetro : 1;
+    const previstoRetro = Math.max(0, (interceptRetro + slopeRetro * (janelaRetro.length + 1)) * sazonalRetro);
+    previsoes[i].previsao_retroativa = previstoRetro;
+    previsoes[i].erro_retroativo = valores[i] ? ((previstoRetro - valores[i]) / valores[i]) * 100 : null;
+  }
   if (mesVigente && previsoes.length) {
     const diasNoMes = new Date(agora.getFullYear(), agora.getMonth() + 1, 0).getDate();
     const diasDecorridos = Math.max(1, Math.min(diasNoMes, agora.getDate()));
