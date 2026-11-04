@@ -209,6 +209,7 @@ const ABAS = [
   { id: "metas", label: "🎯 Metas mensais" },
   { id: "previsoes", label: "📈 Previsões" },
   { id: "previsoes_agro", label: "🌾 Previsões Agro" },
+  { id: "central_externa", label: "🛰️ Central de dados" },
   { id: "diagnostico", label: "🔎 Diagnóstico da base" },
   { id: "modo_apresentacao", label: "📺 Modo apresentação" },
   { id: "ano_ano", label: "📅 Ano x ano" },
@@ -720,6 +721,8 @@ export default function Home({ onLogout, emailAutenticado, isAdmin = false }: { 
   const [ufsFatores, setUfsFatores] = useState<string[]>([]);
   const [cidadesSelecionadasFatores, setCidadesSelecionadasFatores] = useState<string[]>([]);
   const [cidadeFatoresExternos, setCidadeFatoresExternos] = useState<string>("");
+  const [centralDataInicio, setCentralDataInicio] = useState<string>("2022-01-01");
+  const [centralDataFim, setCentralDataFim] = useState<string>("");
   const [repEscolhido, setRepEscolhido] = useState<string>("");
 
   useEffect(() => {
@@ -728,7 +731,9 @@ export default function Home({ onLogout, emailAutenticado, isAdmin = false }: { 
     const maxBase = meta.data_max.toISOString().slice(0, 10);
     if (previsaoDataInicio === "2022-01-01" && minBase > previsaoDataInicio) setPrevisaoDataInicio(minBase);
     if (!previsaoDataFim) setPrevisaoDataFim(maxBase);
-  }, [meta, previsaoDataFim, previsaoDataInicio]);
+    if (centralDataInicio === "2022-01-01" && minBase > centralDataInicio) setCentralDataInicio(minBase);
+    if (!centralDataFim) setCentralDataFim(maxBase);
+  }, [centralDataFim, centralDataInicio, meta, previsaoDataFim, previsaoDataInicio]);
 
   // Base tratada: colunas visíveis
   const [colunasBaseTratada, setColunasBaseTratada] = useState<string[]>([
@@ -957,15 +962,15 @@ export default function Home({ onLogout, emailAutenticado, isAdmin = false }: { 
   }, [abrangenciaFatores, cidadesSelecionadasFatores, cidadeFatoresExternos, dados, regiaoFatores, ufsFatores]);
   const descricaoAbrangenciaFatores = abrangenciaFatores === "brasil" ? "Brasil — capitais dos 27 estados" : abrangenciaFatores === "regiao" ? `${regiaoFatores} — capitais dos estados com clientes` : abrangenciaFatores === "uf" ? `Estados selecionados — ${ufsFatores.join(", ")}` : abrangenciaFatores === "clientes" ? `Cidades dos clientes — ${localidadesFatoresSelecionadas.length} localidades` : cidadeFatoresExternos;
   const fatoresExternosInput = useMemo(() => ({
-    dataInicio: filtros.dataInicio || meta?.data_min?.toISOString().slice(0, 10) || "2022-01-01",
-    dataFim: filtros.dataFim || meta?.data_max?.toISOString().slice(0, 10) || new Date().toISOString().slice(0, 10),
+    dataInicio: abaAtiva === "central_externa" ? centralDataInicio : filtros.dataInicio || meta?.data_min?.toISOString().slice(0, 10) || "2022-01-01",
+    dataFim: abaAtiva === "central_externa" ? centralDataFim : filtros.dataFim || meta?.data_max?.toISOString().slice(0, 10) || new Date().toISOString().slice(0, 10),
     cidade: abrangenciaFatores === "cidade" ? cidadeFatoresExternos : "Brasil",
     uf: abrangenciaFatores === "cidade" ? localidadesFatoresSelecionadas[0]?.uf : undefined,
     localidades: abrangenciaFatores === "cidade" ? undefined : localidadesFatoresSelecionadas,
     descricaoAbrangencia: descricaoAbrangenciaFatores,
-  }), [abrangenciaFatores, cidadeFatoresExternos, descricaoAbrangenciaFatores, filtros.dataInicio, filtros.dataFim, localidadesFatoresSelecionadas, meta?.data_min, meta?.data_max]);
+  }), [abrangenciaFatores, centralDataFim, centralDataInicio, cidadeFatoresExternos, descricaoAbrangenciaFatores, filtros.dataInicio, filtros.dataFim, localidadesFatoresSelecionadas, meta?.data_min, meta?.data_max, abaAtiva]);
   const fatoresExternosQuery = trpc.cemag.fatoresExternos.useQuery(fatoresExternosInput, {
-    enabled: (abaAtiva === "previsoes" || abaAtiva === "previsoes_agro") && localidadesFatoresSelecionadas.length > 0,
+    enabled: (abaAtiva === "previsoes" || abaAtiva === "previsoes_agro" || abaAtiva === "central_externa") && localidadesFatoresSelecionadas.length > 0,
     retry: false,
     staleTime: 15 * 60 * 1000,
   });
@@ -2770,6 +2775,27 @@ export default function Home({ onLogout, emailAutenticado, isAdmin = false }: { 
                     <div className="bg-slate-900/80 border border-slate-800 rounded-xl p-5"><h3 className="text-sm font-bold text-white mb-2">Por que os meses anteriores ficaram acima ou abaixo?</h3><p className="mb-3 text-xs leading-5 text-slate-400">Esta leitura compara o realizado com a previsão retroativa e acrescenta sinais mensais de chuva e Selic quando disponíveis. São <strong className="text-amber-300">possíveis explicações</strong>, não prova de causalidade: outros fatores comerciais, estoque, preço, carteira e faturamento podem ter influenciado o resultado.</p>{explicacoesHistorico.length ? <DataTable rows={explicacoesHistorico} exportName="explicacoes_meses_anteriores" columns={["mes", "realizado", "previsto_retroativo", "variacao_vs_previsto_pct", "chuva_mm", "selic_media_pct", "leitura"]} percentColumns={["variacao_vs_previsto_pct"]} metricColumns={{ realizado: metricaPrevisao, previsto_retroativo: metricaPrevisao }} /> : <div className="rounded-lg border border-slate-700 bg-slate-950/50 p-4 text-xs text-slate-400">Ainda não há meses retroativos suficientes no período exibido para gerar uma explicação.</div>}</div>
                     <div className="bg-slate-900/80 border border-slate-800 rounded-xl p-5"><h3 className="text-sm font-bold text-white mb-3">Valores previstos e retroativos — {metricaPrevisao}</h3><DataTable rows={seriePrevisaoVisivel.filter((x) => x.previsao != null || x.previsao_retroativa != null)} columns={["ano_mes", "realizado", "conservador_retroativo", "previsao_retroativa", "otimista_retroativo", "erro_retroativo", "conservador", "previsao", "otimista", "tipo"]} percentColumns={["erro_retroativo"]} metricColumns={{ realizado: metricaPrevisao, conservador_retroativo: metricaPrevisao, previsao_retroativa: metricaPrevisao, otimista_retroativo: metricaPrevisao, conservador: metricaPrevisao, previsao: metricaPrevisao, otimista: metricaPrevisao }} /></div>
                   </> : <div className="bg-amber-500/10 border border-amber-500/30 text-amber-200 rounded-xl p-5 text-sm">Histórico insuficiente após os filtros atuais. São necessários pelo menos seis meses com registros.</div>}
+                </div>
+              )}
+
+              {/* ========================================================= */}
+              {/* ABA: CENTRAL DE DADOS EXTERNOS */}
+              {/* ========================================================= */}
+              {abaAtiva === "central_externa" && (
+                <div className="space-y-6">
+                  <div className="rounded-xl border border-cyan-900/60 bg-cyan-950/20 p-5">
+                    <div className="flex flex-wrap items-start justify-between gap-4"><div><h2 className="text-lg font-bold text-white">Central de Dados Externos</h2><p className="mt-1 max-w-3xl text-xs leading-5 text-slate-300">Use esta aba para puxar e conferir informações de clima, juros, produção, crédito e commodities antes de utilizá-las nas explicações dos meses ou na previsão comercial.</p></div><button type="button" onClick={() => void fatoresExternosQuery.refetch()} disabled={fatoresExternosQuery.isFetching || localidadesFatoresSelecionadas.length === 0} className="rounded-lg bg-cyan-600 px-3 py-2 text-xs font-bold text-white hover:bg-cyan-500 disabled:cursor-not-allowed disabled:opacity-50">{fatoresExternosQuery.isFetching ? "Consultando fontes..." : "Puxar informações agora"}</button></div>
+                    <div className="mt-4 grid gap-4 md:grid-cols-3"><label className="flex flex-col gap-1 text-xs text-slate-300"><span className="font-semibold">Período inicial da consulta</span><input type="date" value={centralDataInicio} onChange={(event) => setCentralDataInicio(event.target.value)} className="rounded-lg border border-slate-700 bg-slate-800 px-3 py-2 text-white" /><span className="text-[10px] text-slate-500">Primeiro mês histórico solicitado às fontes.</span></label><label className="flex flex-col gap-1 text-xs text-slate-300"><span className="font-semibold">Período final da consulta</span><input type="date" value={centralDataFim} onChange={(event) => setCentralDataFim(event.target.value)} className="rounded-lg border border-slate-700 bg-slate-800 px-3 py-2 text-white" /><span className="text-[10px] text-slate-500">Último mês histórico solicitado às fontes.</span></label><div className="rounded-lg border border-slate-700 bg-slate-900/60 p-3 text-xs text-slate-300"><strong className="block text-white">Abrangência atual</strong><span className="mt-1 block text-cyan-300">{descricaoAbrangenciaFatores}</span><span className="mt-1 block text-[10px] leading-4 text-slate-500">A seleção de cidade, estado, região ou Brasil é definida nos controles de fatores externos.</span></div></div>
+                  </div>
+                  {fatoresExternosQuery.isFetching && <div className="rounded-xl border border-sky-900/60 bg-sky-950/20 p-4 text-sm text-sky-300">Consultando as fontes selecionadas. Isso pode levar alguns segundos em abrangências nacionais.</div>}
+                  {fatoresExternosQuery.error && <div className="rounded-xl border border-amber-900/60 bg-amber-950/20 p-4 text-sm text-amber-300">A consulta retornou uma falha. Tente novamente ou reduza a abrangência. Os dados já disponíveis são preservados.</div>}
+                  {fatoresExternosQuery.data && <>
+                    <div className="rounded-xl border border-slate-800 bg-slate-900/70 p-4"><div className="flex flex-wrap items-center justify-between gap-3"><div><h3 className="text-sm font-bold text-white">Status das fontes consultadas</h3><p className="mt-1 text-[11px] text-slate-500">Atualizado em {new Date(fatoresExternosQuery.data.atualizado_em).toLocaleString("pt-BR")}</p></div><div className="flex flex-wrap gap-2">{statusFontesExternas.map((fonte) => <span key={fonte.nome} className={`rounded-full border px-2.5 py-1 text-[10px] ${fonte.status === "ok" ? "border-emerald-700/60 bg-emerald-950/30 text-emerald-300" : fonte.status === "aviso" ? "border-amber-700/60 bg-amber-950/30 text-amber-300" : "border-slate-700 bg-slate-950/40 text-slate-400"}`}>{fonte.nome}: {fonte.status}</span>)}</div></div></div>
+                    <div className="grid gap-5 xl:grid-cols-2"><div className="rounded-xl border border-slate-800 bg-slate-900/70 p-4"><h3 className="text-sm font-bold text-white">Série histórica mensal</h3><p className="mt-1 mb-3 text-[11px] text-slate-400">Dados que podem ser comparados aos meses faturados: chuva acumulada e Selic média.</p><DataTable rows={fatoresExternosQuery.data.meses || []} exportName="central_dados_mensais" columns={["ano_mes", "chuva_mm", "selic_media_pct"]} /></div><div className="rounded-xl border border-slate-800 bg-slate-900/70 p-4"><h3 className="text-sm font-bold text-white">Previsões e expectativas futuras</h3><p className="mt-1 mb-3 text-[11px] text-slate-400">Não são realizadas: servem como contexto para os próximos meses.</p><DataTable rows={expectativasSelicFuturas} exportName="central_expectativas_selic" columns={["data_consulta", "reuniao", "media_pct", "mediana_pct", "respondentes"]} /></div></div>
+                    <div className="grid gap-5 xl:grid-cols-2"><div className="rounded-xl border border-slate-800 bg-slate-900/70 p-4"><h3 className="text-sm font-bold text-white">Indicadores agrícolas</h3><DataTable rows={[fatoresExternosQuery.data.indicadores_agro]} exportName="central_indicadores_agro" columns={["ano_referencia", "ptax_media_brl", "cafe_producao_t", "cafe_area_colhida_ha", "credito_investimento_brl", "credito_status"]} /></div><div className="rounded-xl border border-slate-800 bg-slate-900/70 p-4"><h3 className="text-sm font-bold text-white">Preços de commodities</h3><DataTable rows={fatoresExternosQuery.data.indicadores_agro.precos_agro || []} exportName="central_precos_commodities" columns={["produto", "ticker", "valor_usd", "atualizado_em"]} /></div></div>
+                    <div className="rounded-xl border border-slate-800 bg-slate-900/70 p-4"><h3 className="text-sm font-bold text-white">Avisos, limitações e fontes</h3><div className="mt-3 space-y-2 text-xs text-slate-400">{(fatoresExternosQuery.data.avisos || []).map((aviso) => <div key={aviso} className="text-amber-300">Aviso: {aviso}</div>)}<div><strong className="text-slate-300">Fontes:</strong> {(fatoresExternosQuery.data.fontes || []).join("; ") || "nenhuma fonte retornada"}</div></div></div>
+                  </>}
+                  {!fatoresExternosQuery.data && !fatoresExternosQuery.isFetching && <div className="rounded-xl border border-dashed border-slate-700 bg-slate-900/40 p-8 text-center text-sm text-slate-400">Defina o período e clique em <strong className="text-cyan-300">Puxar informações agora</strong> para consultar as fontes.</div>}
                 </div>
               )}
 
