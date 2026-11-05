@@ -1350,6 +1350,59 @@ function valorMensalPrevisao(rows: TransacaoTratada[], metrica: string): number 
   return faturamento;
 }
 
+function previsaoTendenciaSazonal(chaves: string[], valores: number[], tamanhoTreino: number, mesAlvo: number): number {
+  const treino = valores.slice(0, tamanhoTreino);
+  const janela = treino.slice(-Math.min(24, treino.length));
+  if (!janela.length) return 0;
+  const media = janela.reduce((sum, value) => sum + value, 0) / janela.length;
+  const xs = janela.map((_, index) => index + 1);
+  const xbar = xs.reduce((sum, value) => sum + value, 0) / xs.length;
+  const ybar = media;
+  const den = xs.reduce((sum, value) => sum + (value - xbar) ** 2, 0) || 1;
+  const slope = xs.reduce((sum, value, index) => sum + (value - xbar) * (janela[index] - ybar), 0) / den;
+  const intercept = ybar - slope * xbar;
+  const sazonais = chaves.slice(0, tamanhoTreino).reduce((acc, chave, index) => {
+    if (Number(chave.split("-")[1]) === mesAlvo) acc.push(valores[index]);
+    return acc;
+  }, [] as number[]);
+  const fatorSazonal = sazonais.length && media > 0 ? (sazonais.reduce((sum, value) => sum + value, 0) / sazonais.length) / media : 1;
+  return Math.max(0, (intercept + slope * (janela.length + 1)) * fatorSazonal);
+}
+
+function previsaoSazonalIngenua(chaves: string[], valores: number[], tamanhoTreino: number, mesAlvo: number): number | null {
+  const anteriores = chaves.slice(0, tamanhoTreino).reduce((acc, chave, index) => {
+    if (Number(chave.split("-")[1]) === mesAlvo) acc.push(valores[index]);
+    return acc;
+  }, [] as number[]).slice(-3);
+  return anteriores.length ? anteriores.reduce((sum, value) => sum + value, 0) / anteriores.length : null;
+}
+
+function selecionarPesoSazonal(chaves: string[], valores: number[], tamanhoTreino: number): number {
+  const pesos = [0, 0.25, 0.5, 0.75, 1];
+  const inicio = Math.max(6, tamanhoTreino - 12);
+  let melhorPeso = 0;
+  let melhorWape = Number.POSITIVE_INFINITY;
+  for (const peso of pesos) {
+    let erro = 0;
+    let realizado = 0;
+    for (let i = inicio; i < tamanhoTreino; i++) {
+      if (!valores[i]) continue;
+      const mesAlvo = Number(chaves[i].split("-")[1]);
+      const tendencia = previsaoTendenciaSazonal(chaves, valores, i, mesAlvo);
+      const sazonal = previsaoSazonalIngenua(chaves, valores, i, mesAlvo);
+      const previsto = Math.max(0, tendencia * (1 - peso) + (sazonal == null ? tendencia : sazonal) * peso);
+      erro += Math.abs(valores[i] - previsto);
+      realizado += Math.abs(valores[i]);
+    }
+    const wape = realizado ? erro / realizado : Number.POSITIVE_INFINITY;
+    if (wape < melhorWape) {
+      melhorWape = wape;
+      melhorPeso = peso;
+    }
+  }
+  return melhorPeso;
+}
+
 export function gerarPrevisaoMensal(dados: TransacaoTratada[], horizonte = 6, metrica = "Faturamento", opcoes?: { incluirMesVigente?: boolean }): { serie: PrevisaoMensal[]; mape: number | null; metodo: string; historicoMeses: number; metrica: string } {
   const mensal = new Map<string, number>();
   const porMes = new Map<string, TransacaoTratada[]>();
@@ -1390,6 +1443,7 @@ export function gerarPrevisaoMensal(dados: TransacaoTratada[], horizonte = 6, me
   const den = xs.reduce((a, x) => a + (x - xbar) ** 2, 0) || 1;
   const slope = xs.reduce((a, x, i) => a + (x - xbar) * (janela[i] - ybar), 0) / den;
   const intercept = ybar - slope * xbar;
+  const pesoSazonal = selecionarPesoSazonal(chaves, valoresTreino, valoresTreino.length);
   const previsoes: PrevisaoMensal[] = chaves.map((k, i) => ({ ano_mes: k, mes_num: Number(k.split("-")[1]), realizado: valores[i], previsao: null, previsao_retroativa: null, erro_retroativo: null, tipo: "Histórico" }));
   // Backtest visual: estima cada mês usando somente os meses anteriores.
   for (let i = 6; i < chaves.length; i++) {
@@ -1405,7 +1459,9 @@ export function gerarPrevisaoMensal(dados: TransacaoTratada[], horizonte = 6, me
     const interceptRetro = ybarRetro - slopeRetro * xbarRetro;
     const fatoresRetro: number[] = treino.filter((_, index) => Number(chaves[index].split("-")[1]) === Number(chaves[i].split("-")[1]));
     const sazonalRetro = fatoresRetro.length && mediaRetro > 0 ? (fatoresRetro.reduce((sum, value) => sum + value, 0) / fatoresRetro.length) / mediaRetro : 1;
-    const previstoRetro = Math.max(0, (interceptRetro + slopeRetro * (janelaRetro.length + 1)) * sazonalRetro);
+    const tendenciaRetro = Math.max(0, (interceptRetro + slopeRetro * (janelaRetro.length + 1)) * sazonalRetro);
+    const sazonalIngenuaRetro = previsaoSazonalIngenua(chaves, valores, i, Number(chaves[i].split("-")[1]));
+    const previstoRetro = Math.max(0, tendenciaRetro * (1 - pesoSazonal) + (sazonalIngenuaRetro == null ? tendenciaRetro : sazonalIngenuaRetro) * pesoSazonal);
     previsoes[i].previsao_retroativa = previstoRetro;
     previsoes[i].erro_retroativo = valores[i] ? ((previstoRetro - valores[i]) / valores[i]) * 100 : null;
   }
@@ -1427,7 +1483,9 @@ export function gerarPrevisaoMensal(dados: TransacaoTratada[], horizonte = 6, me
     const dt = new Date(ultimo.getFullYear(), ultimo.getMonth() + i, 1);
     const mes = dt.getMonth() + 1;
     const base = Math.max(0, intercept + slope * (ultimos + i));
-    const valor = Math.max(0, base * (mediasSazonais[mes] || 1));
+    const tendenciaFutura = Math.max(0, base * (mediasSazonais[mes] || 1));
+    const sazonalIngenuaFutura = previsaoSazonalIngenua(chaves, valores, valoresTreino.length, mes);
+    const valor = Math.max(0, tendenciaFutura * (1 - pesoSazonal) + (sazonalIngenuaFutura == null ? tendenciaFutura : sazonalIngenuaFutura) * pesoSazonal);
     previsoes.push({ ano_mes: `${dt.getFullYear()}-${String(mes).padStart(2, "0")}`, mes_num: mes, realizado: null, previsao: valor, tipo: "Previsão" });
   }
   const holdout = Math.min(3, Math.floor(valoresTreino.length / 4));
@@ -1444,7 +1502,8 @@ export function gerarPrevisaoMensal(dados: TransacaoTratada[], horizonte = 6, me
     if (item.previsao_retroativa != null) return { ...item, conservador_retroativo: Math.max(0, item.previsao_retroativa * (1 - margem)), otimista_retroativo: item.previsao_retroativa * (1 + margem) };
     return item;
   });
-  return { serie: serieComCenarios, mape, metodo: mesVigente ? "Run-rate do mês vigente + tendência linear + sazonalidade mensal" : "Tendência linear + sazonalidade mensal", historicoMeses: chaves.length, metrica };
+  const metodoBase = pesoSazonal === 0 ? "tendência linear + sazonalidade mensal" : pesoSazonal === 1 ? "sazonal ingênua do mesmo mês" : `combinação calibrada (${Math.round((1 - pesoSazonal) * 100)}% tendência + ${Math.round(pesoSazonal * 100)}% sazonalidade histórica)`;
+  return { serie: serieComCenarios, mape, metodo: mesVigente ? `Run-rate do mês vigente + ${metodoBase}` : metodoBase, historicoMeses: chaves.length, metrica };
 }
 
 export function validarPrevisaoMensal(dados: TransacaoTratada[], metrica = "Faturamento"): { mape: number | null; mae: number | null; wape: number | null; pontos: number } {
@@ -1463,15 +1522,11 @@ export function validarPrevisaoMensal(dados: TransacaoTratada[], metrica = "Fatu
   for (let i = inicioTeste; i < valores.length; i++) {
     const treino = valores.slice(0, i);
     if (treino.length < 6 || valores[i] === 0) continue;
-    const ultimos = Math.min(24, treino.length);
-    const janela = treino.slice(treino.length - ultimos);
-    const media = janela.reduce((a, b) => a + b, 0) / janela.length;
-    const xs = janela.map((_, j) => j + 1);
-    const xbar = xs.reduce((a, b) => a + b, 0) / xs.length;
-    const ybar = janela.reduce((a, b) => a + b, 0) / janela.length;
-    const den = xs.reduce((a, x) => a + (x - xbar) ** 2, 0) || 1;
-    const slope = xs.reduce((a, x, j) => a + (x - xbar) * (janela[j] - ybar), 0) / den;
-    const previsao = Math.max(0, ybar + slope * (ultimos + 1));
+    const mesAlvo = Number(chaves[i].split("-")[1]);
+    const pesoSazonal = selecionarPesoSazonal(chaves, valores, i);
+    const tendencia = previsaoTendenciaSazonal(chaves, valores, i, mesAlvo);
+    const sazonal = previsaoSazonalIngenua(chaves, valores, i, mesAlvo);
+    const previsao = Math.max(0, tendencia * (1 - pesoSazonal) + (sazonal == null ? tendencia : sazonal) * pesoSazonal);
     const erroAbs = Math.abs(valores[i] - previsao);
     errosAbs.push(erroAbs);
     errosPct.push(erroAbs / Math.abs(valores[i]) * 100);
