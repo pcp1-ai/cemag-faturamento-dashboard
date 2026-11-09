@@ -77,6 +77,27 @@ const chatMessageInput = z.object({
   content: z.string().trim().min(1).max(4000),
 });
 
+function responderChatLocal(pergunta: string, contextoTexto: string) {
+  try {
+    const contexto = JSON.parse(contextoTexto) as Record<string, any>;
+    const texto = pergunta.toLocaleLowerCase("pt-BR");
+    const meses: Record<string, string> = { janeiro: "01", fevereiro: "02", março: "03", marco: "03", abril: "04", maio: "05", junho: "06", julho: "07", agosto: "08", setembro: "09", outubro: "10", novembro: "11", dezembro: "12" };
+    const ano = texto.match(/\b(20\d{2})\b/)?.[1];
+    const nomeMes = Object.keys(meses).find((nome) => texto.includes(nome));
+    const mes = nomeMes ? meses[nomeMes] : texto.match(/\b(\d{4})[-\/](\d{1,2})\b/)?.[2]?.padStart(2, "0");
+    const chaveMes = ano && mes ? `${ano}-${mes}` : null;
+    const produtos = chaveMes && contexto.produtosPorMes?.[chaveMes] ? contexto.produtosPorMes[chaveMes] : null;
+    if (produtos?.length && /carreta|implemento|produto|modelo/.test(texto) && /vendid|vendeu|vendas|quantidade/.test(texto)) {
+      const lider = [...produtos].sort((a, b) => Number(b.quantidade || 0) - Number(a.quantidade || 0))[0];
+      const faturamento = Number(lider.faturamento || 0).toLocaleString("pt-BR", { style: "currency", currency: "BRL" });
+      return `Com base na base completa tratada, o produto/carreta mais vendido em ${chaveMes} foi **${lider.produto}**, com **${Number(lider.quantidade || 0).toLocaleString("pt-BR")} unidades** e faturamento de **${faturamento}**. A quantidade representa quantidade faturada; a base não comprova produção física.`;
+    }
+  } catch {
+    // O fallback abaixo evita devolver erro técnico à interface.
+  }
+  return "O Assistente CEMAG está temporariamente sem resposta automática. A consulta foi recebida e pode ser repetida em alguns segundos; os filtros visuais não alteram a base usada pelo assistente.";
+}
+
 function safeFileName(name: string) {
   return name.replace(/[^a-zA-Z0-9._-]+/g, "_").slice(-180) || "arquivo.csv";
 }
@@ -118,7 +139,11 @@ export const appRouter = router({
         dashboardContext: z.string().trim().min(1).max(60000),
       }))
       .mutation(async ({ input }) => {
-        const response = await invokeLLM({
+        let response: Awaited<ReturnType<typeof invokeLLM>> | null = null;
+        let ultimoErro: unknown = null;
+        for (let tentativa = 0; tentativa < 3 && !response; tentativa++) {
+          try {
+            response = await invokeLLM({
           messages: [
             {
               role: "system",
@@ -144,8 +169,17 @@ export const appRouter = router({
             },
             ...input.messages,
           ],
-          maxTokens: 700,
-        });
+              maxTokens: 700,
+            });
+          } catch (error) {
+            ultimoErro = error;
+            if (tentativa < 2) await new Promise((resolve) => setTimeout(resolve, 350 * (tentativa + 1)));
+          }
+        }
+        if (!response) {
+          console.warn("[AIChat] invokeLLM indisponível; usando fallback local.", ultimoErro);
+          return { content: responderChatLocal(input.messages.at(-1)?.content || "", input.dashboardContext), fallback: true as const };
+        }
         const content = response.choices[0]?.message?.content;
         if (typeof content !== "string") throw new Error("A resposta do assistente não veio em formato de texto.");
         return { content };

@@ -1522,6 +1522,27 @@ export default function Home({ onLogout, emailAutenticado, isAdmin = false }: { 
     } catch {
       // Mantém o contexto original caso a serialização seja inesperadamente inválida.
     }
+    // Respostas determinísticas não dependem da disponibilidade do LLM.
+    // Isso evita que uma pergunta objetiva de produto/mês vire uma mensagem
+    // genérica de erro quando o serviço de IA estiver momentaneamente fora do ar.
+    try {
+      const contextoLocal = JSON.parse(contextoChat) as Record<string, any>;
+      const perguntaLocal = content.toLocaleLowerCase("pt-BR");
+      const mesesLocal: Record<string, string> = { janeiro: "01", fevereiro: "02", março: "03", marco: "03", abril: "04", maio: "05", junho: "06", julho: "07", agosto: "08", setembro: "09", outubro: "10", novembro: "11", dezembro: "12" };
+      const anoLocal = perguntaLocal.match(/\b(20\d{2})\b/)?.[1];
+      const nomeMesLocal = Object.keys(mesesLocal).find((nome) => perguntaLocal.includes(nome));
+      const mesLocal = nomeMesLocal ? mesesLocal[nomeMesLocal] : perguntaLocal.match(/\b(\d{4})[-\/](\d{1,2})\b/)?.[2]?.padStart(2, "0");
+      const chaveMesLocal = anoLocal && mesLocal ? `${anoLocal}-${mesLocal}` : null;
+      const produtosLocal = chaveMesLocal && contextoLocal.produtosPorMes?.[chaveMesLocal];
+      if (Array.isArray(produtosLocal) && produtosLocal.length && /carreta|implemento|produto|modelo/.test(perguntaLocal) && /vendid|vendeu|vendas|quantidade/.test(perguntaLocal)) {
+        const lider = [...produtosLocal].sort((a, b) => Number(b.quantidade || 0) - Number(a.quantidade || 0))[0];
+        const faturamento = Number(lider.faturamento || 0).toLocaleString("pt-BR", { style: "currency", currency: "BRL" });
+        setChatMensagens((atual) => [...atual, { role: "assistant", content: `Com base na base completa tratada, o produto/carreta mais vendido em ${chaveMesLocal} foi **${lider.produto}**, com **${Number(lider.quantidade || 0).toLocaleString("pt-BR")} unidades** e faturamento de **${faturamento}**. A quantidade representa quantidade faturada; a base não comprova produção física.` }]);
+        return;
+      }
+    } catch {
+      // Se o contexto local não puder ser lido, segue para o backend.
+    }
     chatMutation.mutate({ messages: mensagensParaServidor, dashboardContext: contextoParaPergunta }, {
       onSuccess: (resposta) => setChatMensagens((atual) => [...atual, { role: "assistant", content: resposta.content }]),
       onError: () => setChatMensagens((atual) => [...atual, { role: "assistant", content: "Não consegui consultar o assistente agora. Verifique a conexão e tente novamente." }]),
