@@ -1459,6 +1459,23 @@ export default function Home({ onLogout, emailAutenticado, isAdmin = false }: { 
     }, new Map<string, { ano: number; cidade: string; uf: string; regiao: string; faturamento: number; quantidade: number; linhas: number; pedidos: Set<string>; clientes: Set<string> }>()).values())
       .map((item) => ({ ano: item.ano, cidade: item.cidade, uf: item.uf, regiao: item.regiao, faturamento: item.faturamento, quantidade: item.quantidade, linhas: item.linhas, pedidos: item.pedidos.size, clientes: item.clientes.size }))
       .sort((a, b) => a.ano - b.ano || b.faturamento - a.faturamento);
+    const diasDetalhados = Array.from(dados.reduce((mapa, item) => {
+      const data = item.data_emissao instanceof Date ? item.data_emissao : new Date(item.data_emissao);
+      if (Number.isNaN(data.getTime())) return mapa;
+      const dia = data.toISOString().slice(0, 10);
+      const atual = mapa.get(dia) || { dia, faturamento: 0, quantidade: 0, linhas: 0, pedidos: new Set<string>(), clientes: new Set<string>(), regioes: new Map<string, number>() };
+      atual.faturamento += Number(item.faturamento || 0);
+      atual.quantidade += Number(item.quantidade || 0);
+      atual.linhas += 1;
+      if (item.pedido) atual.pedidos.add(item.pedido);
+      if (item.cliente) atual.clientes.add(item.cliente);
+      const regiao = item.regiao || "Não identificado";
+      atual.regioes.set(regiao, (atual.regioes.get(regiao) || 0) + Number(item.faturamento || 0));
+      mapa.set(dia, atual);
+      return mapa;
+    }, new Map<string, { dia: string; faturamento: number; quantidade: number; linhas: number; pedidos: Set<string>; clientes: Set<string>; regioes: Map<string, number> }>()).values())
+      .sort((a, b) => a.dia.localeCompare(b.dia))
+      .map((item) => ({ dia: item.dia, faturamento: item.faturamento, quantidade: item.quantidade, linhas: item.linhas, pedidos: item.pedidos.size, clientes: item.clientes.size, principaisRegioes: Array.from(item.regioes.entries()).sort((a, b) => b[1] - a[1]).slice(0, 3).map(([regiao, faturamento]) => ({ regiao, faturamento })) }));
     return JSON.stringify({
       abaAtual: INFO_ABAS[abaAtiva]?.titulo || abaAtiva,
       periodoBase: periodoBaseTexto,
@@ -1494,6 +1511,7 @@ export default function Home({ onLogout, emailAutenticado, isAdmin = false }: { 
       familiasDetalhadas: rankingDetalhado("familia", dados),
       produtosPorMes: Object.fromEntries(produtosPorMes),
       cidadesPorAno,
+      diasDetalhados,
       resumoSemestralPorCidade,
       resumoSemestralPorFamilia,
     });
@@ -1531,7 +1549,7 @@ export default function Home({ onLogout, emailAutenticado, isAdmin = false }: { 
       } else if (perguntaProduto) {
         blocos = { produtosDetalhados: contexto.produtosDetalhados, resumoTipoProduto: contexto.resumoTipoProduto, resumoMensal: contexto.resumoMensal };
       } else if (perguntaDiaria) {
-        blocos = { resumoDiario: contexto.resumoDiario };
+        blocos = { diasDetalhados: contexto.diasDetalhados, resumoDiario: contexto.resumoDiario };
       } else if (perguntaSemestre) {
         blocos = { resumoSemestralPorRegiao: contexto.resumoSemestralPorRegiao, resumoSemestralPorCidade: contexto.resumoSemestralPorCidade, resumoSemestralPorFamilia: contexto.resumoSemestralPorFamilia };
       } else if (perguntaRegiao) {
@@ -1583,6 +1601,30 @@ export default function Home({ onLogout, emailAutenticado, isAdmin = false }: { 
         const faturamento = Number(lider.faturamento || 0).toLocaleString("pt-BR", { style: "currency", currency: "BRL" });
         setChatMensagens((atual) => [...atual, { role: "assistant", content: `Considerando a base completa do site (${contextoLocal.periodoBase || "período disponível"}), a família líder por faturamento é **${lider.nome}**, com **${faturamento}**, ${Number(lider.quantidade || 0).toLocaleString("pt-BR")} unidades faturadas, ${Number(lider.linhas || 0).toLocaleString("pt-BR")} linhas, ${Number(lider.pedidos || 0).toLocaleString("pt-BR")} pedidos e ${Number(lider.clientes || 0).toLocaleString("pt-BR")} clientes.` }]);
         return;
+      }
+      const pedeFaturamentoDia = /faturamento|vendas|vendeu|quantidade/.test(perguntaLocal) && (/(^|\s)dia\s+\d{1,2}/.test(perguntaLocal) || /\d{1,2}[\/-]\d{1,2}[\/-]\d{2,4}/.test(perguntaLocal) || /\d{4}[\/-]\d{1,2}[\/-]\d{1,2}/.test(perguntaLocal));
+      if (pedeFaturamentoDia && Array.isArray(contextoLocal.diasDetalhados)) {
+        const mesesDia: Record<string, string> = { janeiro: "01", fevereiro: "02", março: "03", marco: "03", abril: "04", maio: "05", junho: "06", julho: "07", agosto: "08", setembro: "09", outubro: "10", novembro: "11", dezembro: "12" };
+        const dataNumerica = perguntaLocal.match(/(\d{1,2})[\/-](\d{1,2})[\/-](\d{2,4})/);
+        const dataIso = perguntaLocal.match(/(20\d{2})[\/-](\d{1,2})[\/-](\d{1,2})/);
+        const dataPorExtenso = perguntaLocal.match(/dia\s+(\d{1,2})\s+de\s+([a-zçã]+)(?:\s+de\s+(20\d{2}))?/i);
+        let chaveDia: string | undefined;
+        if (dataIso) chaveDia = `${dataIso[1]}-${dataIso[2].padStart(2, "0")}-${dataIso[3].padStart(2, "0")}`;
+        else if (dataNumerica) chaveDia = `${dataNumerica[3].length === 2 ? `20${dataNumerica[3]}` : dataNumerica[3]}-${dataNumerica[2].padStart(2, "0")}-${dataNumerica[1].padStart(2, "0")}`;
+        else if (dataPorExtenso && mesesDia[dataPorExtenso[2]]) {
+          const ano = dataPorExtenso[3] || String(new Date().getFullYear());
+          chaveDia = `${ano}-${mesesDia[dataPorExtenso[2]]}-${dataPorExtenso[1].padStart(2, "0")}`;
+        } else {
+          const diaSolto = perguntaLocal.match(/(?:^|\s)dia\s+(\d{1,2})\b/);
+          const dias = diaSolto ? contextoLocal.diasDetalhados.filter((item: any) => item.dia.endsWith(`-${diaSolto[1].padStart(2, "0")}`)) : [];
+          chaveDia = dias.sort((a: any, b: any) => a.dia.localeCompare(b.dia)).at(-1)?.dia;
+        }
+        const registroDia = contextoLocal.diasDetalhados.find((item: any) => item.dia === chaveDia);
+        if (registroDia) {
+          const faturamento = Number(registroDia.faturamento || 0).toLocaleString("pt-BR", { style: "currency", currency: "BRL" });
+          setChatMensagens((atual) => [...atual, { role: "assistant", content: `No dia **${registroDia.dia.split("-").reverse().join("/")}**, o faturamento registrado foi de **${faturamento}**, com **${Number(registroDia.quantidade || 0).toLocaleString("pt-BR")} unidades faturadas**, ${Number(registroDia.linhas || 0).toLocaleString("pt-BR")} linhas, ${Number(registroDia.pedidos || 0).toLocaleString("pt-BR")} pedidos e ${Number(registroDia.clientes || 0).toLocaleString("pt-BR")} clientes. A base registra faturamento, não produção física.` }]);
+          return;
+        }
       }
       const anoCidadeLocal = perguntaLocal.match(/\b(20\d{2})\b/)?.[1];
       const pedeMelhorCidade = /cidade|munic[ií]pio/.test(perguntaLocal) && /melhor|maior|lidera|l[ií]der/.test(perguntaLocal);
