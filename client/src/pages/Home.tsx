@@ -1575,18 +1575,38 @@ export default function Home({ onLogout, emailAutenticado, isAdmin = false }: { 
         blocos.produtosPorMes = contexto.produtosPorMes;
         blocos.carretasDetalhadas = contexto.carretasDetalhadas;
       }
-      contextoParaPergunta = JSON.stringify({ ...base, ...blocos });
-      // Barreira de segurança: nenhum contexto acima de 50 mil caracteres é enviado.
-      if (contextoParaPergunta.length > 50000) {
-        const seguro = { ...base, ...blocos } as Record<string, any>;
-        for (const chave of ["resumoDiario", "resumoMensalPorRegiao", "resumoSemestralPorCidade", "resumoSemestralPorFamilia", "resumoMensal"]) {
+      const compactarContexto = (valor: Record<string, any>) => {
+        const seguro = JSON.parse(JSON.stringify(valor)) as Record<string, any>;
+        const cortarPreferencialmente = ["resumoDiario", "resumoMensalPorRegiao", "resumoSemestralPorCidade", "resumoSemestralPorFamilia", "resumoMensal", "produtosPorMes", "diasDetalhados"];
+        for (const chave of cortarPreferencialmente) {
           if (Array.isArray(seguro[chave])) seguro[chave] = seguro[chave].slice(-24);
+          if (chave === "produtosPorMes" && seguro[chave] && typeof seguro[chave] === "object" && !Array.isArray(seguro[chave])) {
+            const entradas = Object.entries(seguro[chave]).slice(-12);
+            seguro[chave] = Object.fromEntries(entradas);
+          }
         }
         if (Array.isArray(seguro.familiasDetalhadas)) seguro.familiasDetalhadas = seguro.familiasDetalhadas.slice(0, 30);
         if (Array.isArray(seguro.produtosDetalhados)) seguro.produtosDetalhados = seguro.produtosDetalhados.slice(0, 30);
-        contextoParaPergunta = JSON.stringify(seguro);
-      }
-      if (contextoParaPergunta.length > 55000) contextoParaPergunta = JSON.stringify(base);
+        if (Array.isArray(seguro.carretasDetalhadas)) seguro.carretasDetalhadas = seguro.carretasDetalhadas.slice(0, 30);
+        let texto = JSON.stringify(seguro);
+        while (texto.length > 54000) {
+          let maior: any = null;
+          const visitar = (obj: any) => {
+            if (!obj || typeof obj !== "object") return;
+            for (const [chave, item] of Object.entries(obj)) {
+              if (Array.isArray(item) && item.length > 1 && (!maior || item.length > maior.tamanho)) maior = { parent: obj, chave, tamanho: item.length };
+              else if (item && typeof item === "object") visitar(item);
+            }
+          };
+          visitar(seguro);
+          const maiorAtual = maior;
+          if (!maiorAtual) break;
+          maiorAtual.parent[maiorAtual.chave] = (maiorAtual.parent[maiorAtual.chave] as any[]).slice(0, Math.max(1, Math.floor(maiorAtual.tamanho / 2)));
+          texto = JSON.stringify(seguro);
+        }
+        return texto.length <= 54000 ? texto : JSON.stringify(base);
+      };
+      contextoParaPergunta = compactarContexto({ ...base, ...blocos });
     } catch {
       // Mantém o contexto original caso a serialização seja inesperadamente inválida.
     }
@@ -1772,7 +1792,7 @@ export default function Home({ onLogout, emailAutenticado, isAdmin = false }: { 
     <div className={`cemag-dashboard ${temaDashboard === "black" ? "tema-black" : ""} min-h-screen bg-[#f4f4f2] text-[#222222] flex flex-col font-sans`}>
       {!chatAberto && <button type="button" onClick={() => setChatAberto(true)} className="no-print fixed bottom-5 right-5 z-50 inline-flex items-center gap-2 rounded-full bg-orange-600 px-4 py-3 text-sm font-bold text-white shadow-2xl transition hover:bg-orange-500" title="Perguntar ao assistente CEMAG"><MessageCircle className="h-5 w-5" /> <span className="hidden sm:inline">Perguntar ao CEMAG</span></button>}
       {chatAberto && <div className="no-print fixed bottom-5 right-5 z-50 flex w-[min(92vw,420px)] flex-col overflow-hidden rounded-2xl border border-slate-700 bg-slate-950 shadow-2xl">
-        <div className="flex items-center justify-between border-b border-slate-800 bg-slate-900 px-4 py-3"><div><div className="flex items-center gap-2 text-sm font-bold text-white"><MessageCircle className="h-4 w-4 text-orange-400" /> Assistente CEMAG</div><p className="mt-0.5 text-[10px] text-slate-400">Responde com base nos filtros atuais do painel.</p></div><button type="button" onClick={() => setChatAberto(false)} className="rounded p-1 text-slate-400 hover:bg-slate-800 hover:text-white" title="Fechar chat"><X className="h-4 w-4" /></button></div>
+        <div className="flex items-center justify-between border-b border-slate-800 bg-slate-900 px-4 py-3"><div><div className="flex items-center gap-2 text-sm font-bold text-white"><MessageCircle className="h-4 w-4 text-orange-400" /> Assistente CEMAG</div><p className="mt-0.5 text-[10px] text-slate-400">Consulta a base completa; os filtros servem apenas como referência visual.</p></div><button type="button" onClick={() => setChatAberto(false)} className="rounded p-1 text-slate-400 hover:bg-slate-800 hover:text-white" title="Fechar chat"><X className="h-4 w-4" /></button></div>
         <AIChatBox messages={chatMensagens} onSendMessage={enviarMensagemChat} isLoading={chatMutation.isPending} height={"min(68vh, 560px)"} emptyStateMessage="Pergunte sobre faturamento, clientes, produtos, metas ou regiões." suggestedPrompts={sugestoesChat} placeholder="Ex.: qual região mais cresceu?" />
       </div>}
       {/* Top Header CEMAG */}
