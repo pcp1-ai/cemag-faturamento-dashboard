@@ -121,6 +121,14 @@ export async function replaceAnalyticBase(base: InsertCemagAnalyticBase, rows: A
   }
 }
 
+export async function listAnalyticRows(baseVersion: string): Promise<Array<{ rowNumber: number; payload: string }>> {
+  const db = await getDb();
+  if (!db) return [];
+  return db.select({ rowNumber: cemagAnalyticRows.rowNumber, payload: cemagAnalyticRows.payload })
+    .from(cemagAnalyticRows)
+    .where(eq(cemagAnalyticRows.baseVersion, baseVersion));
+}
+
 export async function getExternalSnapshot(cidade: string, uf?: string): Promise<CemagExternalSnapshot | undefined> {
   const db = await getDb();
   if (!db) return undefined;
