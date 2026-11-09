@@ -1,5 +1,6 @@
 import React, { FormEvent, useEffect, useState } from "react";
 import { LockKeyhole, Mail, ShieldCheck, Eye, EyeOff, AlertCircle } from "lucide-react";
+import Papa from "papaparse";
 import { trpc } from "../lib/trpc";
 
 const EMAIL_CEMAG_REGEX = /^[^\s@]+@(cemag|itaueira)\.com\.br$/i;
@@ -27,15 +28,34 @@ export default function Login({ onAuthenticated, mensagemInicial = "" }: LoginPr
     }
   });
   useEffect(() => {
+    let cancelado = false;
+    const salvarPeriodo = (periodo: { anoInicio: number; anoFim: number }) => {
+      if (cancelado) return;
+      const texto = periodo.anoInicio === periodo.anoFim ? String(periodo.anoInicio) : `${periodo.anoInicio}–${periodo.anoFim}`;
+      setPeriodoHistorico(texto);
+      try { localStorage.setItem("cemag_base_periodo", JSON.stringify(periodo)); } catch { /* segue apenas em memória */ }
+    };
+    const carregarFallbackPublico = async () => {
+      try {
+        const resposta = await fetch("/data/tabelaFaturamento.csv");
+        if (!resposta.ok) return;
+        const texto = await resposta.text();
+        const parsed = Papa.parse<Record<string, string>>(texto, { header: true, skipEmptyLines: true });
+        const linhas = parsed.data || [];
+        const primeira = linhas[0] || {};
+        const chaveData = Object.keys(primeira).find((chave) => {
+          const normalizada = chave.toLowerCase().replace(/[áàãâ]/g, "a");
+          return normalizada.includes("bai_movimentac") || normalizada.includes("data_movimentacao") || normalizada.includes("bai_emissao");
+        });
+        if (!chaveData) return;
+        const anos = linhas.map((linha) => String(linha[chaveData] || "").match(/\b(19\d{2}|20\d{2})\b/)?.[1]).filter(Boolean).map(Number);
+        if (anos.length) salvarPeriodo({ anoInicio: Math.min(...anos), anoFim: Math.max(...anos) });
+      } catch { /* mantém o estado salvo ou o texto de indisponibilidade */ }
+    };
     const periodo = periodoQuery.data;
-    if (!periodo?.anoInicio || !periodo.anoFim) return;
-    const texto = periodo.anoInicio === periodo.anoFim ? String(periodo.anoInicio) : `${periodo.anoInicio}–${periodo.anoFim}`;
-    setPeriodoHistorico(texto);
-    try {
-      localStorage.setItem("cemag_base_periodo", JSON.stringify(periodo));
-    } catch {
-      // O cartão continua exibindo o valor recebido do servidor.
-    }
+    if (periodo?.anoInicio && periodo.anoFim) salvarPeriodo(periodo);
+    else void carregarFallbackPublico();
+    return () => { cancelado = true; };
   }, [periodoQuery.data]);
   const [email, setEmail] = useState("");
   const [senha, setSenha] = useState("");
@@ -94,7 +114,7 @@ export default function Login({ onAuthenticated, mensagemInicial = "" }: LoginPr
               <p className="mt-5 max-w-md text-sm leading-6 text-orange-100">Acompanhe faturamento, metas, produtos, clientes, regiões e previsões em um único painel.</p>
             </div>
             <div className="relative grid grid-cols-2 gap-3 text-xs text-orange-50">
-              <div className="rounded-2xl border border-white/25 bg-white/10 p-4 backdrop-blur-sm"><strong className="block text-lg text-white">{periodoHistorico}</strong><span>Histórico disponível</span></div>
+              <div className="rounded-2xl border border-white/25 bg-white/10 p-4 backdrop-blur-sm"><strong className="block text-lg text-white">{periodoHistorico}</strong><span>Período da base</span></div>
               <div className="rounded-2xl border border-white/25 bg-white/10 p-4 backdrop-blur-sm"><strong className="block text-lg text-white">CEMAG</strong><span>Acesso corporativo</span></div>
             </div>
           </section>
