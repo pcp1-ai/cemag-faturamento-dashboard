@@ -201,6 +201,9 @@ async function obterContextoAnaliticoPersistido() {
   const porTipoVenda = new Map<string, { faturamento: number; quantidade: number; linhas: number }>();
   const porCor = new Map<string, { faturamento: number; quantidade: number; linhas: number }>();
   const porAnoCidade = new Map<string, { ano: number; cidade: string; uf: string; regiao: string; faturamento: number; quantidade: number; linhas: number }>();
+  const porSemestreRegiao = new Map<string, { ano: number; semestre: string; regiao: string; faturamento: number; quantidade: number; linhas: number }>();
+  const porAnoRepresentante = new Map<string, { ano: number; representante: string; faturamento: number; quantidade: number; linhas: number }>();
+  const porDia = new Map<string, { dia: string; faturamento: number; quantidade: number; linhas: number }>();
   const porMesProduto = new Map<string, { produto: string; tipo_produto: string; familia: string; cor: string; faturamento: number; quantidade: number; linhas: number }>();
   let totalFaturamento = 0;
   let totalQuantidade = 0;
@@ -227,14 +230,19 @@ async function obterContextoAnaliticoPersistido() {
     const tipoVenda = String(campoAnalitico(linha, ["tipo_venda", "tipo venda", "BAI_CLASSE.NOME"]) || "Não informado").trim();
     const cor = String(campoAnalitico(linha, ["cor", "color"]) || ((tipo === "Carreta" || tipo === "Conjunto") ? "Laranja" : "Não aplicável")).trim();
     totalFaturamento += faturamento; totalQuantidade += quantidade;
-    if (data) { if (!minData || data < minData) minData = data; if (!maxData || data > maxData) maxData = data; const ano = Number(data.slice(0, 4)); const mes = data.slice(0, 7); acumular(mensal, mes, faturamento, quantidade); const chave = `${mes}|${produto}|${tipo}|${cor}`; const atual = porMesProduto.get(chave) || { produto, tipo_produto: tipo, familia, cor, faturamento: 0, quantidade: 0, linhas: 0 }; atual.faturamento += faturamento; atual.quantidade += quantidade; atual.linhas += 1; porMesProduto.set(chave, atual); const chaveCidade = `${ano}|${cidade}`; const cidadeAtual = porAnoCidade.get(chaveCidade) || { ano, cidade, uf, regiao, faturamento: 0, quantidade: 0, linhas: 0 }; cidadeAtual.faturamento += faturamento; cidadeAtual.quantidade += quantidade; cidadeAtual.linhas += 1; porAnoCidade.set(chaveCidade, cidadeAtual); }
+    if (data) { if (!minData || data < minData) minData = data; if (!maxData || data > maxData) maxData = data; const ano = Number(data.slice(0, 4)); const mesNumero = Number(data.slice(5, 7)); const semestre = mesNumero <= 6 ? "1º semestre" : "2º semestre"; const mes = data.slice(0, 7); acumular(mensal, mes, faturamento, quantidade); const chave = `${mes}|${produto}|${tipo}|${cor}`; const atual = porMesProduto.get(chave) || { produto, tipo_produto: tipo, familia, cor, faturamento: 0, quantidade: 0, linhas: 0 }; atual.faturamento += faturamento; atual.quantidade += quantidade; atual.linhas += 1; porMesProduto.set(chave, atual); const chaveCidade = `${ano}|${cidade}`; const cidadeAtual = porAnoCidade.get(chaveCidade) || { ano, cidade, uf, regiao, faturamento: 0, quantidade: 0, linhas: 0 }; cidadeAtual.faturamento += faturamento; cidadeAtual.quantidade += quantidade; cidadeAtual.linhas += 1; porAnoCidade.set(chaveCidade, cidadeAtual); const chaveSemestre = `${ano}|${semestre}|${regiao}`; const semestreAtual = porSemestreRegiao.get(chaveSemestre) || { ano, semestre, regiao, faturamento: 0, quantidade: 0, linhas: 0 }; semestreAtual.faturamento += faturamento; semestreAtual.quantidade += quantidade; semestreAtual.linhas += 1; porSemestreRegiao.set(chaveSemestre, semestreAtual); const chaveRepresentante = `${ano}|${representante}`; const representanteAtual = porAnoRepresentante.get(chaveRepresentante) || { ano, representante, faturamento: 0, quantidade: 0, linhas: 0 }; representanteAtual.faturamento += faturamento; representanteAtual.quantidade += quantidade; representanteAtual.linhas += 1; porAnoRepresentante.set(chaveRepresentante, representanteAtual); const diaAtual = porDia.get(data) || { dia: data, faturamento: 0, quantidade: 0, linhas: 0 }; diaAtual.faturamento += faturamento; diaAtual.quantidade += quantidade; diaAtual.linhas += 1; porDia.set(data, diaAtual); }
     acumular(porProduto, produto, faturamento, quantidade); acumular(porFamilia, familia, faturamento, quantidade); acumular(porRegiao, regiao, faturamento, quantidade); acumular(porCidade, cidade, faturamento, quantidade); acumular(porRepresentante, representante, faturamento, quantidade); acumular(porUf, uf, faturamento, quantidade); acumular(porCliente, cliente, faturamento, quantidade); acumular(porTipoVenda, tipoVenda, faturamento, quantidade); acumular(porCor, cor, faturamento, quantidade);
   }
-  const ranking = (mapa: Map<string, { faturamento: number; quantidade: number; linhas: number }>) => Array.from(mapa, ([nome, item]) => ({ nome, ...item })).sort((a, b) => b.faturamento - a.faturamento).slice(0, 50);
-  const rankingQuantidade = (mapa: Map<string, { faturamento: number; quantidade: number; linhas: number }>) => Array.from(mapa, ([nome, item]) => ({ nome, ...item })).sort((a, b) => b.quantidade - a.quantidade || b.faturamento - a.faturamento).slice(0, 50);
+  const ranking = (mapa: Map<string, { faturamento: number; quantidade: number; linhas: number }>) => Array.from(mapa, ([nome, item]) => ({ nome, ...item })).sort((a, b) => b.faturamento - a.faturamento).slice(0, 20);
+  const rankingQuantidade = (mapa: Map<string, { faturamento: number; quantidade: number; linhas: number }>) => Array.from(mapa, ([nome, item]) => ({ nome, ...item })).sort((a, b) => b.quantidade - a.quantidade || b.faturamento - a.faturamento).slice(0, 20);
   const produtosPorMes = Object.fromEntries(Array.from(porMesProduto.entries()).reduce((mapa, [chave, item]) => { const mes = chave.split("|")[0]; const lista = mapa.get(mes) || []; lista.push(item); mapa.set(mes, lista); return mapa; }, new Map<string, any[]>()).entries().map(([mes, lista]) => [mes, lista.sort((a, b) => b.quantidade - a.quantidade || b.faturamento - a.faturamento).slice(0, 30)]));
   const cidadesPorAno = Array.from(porAnoCidade.values()).sort((a, b) => a.ano - b.ano || b.faturamento - a.faturamento);
-  const contexto = JSON.stringify({ fonte: "base analítica persistida no servidor", arquivo: base.sourceFileName, versao: base.version, periodoBase: `${minData || base.dataInicio || "—"} a ${maxData || base.dataFim || "—"}`, linhas: base.rowCount, totalFaturamento, totalQuantidade, resumoMensal: Array.from(mensal, ([mes, item]) => ({ mes, ...item })).sort((a, b) => a.mes.localeCompare(b.mes)).slice(-60), rankings: { produtos: ranking(porProduto), produtosPorQuantidade: rankingQuantidade(porProduto), familias: ranking(porFamilia), familiasPorQuantidade: rankingQuantidade(porFamilia), regioes: ranking(porRegiao), ufs: ranking(porUf), cidades: ranking(porCidade), representantes: ranking(porRepresentante), clientes: ranking(porCliente), tiposVenda: ranking(porTipoVenda), cores: ranking(porCor) }, cidadesPorAno, produtosPorMes });
+  const resumoSemestralPorRegiao = Array.from(porSemestreRegiao.values()).sort((a, b) => a.ano - b.ano || a.semestre.localeCompare(b.semestre) || b.faturamento - a.faturamento);
+  const representantesPorAno = Array.from(porAnoRepresentante.values()).sort((a, b) => a.ano - b.ano || b.faturamento - a.faturamento);
+  const diasDetalhados = Array.from(porDia.values()).sort((a, b) => a.dia.localeCompare(b.dia));
+  const limitarPorAno = <T extends { ano: number }>(itens: T[], limite = 10) => Array.from(new Map<number, T[]>(Array.from(new Set(itens.map((item) => item.ano))).map((ano) => [ano, itens.filter((item) => item.ano === ano).slice(0, limite)])).values()).flat();
+  const produtosPorMesCompacto = Object.fromEntries(Object.entries(produtosPorMes).slice(-12).map(([mes, lista]) => [mes, (lista as any[]).slice(0, 10)]));
+  const contexto = JSON.stringify({ fonte: "base analítica persistida no servidor", arquivo: base.sourceFileName, versao: base.version, periodoBase: `${minData || base.dataInicio || "—"} a ${maxData || base.dataFim || "—"}`, linhas: base.rowCount, totalFaturamento, totalQuantidade, resumoMensal: Array.from(mensal, ([mes, item]) => ({ mes, ...item })).sort((a, b) => a.mes.localeCompare(b.mes)).slice(-36), rankings: { produtos: ranking(porProduto), produtosPorQuantidade: rankingQuantidade(porProduto), familias: ranking(porFamilia), familiasPorQuantidade: rankingQuantidade(porFamilia), regioes: ranking(porRegiao), ufs: ranking(porUf), cidades: ranking(porCidade), representantes: ranking(porRepresentante), clientes: ranking(porCliente), tiposVenda: ranking(porTipoVenda), cores: ranking(porCor) }, cidadesPorAno: limitarPorAno(cidadesPorAno), representantesPorAno: limitarPorAno(representantesPorAno), resumoSemestralPorRegiao, diasDetalhados: diasDetalhados.slice(-90), produtosPorMes: produtosPorMesCompacto });
   contextoAnaliticoCache = { version: base.version, atualizadoEm: Date.now(), contexto };
   return contexto;
 }
@@ -283,6 +291,30 @@ export const appRouter = router({
         } catch (error) {
           console.warn("[AI] Base analítica persistida indisponível; usando contexto do dashboard:", error);
         }
+        try {
+          const pergunta = String(input.messages.at(-1)?.content || "").toLocaleLowerCase("pt-BR");
+          const analitico = JSON.parse(contextoFonte) as Record<string, any>;
+          const ano = pergunta.match(/\b(20\d{2})\b/)?.[1];
+          const data = pergunta.match(/(\d{1,2})[\/-](\d{1,2})[\/-](20\d{2})/);
+          if (data && Array.isArray(analitico.diasDetalhados)) {
+            const chave = `${data[3]}-${data[2].padStart(2, "0")}-${data[1].padStart(2, "0")}`;
+            const dia = analitico.diasDetalhados.find((item: any) => item.dia === chave);
+            if (dia) return { content: `No dia **${data[1].padStart(2, "0")}/${data[2].padStart(2, "0")}/${data[3]}**, o faturamento registrado foi de **${Number(dia.faturamento || 0).toLocaleString("pt-BR", { style: "currency", currency: "BRL" })}**, com **${Number(dia.quantidade || 0).toLocaleString("pt-BR")} unidades faturadas** e **${Number(dia.linhas || 0).toLocaleString("pt-BR")} linhas**. A base registra faturamento, não produção física.` };
+            return { content: `Não encontrei movimentações registradas em **${data[1].padStart(2, "0")}/${data[2].padStart(2, "0")}/${data[3]}** na base analítica. Portanto, o faturamento e a quantidade faturada registrados para essa data são **R$ 0,00** e **0 unidades**.` };
+          }
+          if (ano && /vendedor|representante|consultor/.test(pergunta) && Array.isArray(analitico.representantesPorAno)) {
+            const lider = analitico.representantesPorAno.filter((item: any) => String(item.ano) === ano).sort((a: any, b: any) => b.faturamento - a.faturamento)[0];
+            if (lider) return { content: `Em **${ano}**, o representante com maior faturamento foi **${lider.representante}**, com **${Number(lider.faturamento || 0).toLocaleString("pt-BR", { style: "currency", currency: "BRL" })}** e **${Number(lider.quantidade || 0).toLocaleString("pt-BR")} unidades faturadas**.` };
+          }
+          if (ano && /nordeste|sudeste|sul|norte|centro-oeste|centrooeste/.test(pergunta) && /semestre/.test(pergunta) && Array.isArray(analitico.resumoSemestralPorRegiao)) {
+            const regiao = /nordeste/.test(pergunta) ? "Nordeste" : /sudeste/.test(pergunta) ? "Sudeste" : /sul/.test(pergunta) ? "Sul" : /norte/.test(pergunta) ? "Norte" : "Centro-Oeste";
+            const semestre = /segundo|2º|2o/.test(pergunta) ? "2º semestre" : "1º semestre";
+            const item = analitico.resumoSemestralPorRegiao.find((linha: any) => String(linha.ano) === ano && linha.regiao === regiao && linha.semestre === semestre);
+            if (item) return { content: `No **${semestre} de ${ano}**, a região **${regiao}** registrou **${Number(item.faturamento || 0).toLocaleString("pt-BR", { style: "currency", currency: "BRL" })}**, com **${Number(item.quantidade || 0).toLocaleString("pt-BR")} unidades faturadas** e **${Number(item.linhas || 0).toLocaleString("pt-BR")} linhas**.` };
+          }
+        } catch (error) {
+          console.warn("[AI] Resposta determinística indisponível; seguindo para o modelo:", error);
+        }
         const response = await invokeLLM({
           messages: [
             {
@@ -300,6 +332,7 @@ export const appRouter = router({
                 "Para perguntas sobre primeiro ou segundo semestre, procure resumoSemestralPorRegiao. Se o ano não for informado e houver mais de um ano, mostre os anos disponíveis ou peça a confirmação do ano.",
                 "Para perguntas sobre a melhor cidade ou município, procure rankings.cidades; para um semestre específico, procure resumoSemestralPorCidade.",
                 "Para perguntas como melhor cidade em um ano específico, procure cidadesPorAno, filtre pelo ano pedido e ordene por faturamento decrescente. Nunca diga que falta detalhamento se esse índice estiver presente.",
+                "Para região em semestre, use resumoSemestralPorRegiao filtrando ano, 1º/2º semestre e região. Para vendedor/representante em um ano, use representantesPorAno. Para uma data específica, use diasDetalhados e procure a data exata; não limite a consulta aos últimos 365 dias.",
                 "Para família em um semestre, procure resumoSemestralPorFamilia; para uma carreta em um semestre, use produtosDetalhados somente se o contexto indicar o período filtrado, e deixe claro quando o ranking for acumulado.",
                 "Quando o usuário disser mais vendido, venda maior ou maior quantidade, use quantidade como métrica principal, especialmente rankings.produtosPorQuantidade e produtosPorMes. Em uma pergunta mensal, filtre primeiro o mês pedido e, se disser carreta, considere somente tipo_produto Carreta; responda primeiro o líder e informe que a quantidade é faturada.",
                 "Se a pergunta não puder ser respondida com esses dados, diga claramente que não há informação suficiente e sugira qual filtro ou relatório consultar.",
