@@ -1297,6 +1297,29 @@ export default function Home({ onLogout, emailAutenticado, isAdmin = false }: { 
 
   const contextoChat = useMemo(() => {
     const somar = (campo: "faturamento" | "quantidade") => dadosFiltrados.reduce((total, item) => total + Number(item[campo] || 0), 0);
+    const resumoMensal = Array.from(dadosFiltrados.reduce((mapa, item) => {
+      const chave = item.ano_mes || `${item.ano}-${String(item.mes_num).padStart(2, "0")}`;
+      const atual = mapa.get(chave) || { mes: chave, faturamento: 0, quantidade: 0, linhas: 0, pedidos: new Set<string>(), clientes: new Set<string>() };
+      atual.faturamento += Number(item.faturamento || 0);
+      atual.quantidade += Number(item.quantidade || 0);
+      atual.linhas += 1;
+      if (item.pedido) atual.pedidos.add(item.pedido);
+      if (item.cliente) atual.clientes.add(item.cliente);
+      mapa.set(chave, atual);
+      return mapa;
+    }, new Map<string, { mes: string; faturamento: number; quantidade: number; linhas: number; pedidos: Set<string>; clientes: Set<string> }>()).values())
+      .sort((a, b) => a.mes.localeCompare(b.mes))
+      .slice(-48)
+      .map((item) => ({ mes: item.mes, faturamento: item.faturamento, quantidade: item.quantidade, linhas: item.linhas, pedidos: item.pedidos.size, clientes: item.clientes.size }));
+    const resumoTipoProduto = Array.from(dadosFiltrados.reduce((mapa, item) => {
+      const chave = item.tipo_produto || "Outros";
+      const atual = mapa.get(chave) || { tipo: chave, faturamento: 0, quantidade: 0, linhas: 0 };
+      atual.faturamento += Number(item.faturamento || 0);
+      atual.quantidade += Number(item.quantidade || 0);
+      atual.linhas += 1;
+      mapa.set(chave, atual);
+      return mapa;
+    }, new Map<string, { tipo: string; faturamento: number; quantidade: number; linhas: number }>()).values()).sort((a, b) => b.quantidade - a.quantidade);
     const ranking = (campo: "cliente" | "produto" | "representante" | "regiao") => {
       const mapa = new Map<string, number>();
       dadosFiltrados.forEach((item) => mapa.set(String(item[campo] || "Não informado"), (mapa.get(String(item[campo] || "Não informado")) || 0) + Number(item.faturamento || 0)));
@@ -1313,6 +1336,9 @@ export default function Home({ onLogout, emailAutenticado, isAdmin = false }: { 
       pedidosUnicos: new Set(dadosFiltrados.map((item) => item.pedido)).size,
       clientesUnicos: new Set(dadosFiltrados.map((item) => item.cliente)).size,
       filtros: { formasVenda: formasVendaTexto, familiasExcluidas: familiasExcluidasTexto, tiposProduto: filtros.tiposProduto },
+      observacaoDados: "A quantidade representa o campo quantidade das linhas faturadas. A base não comprova produção física; use 'faturamento' ou 'quantidade faturada' quando responder.",
+      resumoMensal,
+      resumoTipoProduto,
       rankings: { clientes: ranking("cliente"), produtos: ranking("produto"), representantes: ranking("representante"), regioes: ranking("regiao") },
     });
   }, [abaAtiva, dadosFiltrados, familiasExcluidasTexto, formasVendaTexto, filtros.tiposProduto, periodoBaseTexto, periodoEfetivo, periodoFiltroTexto]);
