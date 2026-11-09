@@ -1654,7 +1654,7 @@ export default function Home({ onLogout, emailAutenticado, isAdmin = false }: { 
     const sugestoes = [
       `Qual é a melhor cidade por faturamento${periodo}?`,
       `Quais ${tipo.toLocaleLowerCase("pt-BR")} ou modelos foram mais vendidos${periodo}?`,
-      `Qual família de produtos lidera${periodo}?`,
+      "Qual família de produtos lidera no período completo da base?",
       "Quais vendedores mais contribuíram para o resultado?",
     ];
     if (abaAtiva === "metas") sugestoes.unshift("A meta do período foi atingida?");
@@ -1676,7 +1676,7 @@ export default function Home({ onLogout, emailAutenticado, isAdmin = false }: { 
     <div className={`cemag-dashboard ${temaDashboard === "black" ? "tema-black" : ""} min-h-screen bg-[#f4f4f2] text-[#222222] flex flex-col font-sans`}>
       {!chatAberto && <button type="button" onClick={() => setChatAberto(true)} className="no-print fixed bottom-5 right-5 z-50 inline-flex items-center gap-2 rounded-full bg-orange-600 px-4 py-3 text-sm font-bold text-white shadow-2xl transition hover:bg-orange-500" title="Perguntar ao assistente CEMAG"><MessageCircle className="h-5 w-5" /> <span className="hidden sm:inline">Perguntar ao CEMAG</span></button>}
       {chatAberto && <div className="no-print fixed bottom-5 right-5 z-50 flex w-[min(92vw,420px)] flex-col overflow-hidden rounded-2xl border border-slate-700 bg-slate-950 shadow-2xl">
-        <div className="flex items-center justify-between border-b border-slate-800 bg-slate-900 px-4 py-3"><div><div className="flex items-center gap-2 text-sm font-bold text-white"><MessageCircle className="h-4 w-4 text-orange-400" /> Assistente CEMAG</div><p className="mt-0.5 text-[10px] text-slate-400">Responde com base nos filtros atuais do painel.</p></div><button type="button" onClick={() => setChatAberto(false)} className="rounded p-1 text-slate-400 hover:bg-slate-800 hover:text-white" title="Fechar chat"><X className="h-4 w-4" /></button></div>
+        <div className="flex items-center justify-between border-b border-slate-800 bg-slate-900 px-4 py-3"><div><div className="flex items-center gap-2 text-sm font-bold text-white"><MessageCircle className="h-4 w-4 text-orange-400" /> Assistente CEMAG</div><p className="mt-0.5 text-[10px] text-slate-400">Responde com base na base completa, independentemente dos filtros visuais.</p></div><button type="button" onClick={() => setChatAberto(false)} className="rounded p-1 text-slate-400 hover:bg-slate-800 hover:text-white" title="Fechar chat"><X className="h-4 w-4" /></button></div>
         <AIChatBox messages={chatMensagens} onSendMessage={enviarMensagemChat} isLoading={chatMutation.isPending} height={"min(68vh, 560px)"} emptyStateMessage="Pergunte sobre faturamento, clientes, produtos, metas ou regiões." suggestedPrompts={sugestoesChat} placeholder="Ex.: qual região mais cresceu?" />
       </div>}
       {/* Top Header CEMAG */}
