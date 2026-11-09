@@ -1424,7 +1424,23 @@ export default function Home({ onLogout, emailAutenticado, isAdmin = false }: { 
     const novasMensagens: Message[] = [...chatMensagens, { role: "user", content }];
     setChatMensagens(novasMensagens);
     const mensagensParaServidor = novasMensagens.filter((item): item is { role: "user" | "assistant"; content: string } => item.role !== "system");
-    chatMutation.mutate({ messages: mensagensParaServidor, dashboardContext: contextoChat }, {
+    let contextoParaPergunta = contextoChat;
+    try {
+      const contexto = JSON.parse(contextoChat) as Record<string, unknown>;
+      const pergunta = content.toLocaleLowerCase("pt-BR");
+      const perguntaDiaria = /\bdia\b|diári|diario|\d{1,2}[\/-]\d{1,2}[\/-]\d{2,4}|\d{4}[\/-]\d{1,2}[\/-]\d{1,2}/i.test(pergunta);
+      // O resumo diário é pesado e só é necessário quando a pergunta pede um dia/data.
+      if (!perguntaDiaria) delete contexto.resumoDiario;
+      // Para semestres, o resumo semestral é a fonte principal; não precisamos carregar cruzamentos diários.
+      if (/semestre|semestral/i.test(pergunta)) {
+        delete contexto.resumoMensal;
+        delete contexto.resumoMensalPorRegiao;
+      }
+      contextoParaPergunta = JSON.stringify(contexto);
+    } catch {
+      // Mantém o contexto original caso a serialização seja inesperadamente inválida.
+    }
+    chatMutation.mutate({ messages: mensagensParaServidor, dashboardContext: contextoParaPergunta }, {
       onSuccess: (resposta) => setChatMensagens((atual) => [...atual, { role: "assistant", content: resposta.content }]),
       onError: () => setChatMensagens((atual) => [...atual, { role: "assistant", content: "Não consegui consultar o assistente agora. Verifique a conexão e tente novamente." }]),
     });
