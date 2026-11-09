@@ -1305,8 +1305,12 @@ export default function Home({ onLogout, emailAutenticado, isAdmin = false }: { 
   }, [dadosFiltrados]);
 
   const contextoChat = useMemo(() => {
-    const somar = (campo: "faturamento" | "quantidade") => dadosFiltrados.reduce((total, item) => total + Number(item[campo] || 0), 0);
-    const resumoMensal = Array.from(dadosFiltrados.reduce((mapa, item) => {
+    // O chat é uma camada analítica independente dos filtros visuais. Assim,
+    // uma pergunta sobre outubro, por exemplo, não fica limitada ao tipo de
+    // produto ou ao período atualmente selecionado na lateral.
+    const dadosChat = dados;
+    const somar = (campo: "faturamento" | "quantidade") => dadosChat.reduce((total, item) => total + Number(item[campo] || 0), 0);
+    const resumoMensal = Array.from(dadosChat.reduce((mapa, item) => {
       const chave = item.ano_mes || `${item.ano}-${String(item.mes_num).padStart(2, "0")}`;
       const atual = mapa.get(chave) || { mes: chave, faturamento: 0, quantidade: 0, linhas: 0, pedidos: new Set<string>(), clientes: new Set<string>() };
       atual.faturamento += Number(item.faturamento || 0);
@@ -1320,7 +1324,7 @@ export default function Home({ onLogout, emailAutenticado, isAdmin = false }: { 
       .sort((a, b) => a.mes.localeCompare(b.mes))
       .slice(-48)
       .map((item) => ({ mes: item.mes, faturamento: item.faturamento, quantidade: item.quantidade, linhas: item.linhas, pedidos: item.pedidos.size, clientes: item.clientes.size }));
-    const resumoTipoProduto = Array.from(dadosFiltrados.reduce((mapa, item) => {
+    const resumoTipoProduto = Array.from(dadosChat.reduce((mapa, item) => {
       const chave = item.tipo_produto || "Outros";
       const atual = mapa.get(chave) || { tipo: chave, faturamento: 0, quantidade: 0, linhas: 0 };
       atual.faturamento += Number(item.faturamento || 0);
@@ -1329,7 +1333,7 @@ export default function Home({ onLogout, emailAutenticado, isAdmin = false }: { 
       mapa.set(chave, atual);
       return mapa;
     }, new Map<string, { tipo: string; faturamento: number; quantidade: number; linhas: number }>()).values()).sort((a, b) => b.quantidade - a.quantidade);
-    const resumoMensalPorRegiao = Array.from(dadosFiltrados.reduce((mapa, item) => {
+    const resumoMensalPorRegiao = Array.from(dadosChat.reduce((mapa, item) => {
       const mes = item.ano_mes || `${item.ano}-${String(item.mes_num).padStart(2, "0")}`;
       const regiao = item.regiao || "Não identificado";
       const chave = `${mes}|${regiao}`;
@@ -1342,7 +1346,7 @@ export default function Home({ onLogout, emailAutenticado, isAdmin = false }: { 
     }, new Map<string, { mes: string; regiao: string; faturamento: number; quantidade: number; linhas: number }>()).values())
       .sort((a, b) => a.mes.localeCompare(b.mes) || b.faturamento - a.faturamento)
       .filter((item, index, lista) => index >= Math.max(0, lista.length - 144));
-    const resumoDiario = Array.from(dadosFiltrados.reduce((mapa, item) => {
+    const resumoDiario = Array.from(dadosChat.reduce((mapa, item) => {
       const data = item.data_emissao instanceof Date ? item.data_emissao : new Date(item.data_emissao);
       if (Number.isNaN(data.getTime())) return mapa;
       const dia = data.toISOString().slice(0, 10);
@@ -1368,7 +1372,7 @@ export default function Home({ onLogout, emailAutenticado, isAdmin = false }: { 
         clientes: item.clientes.size,
         principaisRegioes: Array.from(item.regioes.entries()).sort((a, b) => b[1] - a[1]).slice(0, 3).map(([regiao, faturamento]) => ({ regiao, faturamento })),
       }));
-    const resumoSemestralPorRegiao = Array.from(dadosFiltrados.reduce((mapa, item) => {
+    const resumoSemestralPorRegiao = Array.from(dadosChat.reduce((mapa, item) => {
       const ano = item.ano;
       const semestre = Number(item.mes_num) <= 6 ? "1º semestre" : "2º semestre";
       const regiao = item.regiao || "Não identificado";
@@ -1381,7 +1385,7 @@ export default function Home({ onLogout, emailAutenticado, isAdmin = false }: { 
       return mapa;
     }, new Map<string, { ano: number; semestre: string; regiao: string; faturamento: number; quantidade: number; linhas: number }>()).values())
       .sort((a, b) => a.ano - b.ano || a.semestre.localeCompare(b.semestre) || b.faturamento - a.faturamento);
-    const resumoSemestralPorCidade = Array.from(dadosFiltrados.reduce((mapa, item) => {
+    const resumoSemestralPorCidade = Array.from(dadosChat.reduce((mapa, item) => {
       const ano = item.ano;
       const semestre = Number(item.mes_num) <= 6 ? "1º semestre" : "2º semestre";
       const cidade = item.cidade || "Não identificado";
@@ -1394,7 +1398,7 @@ export default function Home({ onLogout, emailAutenticado, isAdmin = false }: { 
       return mapa;
     }, new Map<string, { ano: number; semestre: string; cidade: string; uf: string; regiao: string; faturamento: number; quantidade: number; linhas: number }>()).values())
       .sort((a, b) => a.ano - b.ano || a.semestre.localeCompare(b.semestre) || b.faturamento - a.faturamento);
-    const resumoSemestralPorFamilia = Array.from(dadosFiltrados.reduce((mapa, item) => {
+    const resumoSemestralPorFamilia = Array.from(dadosChat.reduce((mapa, item) => {
       const ano = item.ano;
       const semestre = Number(item.mes_num) <= 6 ? "1º semestre" : "2º semestre";
       const familia = item.familia || "Não identificada";
@@ -1409,12 +1413,12 @@ export default function Home({ onLogout, emailAutenticado, isAdmin = false }: { 
       .sort((a, b) => a.ano - b.ano || a.semestre.localeCompare(b.semestre) || b.faturamento - a.faturamento);
     const ranking = (campo: "cliente" | "produto" | "representante" | "regiao" | "cidade") => {
       const mapa = new Map<string, number>();
-      dadosFiltrados.forEach((item) => mapa.set(String(item[campo] || "Não informado"), (mapa.get(String(item[campo] || "Não informado")) || 0) + Number(item.faturamento || 0)));
+      dadosChat.forEach((item) => mapa.set(String(item[campo] || "Não informado"), (mapa.get(String(item[campo] || "Não informado")) || 0) + Number(item.faturamento || 0)));
       return Array.from(mapa.entries()).sort((a, b) => b[1] - a[1]).slice(0, 8).map(([nome, faturamento]) => ({ nome, faturamento }));
     };
     const rankingDetalhado = (campo: "produto" | "familia") => {
       const mapa = new Map<string, { faturamento: number; quantidade: number; linhas: number; pedidos: Set<string>; clientes: Set<string> }>();
-      dadosFiltrados.forEach((item) => {
+      dadosChat.forEach((item) => {
         const nome = String(item[campo] || "Não informado");
         const atual = mapa.get(nome) || { faturamento: 0, quantidade: 0, linhas: 0, pedidos: new Set<string>(), clientes: new Set<string>() };
         atual.faturamento += Number(item.faturamento || 0);
@@ -1426,17 +1430,35 @@ export default function Home({ onLogout, emailAutenticado, isAdmin = false }: { 
       });
       return Array.from(mapa.entries()).map(([nome, item]) => ({ nome, faturamento: item.faturamento, quantidade: item.quantidade, linhas: item.linhas, pedidos: item.pedidos.size, clientes: item.clientes.size })).sort((a, b) => b.faturamento - a.faturamento).slice(0, 50);
     };
+    const produtosPorMes = Array.from(dadosChat.reduce((mapa, item) => {
+      const mes = item.ano_mes || `${item.ano}-${String(item.mes_num).padStart(2, "0")}`;
+      const produto = String(item.produto || "Não informado");
+      const chave = `${mes}|${produto}`;
+      const atual = mapa.get(chave) || { mes, produto, faturamento: 0, quantidade: 0, linhas: 0 };
+      atual.faturamento += Number(item.faturamento || 0);
+      atual.quantidade += Number(item.quantidade || 0);
+      atual.linhas += 1;
+      mapa.set(chave, atual);
+      return mapa;
+    }, new Map<string, { mes: string; produto: string; faturamento: number; quantidade: number; linhas: number }>()).values())
+      .sort((a, b) => a.mes.localeCompare(b.mes) || b.quantidade - a.quantidade || b.faturamento - a.faturamento)
+      .reduce((mapa, item) => {
+        const lista = mapa.get(item.mes) || [];
+        if (lista.length < 10) lista.push(item);
+        mapa.set(item.mes, lista);
+        return mapa;
+      }, new Map<string, Array<{ mes: string; produto: string; faturamento: number; quantidade: number; linhas: number }>>());
+
     return JSON.stringify({
       abaAtual: INFO_ABAS[abaAtiva]?.titulo || abaAtiva,
       periodoBase: periodoBaseTexto,
-      periodoFiltro: periodoFiltroTexto,
-      periodoEfetivo,
-      linhasFiltradas: dadosFiltrados.length,
+      periodoConsulta: "Base completa; filtros visuais não são aplicados ao Assistente CEMAG.",
+      linhasBase: dadosChat.length,
       faturamento: somar("faturamento"),
       quantidade: somar("quantidade"),
-      pedidosUnicos: new Set(dadosFiltrados.map((item) => item.pedido)).size,
-      clientesUnicos: new Set(dadosFiltrados.map((item) => item.cliente)).size,
-      filtros: { formasVenda: formasVendaTexto, familiasExcluidas: familiasExcluidasTexto, tiposProduto: filtros.tiposProduto },
+      pedidosUnicos: new Set(dadosChat.map((item) => item.pedido)).size,
+      clientesUnicos: new Set(dadosChat.map((item) => item.cliente)).size,
+      filtros: { status: "Ignorados pelo chat", observacao: "Os filtros permanecem ativos apenas nos gráficos, tabelas e indicadores visuais." },
       observacaoDados: "A quantidade representa o campo quantidade das linhas faturadas. A base não comprova produção física; use 'faturamento' ou 'quantidade faturada' quando responder.",
       glossario: {
         vendedor: "representante",
@@ -1461,8 +1483,9 @@ export default function Home({ onLogout, emailAutenticado, isAdmin = false }: { 
       familiasDetalhadas: rankingDetalhado("familia"),
       resumoSemestralPorCidade,
       resumoSemestralPorFamilia,
+      produtosPorMes: Object.fromEntries(produtosPorMes),
     });
-  }, [abaAtiva, dadosFiltrados, familiasExcluidasTexto, formasVendaTexto, filtros.tiposProduto, periodoBaseTexto, periodoEfetivo, periodoFiltroTexto]);
+  }, [abaAtiva, dados, periodoBaseTexto]);
 
   const enviarMensagemChat = (content: string) => {
     const novasMensagens: Message[] = [...chatMensagens, { role: "user", content }];
@@ -1478,6 +1501,21 @@ export default function Home({ onLogout, emailAutenticado, isAdmin = false }: { 
       // Para semestres, o resumo semestral é a fonte principal; não precisamos carregar cruzamentos diários.
       if (/semestre|semestral/i.test(pergunta)) {
         delete contexto.resumoMensal;
+        delete contexto.resumoMensalPorRegiao;
+      }
+      // Perguntas de produto/modelo precisam do cruzamento mensal, mas não
+      // precisam carregar os blocos geográficos e diários mais pesados.
+      if (/carreta|implemento|produto|modelo|família|familia/i.test(pergunta)) {
+        delete contexto.resumoDiario;
+        delete contexto.resumoSemestralPorCidade;
+      }
+      // Mantém o limite do contrato tRPC mesmo quando a base central cresce.
+      // Os agregados principais continuam sendo calculados sobre a base toda;
+      // removemos apenas detalhes auxiliares que não respondem à pergunta.
+      if (JSON.stringify(contexto).length > 58000) {
+        delete contexto.resumoDiario;
+        delete contexto.resumoSemestralPorCidade;
+        delete contexto.resumoSemestralPorFamilia;
         delete contexto.resumoMensalPorRegiao;
       }
       contextoParaPergunta = JSON.stringify(contexto);
