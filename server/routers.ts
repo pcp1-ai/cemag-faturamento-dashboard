@@ -8,6 +8,7 @@ import { adminProcedure, protectedProcedure, publicProcedure, router } from "./_
 import { storagePut } from "./storage";
 import { storageGetSignedUrl } from "./storage";
 import { obterFatoresExternos } from "./externalFactors";
+import { invokeLLM } from "./_core/llm";
 import * as XLSX from "xlsx";
 import { existsSync } from "node:fs";
 import { readFile } from "node:fs/promises";
@@ -71,6 +72,11 @@ const sharedFileInput = z.object({
   contentBase64: z.string().min(1),
 });
 
+const chatMessageInput = z.object({
+  role: z.enum(["user", "assistant"]),
+  content: z.string().trim().min(1).max(4000),
+});
+
 function safeFileName(name: string) {
   return name.replace(/[^a-zA-Z0-9._-]+/g, "_").slice(-180) || "arquivo.csv";
 }
@@ -104,6 +110,36 @@ export const appRouter = router({
       ctx.res.clearCookie(COOKIE_NAME, { ...cookieOptions, maxAge: -1 });
       return { success: true } as const;
     }),
+  }),
+  ai: router({
+    chat: protectedProcedure
+      .input(z.object({
+        messages: z.array(chatMessageInput).min(1).max(16),
+        dashboardContext: z.string().trim().min(1).max(24000),
+      }))
+      .mutation(async ({ input }) => {
+        const response = await invokeLLM({
+          messages: [
+            {
+              role: "system",
+              content: [
+                "Você é o assistente de inteligência comercial da CEMAG.",
+                "Responda em português do Brasil, de forma objetiva e acionável.",
+                "Use exclusivamente os dados do contexto enviado pelo dashboard.",
+                "Se a pergunta não puder ser respondida com esses dados, diga claramente que não há informação suficiente e sugira qual filtro ou relatório consultar.",
+                "Nunca invente valores, causas, clientes ou previsões. Diferencie fato observado de interpretação.",
+                "Quando citar valores, use formato brasileiro e explique o filtro/período considerado.",
+                `CONTEXTO ATUAL DO DASHBOARD:\n${input.dashboardContext}`,
+              ].join("\n\n"),
+            },
+            ...input.messages,
+          ],
+          maxTokens: 700,
+        });
+        const content = response.choices[0]?.message?.content;
+        if (typeof content !== "string") throw new Error("A resposta do assistente não veio em formato de texto.");
+        return { content };
+      }),
   }),
   cemag: router({
     fatoresExternos: protectedProcedure

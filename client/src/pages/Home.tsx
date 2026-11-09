@@ -39,6 +39,7 @@ import { MetricCards } from "../components/MetricCards";
 import { SidebarFilters, FiltrosState } from "../components/SidebarFilters";
 import { MapBrasil } from "../components/MapBrasil";
 import { MapMunicipios } from "../components/MapMunicipios";
+import { AIChatBox, type Message } from "../components/AIChatBox";
 import { trpc } from "../lib/trpc";
 import { calcularMetricaComparativo, calcularVariacaoComparativo, gerarComparativoAnual, MetricaComparativoAnual } from "../lib/comparativoAnual";
 import {
@@ -57,6 +58,8 @@ import {
   Tv,
   LogOut,
   Printer,
+  MessageCircle,
+  X,
 } from "lucide-react";
 import {
   ResponsiveContainer,
@@ -298,6 +301,9 @@ export default function Home({ onLogout, emailAutenticado, isAdmin = false }: { 
     return window.localStorage.getItem("cemag_sidebar_oculta") === "true";
   });
   const [visualizacaoExpandida, setVisualizacaoExpandida] = useState<boolean>(false);
+  const [chatAberto, setChatAberto] = useState(false);
+  const [chatMensagens, setChatMensagens] = useState<Message[]>([]);
+  const chatMutation = trpc.ai.chat.useMutation();
 
   const navegarParaAba = (id: string) => {
     setAbaAtiva(id);
@@ -1289,6 +1295,38 @@ export default function Home({ onLogout, emailAutenticado, isAdmin = false }: { 
     return `${formatarDataResumo(datas[0])} a ${formatarDataResumo(datas[datas.length - 1])}`;
   }, [dadosFiltrados]);
 
+  const contextoChat = useMemo(() => {
+    const somar = (campo: "faturamento" | "quantidade") => dadosFiltrados.reduce((total, item) => total + Number(item[campo] || 0), 0);
+    const ranking = (campo: "cliente" | "produto" | "representante" | "regiao") => {
+      const mapa = new Map<string, number>();
+      dadosFiltrados.forEach((item) => mapa.set(String(item[campo] || "Não informado"), (mapa.get(String(item[campo] || "Não informado")) || 0) + Number(item.faturamento || 0)));
+      return Array.from(mapa.entries()).sort((a, b) => b[1] - a[1]).slice(0, 8).map(([nome, faturamento]) => ({ nome, faturamento }));
+    };
+    return JSON.stringify({
+      abaAtual: INFO_ABAS[abaAtiva]?.titulo || abaAtiva,
+      periodoBase: periodoBaseTexto,
+      periodoFiltro: periodoFiltroTexto,
+      periodoEfetivo,
+      linhasFiltradas: dadosFiltrados.length,
+      faturamento: somar("faturamento"),
+      quantidade: somar("quantidade"),
+      pedidosUnicos: new Set(dadosFiltrados.map((item) => item.pedido)).size,
+      clientesUnicos: new Set(dadosFiltrados.map((item) => item.cliente)).size,
+      filtros: { formasVenda: formasVendaTexto, familiasExcluidas: familiasExcluidasTexto, tiposProduto: filtros.tiposProduto },
+      rankings: { clientes: ranking("cliente"), produtos: ranking("produto"), representantes: ranking("representante"), regioes: ranking("regiao") },
+    });
+  }, [abaAtiva, dadosFiltrados, familiasExcluidasTexto, formasVendaTexto, filtros.tiposProduto, periodoBaseTexto, periodoEfetivo, periodoFiltroTexto]);
+
+  const enviarMensagemChat = (content: string) => {
+    const novasMensagens: Message[] = [...chatMensagens, { role: "user", content }];
+    setChatMensagens(novasMensagens);
+    const mensagensParaServidor = novasMensagens.filter((item): item is { role: "user" | "assistant"; content: string } => item.role !== "system");
+    chatMutation.mutate({ messages: mensagensParaServidor, dashboardContext: contextoChat }, {
+      onSuccess: (resposta) => setChatMensagens((atual) => [...atual, { role: "assistant", content: resposta.content }]),
+      onError: () => setChatMensagens((atual) => [...atual, { role: "assistant", content: "Não consegui consultar o assistente agora. Verifique a conexão e tente novamente." }]),
+    });
+  };
+
   // Resumo rápido para decisões: usa o último mês disponível no filtro e compara
   // automaticamente com o mesmo mês do ano anterior.
   const painelAgora = useMemo(() => {
@@ -1372,6 +1410,11 @@ export default function Home({ onLogout, emailAutenticado, isAdmin = false }: { 
 
   return (
     <div className={`cemag-dashboard ${temaDashboard === "black" ? "tema-black" : ""} min-h-screen bg-[#f4f4f2] text-[#222222] flex flex-col font-sans`}>
+      {!chatAberto && <button type="button" onClick={() => setChatAberto(true)} className="no-print fixed bottom-5 right-5 z-50 inline-flex items-center gap-2 rounded-full bg-orange-600 px-4 py-3 text-sm font-bold text-white shadow-2xl transition hover:bg-orange-500" title="Perguntar ao assistente CEMAG"><MessageCircle className="h-5 w-5" /> <span className="hidden sm:inline">Perguntar ao CEMAG</span></button>}
+      {chatAberto && <div className="no-print fixed bottom-5 right-5 z-50 flex w-[min(92vw,420px)] flex-col overflow-hidden rounded-2xl border border-slate-700 bg-slate-950 shadow-2xl">
+        <div className="flex items-center justify-between border-b border-slate-800 bg-slate-900 px-4 py-3"><div><div className="flex items-center gap-2 text-sm font-bold text-white"><MessageCircle className="h-4 w-4 text-orange-400" /> Assistente CEMAG</div><p className="mt-0.5 text-[10px] text-slate-400">Responde com base nos filtros atuais do painel.</p></div><button type="button" onClick={() => setChatAberto(false)} className="rounded p-1 text-slate-400 hover:bg-slate-800 hover:text-white" title="Fechar chat"><X className="h-4 w-4" /></button></div>
+        <AIChatBox messages={chatMensagens} onSendMessage={enviarMensagemChat} isLoading={chatMutation.isPending} height={"min(68vh, 560px)"} emptyStateMessage="Pergunte sobre faturamento, clientes, produtos, metas ou regiões." suggestedPrompts={["Qual é o faturamento do filtro atual?", "Quais clientes lideram o resultado?", "O que mais contribuiu para este resultado?", "Compare os principais produtos."]} placeholder="Ex.: qual região mais cresceu?" />
+      </div>}
       {/* Top Header CEMAG */}
       <header className="bg-[#111827] border-b border-slate-800 px-4 py-3 sticky top-0 z-30 shadow-md">
         <div className="max-w-[1700px] mx-auto flex items-center justify-between gap-4">
