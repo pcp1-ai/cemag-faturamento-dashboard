@@ -115,7 +115,7 @@ export const appRouter = router({
     chat: protectedProcedure
       .input(z.object({
         messages: z.array(chatMessageInput).min(1).max(16),
-        dashboardContext: z.string().trim().min(1).max(24000),
+        dashboardContext: z.string().trim().min(1).max(60000),
       }))
       .mutation(async ({ input }) => {
         const response = await invokeLLM({
@@ -129,7 +129,8 @@ export const appRouter = router({
                 "Interprete sinônimos da equipe: vendedor, vendedores, consultor e comercial significam o campo representante; comprador significa cliente; vendido significa faturamento registrado; cidade significa município. Preserve os nomes reais quando apresentar os resultados.",
                 "Carreta e implemento podem ser usados pelo usuário para falar do tipo de produto, mas confirme no campo tipo_produto e não misture Carreta com Conjunto, Peça ou Sucata.",
                 "Para perguntas que combinem dimensão e período, como região + mês, procure primeiro as tabelas de cruzamento mensal fornecidas no contexto antes de dizer que não há informação.",
-                "Para perguntas sobre um dia específico, procure a tabela resumoDiario e explique faturamento, quantidade, pedidos, clientes e regiões daquele dia. Se a data não estiver na tabela, informe que o detalhamento diário enviado cobre somente os 730 dias mais recentes.",
+                "Para perguntas sobre um dia específico, procure a tabela resumoDiario e explique faturamento, quantidade, pedidos, clientes e regiões daquele dia. Se a data não estiver na tabela, informe que o detalhamento diário enviado cobre somente os 365 dias mais recentes.",
+                "Para perguntas sobre primeiro ou segundo semestre, procure resumoSemestralPorRegiao. Se o ano não for informado e houver mais de um ano, mostre os anos disponíveis ou peça a confirmação do ano.",
                 "Se a pergunta não puder ser respondida com esses dados, diga claramente que não há informação suficiente e sugira qual filtro ou relatório consultar.",
                 "Nunca invente valores, causas, clientes ou previsões. Diferencie fato observado de interpretação.",
                 "Quando citar valores, use formato brasileiro e explique o filtro/período considerado.",

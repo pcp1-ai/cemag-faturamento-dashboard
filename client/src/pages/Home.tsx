@@ -1349,7 +1349,7 @@ export default function Home({ onLogout, emailAutenticado, isAdmin = false }: { 
       return mapa;
     }, new Map<string, { dia: string; faturamento: number; quantidade: number; linhas: number; pedidos: Set<string>; clientes: Set<string>; regioes: Map<string, number> }>()).values())
       .sort((a, b) => a.dia.localeCompare(b.dia))
-      .slice(-730)
+      .slice(-365)
       .map((item) => ({
         dia: item.dia,
         faturamento: item.faturamento,
@@ -1359,6 +1359,19 @@ export default function Home({ onLogout, emailAutenticado, isAdmin = false }: { 
         clientes: item.clientes.size,
         principaisRegioes: Array.from(item.regioes.entries()).sort((a, b) => b[1] - a[1]).slice(0, 3).map(([regiao, faturamento]) => ({ regiao, faturamento })),
       }));
+    const resumoSemestralPorRegiao = Array.from(dadosFiltrados.reduce((mapa, item) => {
+      const ano = item.ano;
+      const semestre = Number(item.mes_num) <= 6 ? "1º semestre" : "2º semestre";
+      const regiao = item.regiao || "Não identificado";
+      const chave = `${ano}|${semestre}|${regiao}`;
+      const atual = mapa.get(chave) || { ano, semestre, regiao, faturamento: 0, quantidade: 0, linhas: 0 };
+      atual.faturamento += Number(item.faturamento || 0);
+      atual.quantidade += Number(item.quantidade || 0);
+      atual.linhas += 1;
+      mapa.set(chave, atual);
+      return mapa;
+    }, new Map<string, { ano: number; semestre: string; regiao: string; faturamento: number; quantidade: number; linhas: number }>()).values())
+      .sort((a, b) => a.ano - b.ano || a.semestre.localeCompare(b.semestre) || b.faturamento - a.faturamento);
     const ranking = (campo: "cliente" | "produto" | "representante" | "regiao") => {
       const mapa = new Map<string, number>();
       dadosFiltrados.forEach((item) => mapa.set(String(item[campo] || "Não informado"), (mapa.get(String(item[campo] || "Não informado")) || 0) + Number(item.faturamento || 0)));
@@ -1393,6 +1406,7 @@ export default function Home({ onLogout, emailAutenticado, isAdmin = false }: { 
       resumoTipoProduto,
       resumoMensalPorRegiao,
       resumoDiario,
+      resumoSemestralPorRegiao,
       rankings: { clientes: ranking("cliente"), produtos: ranking("produto"), representantes: ranking("representante"), regioes: ranking("regiao") },
     });
   }, [abaAtiva, dadosFiltrados, familiasExcluidasTexto, formasVendaTexto, filtros.tiposProduto, periodoBaseTexto, periodoEfetivo, periodoFiltroTexto]);
