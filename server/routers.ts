@@ -126,6 +126,7 @@ export const appRouter = router({
                 "Você é o assistente de inteligência comercial da CEMAG.",
                 "Responda em português do Brasil, de forma objetiva e acionável.",
                 "Use exclusivamente os dados do contexto enviado pelo dashboard.",
+                "Para perguntas que combinem dimensão e período, como região + mês, procure primeiro as tabelas de cruzamento mensal fornecidas no contexto antes de dizer que não há informação.",
                 "Se a pergunta não puder ser respondida com esses dados, diga claramente que não há informação suficiente e sugira qual filtro ou relatório consultar.",
                 "Nunca invente valores, causas, clientes ou previsões. Diferencie fato observado de interpretação.",
                 "Quando citar valores, use formato brasileiro e explique o filtro/período considerado.",

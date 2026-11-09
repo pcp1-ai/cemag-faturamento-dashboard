@@ -1320,6 +1320,19 @@ export default function Home({ onLogout, emailAutenticado, isAdmin = false }: { 
       mapa.set(chave, atual);
       return mapa;
     }, new Map<string, { tipo: string; faturamento: number; quantidade: number; linhas: number }>()).values()).sort((a, b) => b.quantidade - a.quantidade);
+    const resumoMensalPorRegiao = Array.from(dadosFiltrados.reduce((mapa, item) => {
+      const mes = item.ano_mes || `${item.ano}-${String(item.mes_num).padStart(2, "0")}`;
+      const regiao = item.regiao || "Não identificado";
+      const chave = `${mes}|${regiao}`;
+      const atual = mapa.get(chave) || { mes, regiao, faturamento: 0, quantidade: 0, linhas: 0 };
+      atual.faturamento += Number(item.faturamento || 0);
+      atual.quantidade += Number(item.quantidade || 0);
+      atual.linhas += 1;
+      mapa.set(chave, atual);
+      return mapa;
+    }, new Map<string, { mes: string; regiao: string; faturamento: number; quantidade: number; linhas: number }>()).values())
+      .sort((a, b) => a.mes.localeCompare(b.mes) || b.faturamento - a.faturamento)
+      .filter((item, index, lista) => index >= Math.max(0, lista.length - 144));
     const ranking = (campo: "cliente" | "produto" | "representante" | "regiao") => {
       const mapa = new Map<string, number>();
       dadosFiltrados.forEach((item) => mapa.set(String(item[campo] || "Não informado"), (mapa.get(String(item[campo] || "Não informado")) || 0) + Number(item.faturamento || 0)));
@@ -1339,6 +1352,7 @@ export default function Home({ onLogout, emailAutenticado, isAdmin = false }: { 
       observacaoDados: "A quantidade representa o campo quantidade das linhas faturadas. A base não comprova produção física; use 'faturamento' ou 'quantidade faturada' quando responder.",
       resumoMensal,
       resumoTipoProduto,
+      resumoMensalPorRegiao,
       rankings: { clientes: ranking("cliente"), produtos: ranking("produto"), representantes: ranking("representante"), regioes: ranking("regiao") },
     });
   }, [abaAtiva, dadosFiltrados, familiasExcluidasTexto, formasVendaTexto, filtros.tiposProduto, periodoBaseTexto, periodoEfetivo, periodoFiltroTexto]);
