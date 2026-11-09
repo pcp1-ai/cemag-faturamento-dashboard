@@ -1444,6 +1444,21 @@ export default function Home({ onLogout, emailAutenticado, isAdmin = false }: { 
         mapa.set(item.mes, lista);
         return mapa;
       }, new Map<string, Array<{ mes: string; produto: string; tipo_produto: string; faturamento: number; quantidade: number; linhas: number }>>());
+    const cidadesPorAno = Array.from(dados.reduce((mapa, item) => {
+      const ano = Number(item.ano);
+      const cidade = String(item.cidade || "Não informado");
+      const chave = `${ano}|${cidade}`;
+      const atual = mapa.get(chave) || { ano, cidade, uf: item.uf || "", regiao: item.regiao || "Não identificado", faturamento: 0, quantidade: 0, linhas: 0, pedidos: new Set<string>(), clientes: new Set<string>() };
+      atual.faturamento += Number(item.faturamento || 0);
+      atual.quantidade += Number(item.quantidade || 0);
+      atual.linhas += 1;
+      if (item.pedido) atual.pedidos.add(item.pedido);
+      if (item.cliente) atual.clientes.add(item.cliente);
+      mapa.set(chave, atual);
+      return mapa;
+    }, new Map<string, { ano: number; cidade: string; uf: string; regiao: string; faturamento: number; quantidade: number; linhas: number; pedidos: Set<string>; clientes: Set<string> }>()).values())
+      .map((item) => ({ ano: item.ano, cidade: item.cidade, uf: item.uf, regiao: item.regiao, faturamento: item.faturamento, quantidade: item.quantidade, linhas: item.linhas, pedidos: item.pedidos.size, clientes: item.clientes.size }))
+      .sort((a, b) => a.ano - b.ano || b.faturamento - a.faturamento);
     return JSON.stringify({
       abaAtual: INFO_ABAS[abaAtiva]?.titulo || abaAtiva,
       periodoBase: periodoBaseTexto,
@@ -1478,6 +1493,7 @@ export default function Home({ onLogout, emailAutenticado, isAdmin = false }: { 
       produtosDetalhados: rankingDetalhado("produto", dados),
       familiasDetalhadas: rankingDetalhado("familia", dados),
       produtosPorMes: Object.fromEntries(produtosPorMes),
+      cidadesPorAno,
       resumoSemestralPorCidade,
       resumoSemestralPorFamilia,
     });
@@ -1519,7 +1535,7 @@ export default function Home({ onLogout, emailAutenticado, isAdmin = false }: { 
       } else if (perguntaSemestre) {
         blocos = { resumoSemestralPorRegiao: contexto.resumoSemestralPorRegiao, resumoSemestralPorCidade: contexto.resumoSemestralPorCidade, resumoSemestralPorFamilia: contexto.resumoSemestralPorFamilia };
       } else if (perguntaRegiao) {
-        blocos = { rankings: contexto.rankings, resumoMensalPorRegiao: contexto.resumoMensalPorRegiao };
+        blocos = { rankings: contexto.rankings, resumoMensalPorRegiao: contexto.resumoMensalPorRegiao, cidadesPorAno: contexto.cidadesPorAno };
       } else {
         blocos = { resumoMensal: contexto.resumoMensal, resumoTipoProduto: contexto.resumoTipoProduto, rankings: contexto.rankings };
       }
@@ -1567,6 +1583,17 @@ export default function Home({ onLogout, emailAutenticado, isAdmin = false }: { 
         const faturamento = Number(lider.faturamento || 0).toLocaleString("pt-BR", { style: "currency", currency: "BRL" });
         setChatMensagens((atual) => [...atual, { role: "assistant", content: `Considerando a base completa do site (${contextoLocal.periodoBase || "período disponível"}), a família líder por faturamento é **${lider.nome}**, com **${faturamento}**, ${Number(lider.quantidade || 0).toLocaleString("pt-BR")} unidades faturadas, ${Number(lider.linhas || 0).toLocaleString("pt-BR")} linhas, ${Number(lider.pedidos || 0).toLocaleString("pt-BR")} pedidos e ${Number(lider.clientes || 0).toLocaleString("pt-BR")} clientes.` }]);
         return;
+      }
+      const anoCidadeLocal = perguntaLocal.match(/\b(20\d{2})\b/)?.[1];
+      const pedeMelhorCidade = /cidade|munic[ií]pio/.test(perguntaLocal) && /melhor|maior|lidera|l[ií]der/.test(perguntaLocal);
+      if (pedeMelhorCidade && anoCidadeLocal && Array.isArray(contextoLocal.cidadesPorAno)) {
+        const cidades = contextoLocal.cidadesPorAno.filter((item: any) => String(item.ano) === anoCidadeLocal);
+        if (cidades.length) {
+          const lider = [...cidades].sort((a: any, b: any) => Number(b.faturamento || 0) - Number(a.faturamento || 0))[0];
+          const faturamento = Number(lider.faturamento || 0).toLocaleString("pt-BR", { style: "currency", currency: "BRL" });
+          setChatMensagens((atual) => [...atual, { role: "assistant", content: `Considerando o ano de **${anoCidadeLocal}** na base completa, a melhor cidade por faturamento foi **${lider.cidade}${lider.uf ? `/${lider.uf}` : ""}**, com **${faturamento}**, ${Number(lider.quantidade || 0).toLocaleString("pt-BR")} unidades faturadas, ${Number(lider.pedidos || 0).toLocaleString("pt-BR")} pedidos e ${Number(lider.clientes || 0).toLocaleString("pt-BR")} clientes.` }]);
+          return;
+        }
       }
     } catch {
       // Se a pré-resposta não puder ser montada, a pergunta segue para o assistente.
