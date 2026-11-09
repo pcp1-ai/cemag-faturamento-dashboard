@@ -1,7 +1,7 @@
 import { z } from "zod";
 import { COOKIE_NAME } from "@shared/const";
 import { clearCemagSession, createCemagSession, validateCemagCredentials } from "./cemagAuth";
-import { getSharedFile, upsertExternalSnapshot, upsertSharedFile } from "./db";
+import { getCurrentAnalyticBase, getSharedFile, replaceAnalyticBase, upsertExternalSnapshot, upsertSharedFile } from "./db";
 import { getSessionCookieOptions } from "./_core/cookies";
 import { systemRouter } from "./_core/systemRouter";
 import { adminProcedure, protectedProcedure, publicProcedure, router } from "./_core/trpc";
@@ -79,6 +79,47 @@ const chatMessageInput = z.object({
 
 function safeFileName(name: string) {
   return name.replace(/[^a-zA-Z0-9._-]+/g, "_").slice(-180) || "arquivo.csv";
+}
+
+function extrairDataTexto(valor: unknown): string | null {
+  if (valor instanceof Date && !Number.isNaN(valor.getTime())) return valor.toISOString().slice(0, 10);
+  if (typeof valor === "number" && valor > 20000 && valor < 100000) {
+    const data = new Date(Date.UTC(1899, 11, 30) + valor * 86400000);
+    return Number.isNaN(data.getTime()) ? null : data.toISOString().slice(0, 10);
+  }
+  const texto = String(valor ?? "").trim();
+  const br = texto.match(/^(\d{1,2})[\/-](\d{1,2})[\/-](\d{4})/);
+  if (br) return `${br[3]}-${br[2].padStart(2, "0")}-${br[1].padStart(2, "0")}`;
+  const iso = texto.match(/^(\d{4})[\/-](\d{1,2})[\/-](\d{1,2})/);
+  return iso ? `${iso[1]}-${iso[2].padStart(2, "0")}-${iso[3].padStart(2, "0")}` : null;
+}
+
+async function reconstruirBaseAnalitica(bytes: Buffer, storageKey: string, fileName: string) {
+  const workbook = XLSX.read(bytes, { type: "buffer", cellDates: true, cellNF: false });
+  const primeiraAba = workbook.SheetNames[0];
+  const linhas = XLSX.utils.sheet_to_json<Record<string, unknown>>(workbook.Sheets[primeiraAba] || {}, { defval: "" });
+  if (!linhas.length) throw new Error("A base enviada não possui linhas para a base analítica.");
+  const nomesData = ["data_movimentacao", "data movimentação", "movimentacao", "data_emissao", "data emissão", "data", "date", "bai_movimentac", "bai_emissao"];
+  const datas = linhas.map((linha) => {
+    const chave = Object.keys(linha).find((nome) => nomesData.includes(nome.trim().toLowerCase()));
+    return chave ? extrairDataTexto(linha[chave]) : null;
+  }).filter((valor): valor is string => Boolean(valor)).sort();
+  const dimensoes = Object.keys(linhas[0]).filter((nome) => /data|ano|m[eê]s|cidade|uf|estado|regi[aã]o|representante|vendedor|cliente|produto|modelo|fam[ií]lia|tipo|pedido|lista|quantidade|faturamento|valor/i.test(nome));
+  const version = `${Date.now()}-${safeFileName(fileName)}`;
+  const rows = linhas.map((linha, index) => ({ baseVersion: version, rowNumber: index + 1, payload: JSON.stringify(linha) }));
+  await replaceAnalyticBase({
+    id: 1,
+    version,
+    sourceStorageKey: storageKey,
+    sourceFileName: fileName,
+    status: "ready",
+    rowCount: linhas.length,
+    dimensions: JSON.stringify(dimensoes),
+    dataInicio: datas[0] || null,
+    dataFim: datas[datas.length - 1] || null,
+    errorMessage: null,
+  }, rows);
+  return { version, rowCount: linhas.length, dimensions: dimensoes, dataInicio: datas[0] || null, dataFim: datas[datas.length - 1] || null };
 }
 
 export const appRouter = router({
@@ -170,10 +211,11 @@ export const appRouter = router({
         return result;
       }),
     currentFiles: protectedProcedure.query(async () => {
-      const [base, metas] = await Promise.all([getSharedFile("base"), getSharedFile("metas")]);
+      const [base, metas, analyticBase] = await Promise.all([getSharedFile("base"), getSharedFile("metas"), getCurrentAnalyticBase()]);
       return {
         base: base ? { ...base, url: `/manus-storage/${base.storageKey}` } : null,
         metas: metas ? { ...metas, url: `/manus-storage/${metas.storageKey}` } : null,
+        analyticBase: analyticBase ? { ...analyticBase, dimensions: JSON.parse(analyticBase.dimensions) } : null,
       };
     }),
     uploadFile: adminProcedure
@@ -194,6 +236,16 @@ export const appRouter = router({
           contentType: input.contentType,
           sizeBytes: bytes.length,
         });
+        let analyticBase: Awaited<ReturnType<typeof reconstruirBaseAnalitica>> | null = null;
+        let analyticError: string | null = null;
+        if (input.kind === "base") {
+          try {
+            analyticBase = await reconstruirBaseAnalitica(bytes, stored.key, input.fileName);
+          } catch (error) {
+            analyticError = error instanceof Error ? error.message : "Não foi possível gerar a base analítica.";
+            console.error("[AnalyticBase] Falha ao reconstruir base analítica:", error);
+          }
+        }
         return {
           success: true as const,
           kind: input.kind,
@@ -201,6 +253,8 @@ export const appRouter = router({
           sizeBytes: bytes.length,
           url: stored.url,
           updatedBy: ctx.user.email,
+          analyticBase,
+          analyticError,
         };
       }),
   }),

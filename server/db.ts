@@ -1,6 +1,6 @@
-import { eq } from "drizzle-orm";
+import { eq, desc } from "drizzle-orm";
 import { drizzle } from "drizzle-orm/mysql2";
-import { CemagExternalSnapshot, CemagSharedFile, InsertCemagExternalSnapshot, InsertCemagSharedFile, InsertUser, cemagExternalSnapshots, cemagSharedFiles, users } from "../drizzle/schema";
+import { CemagAnalyticBase, CemagExternalSnapshot, CemagSharedFile, InsertCemagAnalyticBase, InsertCemagExternalSnapshot, InsertCemagSharedFile, InsertUser, cemagAnalyticBases, cemagAnalyticRows, cemagExternalSnapshots, cemagSharedFiles, users } from "../drizzle/schema";
 import { ENV } from './_core/env';
 
 let _db: ReturnType<typeof drizzle> | null = null;
@@ -101,6 +101,24 @@ export async function upsertSharedFile(file: InsertCemagSharedFile): Promise<voi
   if (!db) throw new Error("Banco de dados indisponível para salvar o arquivo compartilhado.");
   const { kind, ...updateFields } = file;
   await db.insert(cemagSharedFiles).values(file).onDuplicateKeyUpdate({ set: updateFields });
+}
+
+export async function getCurrentAnalyticBase(): Promise<CemagAnalyticBase | undefined> {
+  const db = await getDb();
+  if (!db) return undefined;
+  const rows = await db.select().from(cemagAnalyticBases).orderBy(desc(cemagAnalyticBases.updatedAt)).limit(1);
+  return rows[0];
+}
+
+export async function replaceAnalyticBase(base: InsertCemagAnalyticBase, rows: Array<{ baseVersion: string; rowNumber: number; payload: string }>): Promise<void> {
+  const db = await getDb();
+  if (!db) throw new Error("Banco de dados indisponível para salvar a base analítica.");
+  await db.delete(cemagAnalyticRows);
+  await db.delete(cemagAnalyticBases);
+  await db.insert(cemagAnalyticBases).values(base);
+  for (let offset = 0; offset < rows.length; offset += 250) {
+    await db.insert(cemagAnalyticRows).values(rows.slice(offset, offset + 250));
+  }
 }
 
 export async function getExternalSnapshot(cidade: string, uf?: string): Promise<CemagExternalSnapshot | undefined> {

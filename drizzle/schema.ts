@@ -32,6 +32,37 @@ export const cemagSharedFiles = mysqlTable("cemag_shared_files", {
 export type CemagSharedFile = typeof cemagSharedFiles.$inferSelect;
 export type InsertCemagSharedFile = typeof cemagSharedFiles.$inferInsert;
 
+/** Retrato interno da base analítica reconstruída a partir da base central. */
+export const cemagAnalyticBases = mysqlTable("cemag_analytic_bases", {
+  id: int("id").primaryKey(),
+  version: varchar("version", { length: 180 }).notNull().unique(),
+  sourceStorageKey: varchar("source_storage_key", { length: 512 }).notNull(),
+  sourceFileName: varchar("source_file_name", { length: 255 }).notNull(),
+  status: mysqlEnum("status", ["processing", "ready", "error"]).notNull(),
+  rowCount: int("row_count").notNull().default(0),
+  dimensions: text("dimensions").notNull(),
+  dataInicio: varchar("data_inicio", { length: 32 }),
+  dataFim: varchar("data_fim", { length: 32 }),
+  errorMessage: text("error_message"),
+  createdAt: timestamp("created_at").defaultNow().notNull(),
+  updatedAt: timestamp("updated_at").defaultNow().onUpdateNow().notNull(),
+});
+
+export type CemagAnalyticBase = typeof cemagAnalyticBases.$inferSelect;
+export type InsertCemagAnalyticBase = typeof cemagAnalyticBases.$inferInsert;
+
+/** Linhas normalizadas/raw da versão corrente, mantidas internamente para consultas futuras. */
+export const cemagAnalyticRows = mysqlTable("cemag_analytic_rows", {
+  id: int("id").autoincrement().primaryKey(),
+  baseVersion: varchar("base_version", { length: 180 }).notNull(),
+  rowNumber: int("row_number").notNull(),
+  payload: text("payload").notNull(),
+  createdAt: timestamp("created_at").defaultNow().notNull(),
+}, (table) => ({ baseRowIdx: uniqueIndex("cemag_analytic_base_row_idx").on(table.baseVersion, table.rowNumber) }));
+
+export type CemagAnalyticRow = typeof cemagAnalyticRows.$inferSelect;
+export type InsertCemagAnalyticRow = typeof cemagAnalyticRows.$inferInsert;
+
 /** Último retrato consultado automaticamente para cada município selecionado. */
 export const cemagExternalSnapshots = mysqlTable("cemag_external_snapshots", {
   id: int("id").autoincrement().primaryKey(),

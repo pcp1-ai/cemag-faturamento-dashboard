@@ -15,6 +15,13 @@
       "when": 1792067326387,
       "tag": "0001_left_mastermind",
       "breakpoints": true
+    },
+    {
+      "idx": 2,
+      "version": "5",
+      "when": 1794252948523,
+      "tag": "0002_marvelous_living_lightning",
+      "breakpoints": true
     }
   ]
 }

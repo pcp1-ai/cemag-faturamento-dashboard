@@ -594,14 +594,20 @@ export default function Home({ onLogout, emailAutenticado, isAdmin = false }: { 
     const publicarBaseCentral = async (contentBase64: string) => {
       if (!isAdmin) return;
       try {
-        await uploadCentralMutation.mutateAsync({
+        const resultado = await uploadCentralMutation.mutateAsync({
           kind: "base",
           fileName: file.name,
           contentType: file.type || (nome.endsWith(".xlsx") ? "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet" : "text/csv"),
           contentBase64,
         });
         await arquivosCentrais.refetch();
-        setMensagemUpload({ tipo: "sucesso", texto: `${file.name} publicado como base central. Todos os usuários verão esta versão ao acessar.` });
+        const analitica = resultado.analyticBase;
+        const textoAnalitica = analitica
+          ? ` Base analítica atualizada com ${analitica.rowCount.toLocaleString("pt-BR")} registros (${analitica.dataInicio || "data inicial não identificada"} a ${analitica.dataFim || "data final não identificada"}).`
+          : resultado.analyticError
+            ? ` A base central foi publicada, mas a base analítica não foi reconstruída: ${resultado.analyticError}`
+            : "";
+        setMensagemUpload({ tipo: analitica || !resultado.analyticError ? "sucesso" : "aviso", texto: `${file.name} publicado como base central. Todos os usuários verão esta versão ao acessar.${textoAnalitica}` });
       } catch (error: any) {
         setMensagemUpload({ tipo: "erro", texto: `Arquivo carregado nesta sessão, mas não foi publicado no servidor: ${error?.message || "erro de conexão"}` });
       }
@@ -1863,6 +1869,11 @@ export default function Home({ onLogout, emailAutenticado, isAdmin = false }: { 
         {mensagemUpload && (
           <div className={`max-w-[1700px] mx-auto mt-2 rounded-lg border px-3 py-2 text-xs ${mensagemUpload.tipo === "sucesso" ? "border-emerald-700/60 bg-emerald-950/40 text-emerald-200" : mensagemUpload.tipo === "erro" ? "border-red-700/60 bg-red-950/40 text-red-200" : "border-amber-700/60 bg-amber-950/40 text-amber-200"}`} role="status">
             {mensagemUpload.texto}
+          </div>
+        )}
+        {arquivosCentrais.data?.analyticBase && (
+          <div className="max-w-[1700px] mx-auto mt-2 rounded-lg border border-slate-700 bg-slate-950/60 px-3 py-2 text-[11px] text-slate-400" role="status">
+            <strong className="text-slate-200">Base analítica interna:</strong> {arquivosCentrais.data.analyticBase.status === "ready" ? "atualizada" : arquivosCentrais.data.analyticBase.status} · {Number(arquivosCentrais.data.analyticBase.rowCount || 0).toLocaleString("pt-BR")} registros · período {arquivosCentrais.data.analyticBase.dataInicio || "—"} a {arquivosCentrais.data.analyticBase.dataFim || "—"}
           </div>
         )}
       </header>
