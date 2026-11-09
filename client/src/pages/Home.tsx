@@ -204,26 +204,32 @@ async function carregarBasePersistente(): Promise<{ rows: any[]; nome: string } 
   } catch { return null; }
 }
 
-const ABAS = [
-  { id: "visao_geral", label: "🏠 Visão geral" },
-  { id: "metas", label: "🎯 Metas mensais" },
-  { id: "previsoes", label: "📈 Previsões" },
-  { id: "analise_historica", label: "🔍 Análise histórica" },
-  { id: "previsoes_agro", label: "🌾 Previsões Agro" },
-  { id: "central_externa", label: "🛰️ Central de dados" },
-  { id: "diagnostico", label: "🔎 Diagnóstico da base" },
-  { id: "modo_apresentacao", label: "📺 Modo apresentação" },
-  { id: "ano_ano", label: "📅 Ano x ano" },
-  { id: "mes_mes", label: "🗓️ Mês x mês" },
-  { id: "produtos", label: "🚜 Produtos e carretas" },
-  { id: "clientes", label: "👥 Clientes" },
-  { id: "inteligencia", label: "🧠 Inteligência comercial" },
-  { id: "regioes", label: "🗺️ Regiões" },
-  { id: "representantes", label: "🤝 Representantes" },
-  { id: "tipos", label: "🏷️ Tipos e categorias" },
-  { id: "base_tratada", label: "📄 Base tratada" },
-  { id: "exportacoes", label: "📤 Exportações" },
-];
+const GRUPOS_ABAS = [
+  { id: "resumo", label: "Resumo", icon: "🏠", abas: [{ id: "visao_geral", label: "Visão geral" }, { id: "metas", label: "Metas mensais" }, { id: "modo_apresentacao", label: "Modo apresentação" }] },
+  { id: "analises", label: "Análises comerciais", icon: "📊", abas: [{ id: "ano_ano", label: "Ano x ano" }, { id: "mes_mes", label: "Mês x mês" }, { id: "produtos", label: "Produtos e carretas" }, { id: "clientes", label: "Clientes" }, { id: "regioes", label: "Regiões" }, { id: "representantes", label: "Representantes" }, { id: "tipos", label: "Tipos e categorias" }, { id: "inteligencia", label: "Inteligência comercial" }] },
+  { id: "previsoes", label: "Previsões", icon: "📈", abas: [{ id: "previsoes", label: "Previsões" }, { id: "analise_historica", label: "Análise histórica" }, { id: "previsoes_agro", label: "Previsões Agro" }, { id: "central_externa", label: "Central de dados" }] },
+  { id: "dados", label: "Dados e relatórios", icon: "📁", abas: [{ id: "diagnostico", label: "Diagnóstico da base" }, { id: "base_tratada", label: "Base tratada" }, { id: "exportacoes", label: "Exportações" }] },
+] as const;
+const INFO_ABAS: Record<string, { titulo: string; descricao: string }> = {
+  visao_geral: { titulo: "Visão geral", descricao: "Resumo executivo para entender rapidamente o desempenho comercial." },
+  metas: { titulo: "Metas mensais", descricao: "Acompanhe realizado, meta, projeção e atingimento por mês." },
+  modo_apresentacao: { titulo: "Modo apresentação", descricao: "Visualização limpa para reuniões e apresentações executivas." },
+  ano_ano: { titulo: "Ano x ano", descricao: "Compare o desempenho dos anos disponíveis com filtros independentes." },
+  mes_mes: { titulo: "Mês x mês", descricao: "Compare meses específicos e identifique os principais movimentos." },
+  produtos: { titulo: "Produtos e carretas", descricao: "Analise mix, famílias, categorias e participação dos produtos." },
+  clientes: { titulo: "Clientes", descricao: "Acompanhe carteira, concentração, recorrência e oportunidades." },
+  regioes: { titulo: "Regiões", descricao: "Explore faturamento por região, estado e município." },
+  representantes: { titulo: "Representantes", descricao: "Compare desempenho e participação da equipe comercial." },
+  tipos: { titulo: "Tipos e categorias", descricao: "Entenda a composição das vendas por tipo e categoria." },
+  inteligencia: { titulo: "Inteligência comercial", descricao: "Investigue mudanças, oportunidades, concentração e comportamento da carteira." },
+  previsoes: { titulo: "Previsões", descricao: "Projete os próximos meses com cenários e validação histórica." },
+  analise_historica: { titulo: "Análise histórica", descricao: "Veja possíveis explicações, curiosidades e contribuições dos meses anteriores." },
+  previsoes_agro: { titulo: "Previsões Agro", descricao: "Relacione o contexto agrícola externo com a leitura comercial." },
+  central_externa: { titulo: "Central de dados", descricao: "Consulte clima, juros, produção, crédito e commodities." },
+  diagnostico: { titulo: "Diagnóstico da base", descricao: "Verifique qualidade, cobertura e consistência dos dados carregados." },
+  base_tratada: { titulo: "Base tratada", descricao: "Consulte os registros depois das regras de tratamento CEMAG." },
+  exportacoes: { titulo: "Exportações", descricao: "Monte e baixe tabelas completas em CSV ou Excel." },
+};
 
 const DataTable: React.FC<{ rows: any[]; columns: string[]; exportName?: string; percentColumns?: string[]; metricColumns?: Record<string, string> }> = ({ rows, columns, exportName = "tabela_dashboard", percentColumns = [], metricColumns = {} }) => (
   <div className="border border-slate-800 rounded-lg">
@@ -284,6 +290,7 @@ export default function Home({ onLogout, emailAutenticado, isAdmin = false }: { 
   const [baseOriginal, setBaseOriginal] = useState<any[]>([]);
   const [nomeArquivoBase, setNomeArquivoBase] = useState<string>("data/tabelaFaturamento.csv");
   const [abaAtiva, setAbaAtiva] = useState<string>("visao_geral");
+  const [grupoAbaAtivo, setGrupoAbaAtivo] = useState<string>("resumo");
   const [ufMapaSelecionada, setUfMapaSelecionada] = useState<string | null>(null);
   const [isMobileMenuOpen, setIsMobileMenuOpen] = useState<boolean>(false);
   const [sidebarOculta, setSidebarOculta] = useState<boolean>(() => {
@@ -291,6 +298,12 @@ export default function Home({ onLogout, emailAutenticado, isAdmin = false }: { 
     return window.localStorage.getItem("cemag_sidebar_oculta") === "true";
   });
   const [visualizacaoExpandida, setVisualizacaoExpandida] = useState<boolean>(false);
+
+  const navegarParaAba = (id: string) => {
+    setAbaAtiva(id);
+    const grupo = GRUPOS_ABAS.find((item) => item.abas.some((aba) => aba.id === id));
+    if (grupo) setGrupoAbaAtivo(grupo.id);
+  };
 
   useEffect(() => {
     window.localStorage.setItem("cemag_sidebar_oculta", String(sidebarOculta));
@@ -1345,6 +1358,8 @@ export default function Home({ onLogout, emailAutenticado, isAdmin = false }: { 
     };
   }, [linhasRelatorio]);
 
+  const infoAba = INFO_ABAS[abaAtiva] || { titulo: "Painel CEMAG", descricao: "Análise de inteligência comercial." };
+
   if (loading) {
     return (
       <div className="min-h-screen bg-[#0E1117] text-white flex flex-col items-center justify-center p-6">
@@ -1419,7 +1434,7 @@ export default function Home({ onLogout, emailAutenticado, isAdmin = false }: { 
               <span className="hidden sm:inline">Restaurar Padrões</span>
             </button>
             <button
-              onClick={() => setAbaAtiva("exportacoes")}
+              onClick={() => navegarParaAba("exportacoes")}
               className="flex items-center gap-1.5 text-xs bg-orange-600 hover:bg-orange-500 text-white font-semibold px-3.5 py-1.5 rounded-lg transition-colors shadow-sm"
             >
               <Download className="w-3.5 h-3.5" />
@@ -1491,26 +1506,18 @@ export default function Home({ onLogout, emailAutenticado, isAdmin = false }: { 
         {/* Área Central Principal */}
         <main className={`printable-content ${visualizacaoExpandida ? "visualizacao-ampliada fixed inset-0 z-50 bg-[#0E1117] overflow-y-auto" : "flex-1"} p-4 md:p-6 overflow-x-hidden`}>
           {visualizacaoExpandida && <div className="sticky top-0 z-20 flex justify-end pb-3"><button type="button" onClick={() => setVisualizacaoExpandida(false)} className="flex items-center gap-2 rounded-lg border border-orange-500/40 bg-slate-900 px-3 py-2 text-xs font-semibold text-orange-300 shadow-lg hover:bg-slate-800"><Eye className="h-4 w-4" /> Sair da visualização ampliada</button></div>}
-          {/* Navegação Superior de Abas (Idêntica ao st.radio PAGINAS) */}
-          <div className="no-print mb-5 overflow-x-auto pb-1 scrollbar-thin">
-            <div className="flex items-center gap-1.5 min-w-max bg-slate-900/80 p-1.5 rounded-xl border border-slate-800">
-              {ABAS.map((aba) => {
-                const isSelected = abaAtiva === aba.id;
-                return (
-                  <button
-                    key={aba.id}
-                    onClick={() => setAbaAtiva(aba.id)}
-                    className={`px-3 py-1.5 rounded-lg text-xs font-semibold transition-all whitespace-nowrap ${
-                      isSelected
-                        ? "bg-orange-500 text-white shadow-md"
-                        : "text-slate-300 hover:text-white hover:bg-slate-800/80"
-                    }`}
-                  >
-                    {aba.label}
-                  </button>
-                );
-              })}
+          {/* Navegação agrupada: reduz a poluição sem esconder nenhuma funcionalidade. */}
+          <div className="no-print mb-5 space-y-2">
+            <div className="flex items-center gap-1.5 overflow-x-auto rounded-xl border border-slate-800 bg-slate-900/80 p-1.5 scrollbar-thin">
+              {GRUPOS_ABAS.map((grupo) => <button key={grupo.id} type="button" onClick={() => { setGrupoAbaAtivo(grupo.id); navegarParaAba(grupo.abas[0].id); }} className={`whitespace-nowrap rounded-lg px-3 py-2 text-xs font-bold transition-all ${grupoAbaAtivo === grupo.id ? "bg-orange-500 text-white shadow-md" : "text-slate-300 hover:bg-slate-800/80 hover:text-white"}`}>{grupo.icon} {grupo.label}</button>)}
             </div>
+            <div className="flex min-w-0 items-center gap-1 overflow-x-auto rounded-lg border border-slate-800/80 bg-slate-950/50 px-2 py-1.5 scrollbar-thin">
+              {GRUPOS_ABAS.find((grupo) => grupo.id === grupoAbaAtivo)?.abas.map((aba) => <button key={aba.id} type="button" onClick={() => navegarParaAba(aba.id)} className={`whitespace-nowrap rounded-md px-2.5 py-1.5 text-[11px] font-semibold transition-colors ${abaAtiva === aba.id ? "bg-orange-500/20 text-orange-300" : "text-slate-400 hover:bg-slate-800 hover:text-white"}`}>{aba.label}</button>)}
+            </div>
+          </div>
+          <div className="mb-5 flex flex-wrap items-start justify-between gap-4 rounded-2xl border border-slate-800 bg-slate-900/60 px-4 py-3 shadow-sm">
+            <div className="min-w-0"><div className="flex flex-wrap items-center gap-2"><h2 className="text-base font-bold text-white">{infoAba.titulo}</h2><span className="rounded-full border border-orange-500/30 bg-orange-500/10 px-2 py-0.5 text-[10px] font-semibold text-orange-300">{GRUPOS_ABAS.find((grupo) => grupo.id === grupoAbaAtivo)?.label}</span></div><p className="mt-1 max-w-3xl text-xs leading-5 text-slate-400">{infoAba.descricao}</p></div>
+            <div className="flex shrink-0 flex-wrap gap-2 text-[10px] text-slate-400"><span className="rounded-lg border border-slate-800 bg-slate-950/50 px-2.5 py-1.5"><strong className="text-slate-200">Base:</strong> {periodoBaseTexto}</span><span className="rounded-lg border border-slate-800 bg-slate-950/50 px-2.5 py-1.5"><strong className="text-slate-200">Filtro:</strong> {dadosFiltrados.length.toLocaleString("pt-BR")} linhas</span></div>
           </div>
 
           {/* Cards Executivos de Topo (visíveis em todas as abas, exceto Modo Apresentação que tem cards próprios) */}
