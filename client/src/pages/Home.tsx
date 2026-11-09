@@ -1476,6 +1476,29 @@ export default function Home({ onLogout, emailAutenticado, isAdmin = false }: { 
     }, new Map<string, { dia: string; faturamento: number; quantidade: number; linhas: number; pedidos: Set<string>; clientes: Set<string>; regioes: Map<string, number> }>()).values())
       .sort((a, b) => a.dia.localeCompare(b.dia))
       .map((item) => ({ dia: item.dia, faturamento: item.faturamento, quantidade: item.quantidade, linhas: item.linhas, pedidos: item.pedidos.size, clientes: item.clientes.size, principaisRegioes: Array.from(item.regioes.entries()).sort((a, b) => b[1] - a[1]).slice(0, 3).map(([regiao, faturamento]) => ({ regiao, faturamento })) }));
+    const dimensoesPorAno = [
+      ["estado", (item: TransacaoTratada) => item.uf || "Não informado"],
+      ["regiao", (item: TransacaoTratada) => item.regiao || "Não informado"],
+      ["cidade", (item: TransacaoTratada) => item.cidade || "Não informado"],
+      ["representante", (item: TransacaoTratada) => item.representante || "Não informado"],
+      ["produto", (item: TransacaoTratada) => item.produto || "Não informado"],
+      ["familia", (item: TransacaoTratada) => item.familia || "Não informado"],
+      ["tipo_produto", (item: TransacaoTratada) => item.tipo_produto || "Outros"],
+      ["tipo_venda", (item: TransacaoTratada) => item.tipo_venda || "Não informado"],
+    ] as const;
+    const cuboAnual = dimensoesPorAno.flatMap(([dimensao, obterValor]) => Array.from(dados.reduce((mapa, item) => {
+      const ano = Number(item.ano);
+      const valor = String(obterValor(item));
+      const chave = `${ano}|${valor}`;
+      const atual = mapa.get(chave) || { ano, valor, faturamento: 0, quantidade: 0, linhas: 0, pedidos: new Set<string>(), clientes: new Set<string>() };
+      atual.faturamento += Number(item.faturamento || 0);
+      atual.quantidade += Number(item.quantidade || 0);
+      atual.linhas += 1;
+      if (item.pedido) atual.pedidos.add(item.pedido);
+      if (item.cliente) atual.clientes.add(item.cliente);
+      mapa.set(chave, atual);
+      return mapa;
+    }, new Map<string, { ano: number; valor: string; faturamento: number; quantidade: number; linhas: number; pedidos: Set<string>; clientes: Set<string> }>()).values()).map((item) => ({ dimensao, ano: item.ano, valor: item.valor, faturamento: item.faturamento, quantidade: item.quantidade, linhas: item.linhas, pedidos: item.pedidos.size, clientes: item.clientes.size })));
     return JSON.stringify({
       abaAtual: INFO_ABAS[abaAtiva]?.titulo || abaAtiva,
       periodoBase: periodoBaseTexto,
@@ -1512,6 +1535,7 @@ export default function Home({ onLogout, emailAutenticado, isAdmin = false }: { 
       produtosPorMes: Object.fromEntries(produtosPorMes),
       cidadesPorAno,
       diasDetalhados,
+      dimensoesPorAno: cuboAnual,
       resumoSemestralPorCidade,
       resumoSemestralPorFamilia,
     });
@@ -1530,6 +1554,7 @@ export default function Home({ onLogout, emailAutenticado, isAdmin = false }: { 
       const perguntaProduto = /carreta|implemento|produto|modelo|peça|peca|conjunto|sucata/.test(pergunta);
       const perguntaRegiao = /região|regiao|estado|uf|cidade|município|municipio|vendedor|representante/.test(pergunta);
       const perguntaSemestre = /semestre|semestral/.test(pergunta);
+      const dimensaoSolicitada = /representante|vendedor|consultor/.test(pergunta) ? "representante" : /estado|uf/.test(pergunta) ? "estado" : /cidade|município|municipio/.test(pergunta) ? "cidade" : /produto|modelo|carreta|implemento/.test(pergunta) ? "produto" : /fam[ií]lia/.test(pergunta) ? "familia" : /tipo\s+de\s+venda|forma\s+de\s+venda/.test(pergunta) ? "tipo_venda" : /tipo\s+de\s+produto/.test(pergunta) ? "tipo_produto" : /região|regiao/.test(pergunta) ? "regiao" : null;
       const base = {
         periodoBase: contexto.periodoBase,
         periodoFiltro: contexto.periodoFiltro,
@@ -1553,7 +1578,7 @@ export default function Home({ onLogout, emailAutenticado, isAdmin = false }: { 
       } else if (perguntaSemestre) {
         blocos = { resumoSemestralPorRegiao: contexto.resumoSemestralPorRegiao, resumoSemestralPorCidade: contexto.resumoSemestralPorCidade, resumoSemestralPorFamilia: contexto.resumoSemestralPorFamilia };
       } else if (perguntaRegiao) {
-        blocos = { rankings: contexto.rankings, resumoMensalPorRegiao: contexto.resumoMensalPorRegiao, cidadesPorAno: contexto.cidadesPorAno };
+        blocos = { rankings: contexto.rankings, resumoMensalPorRegiao: contexto.resumoMensalPorRegiao, cidadesPorAno: contexto.cidadesPorAno, dimensoesPorAno: dimensaoSolicitada ? contexto.dimensoesPorAno?.filter((item: any) => item.dimensao === dimensaoSolicitada) : undefined };
       } else {
         blocos = { resumoMensal: contexto.resumoMensal, resumoTipoProduto: contexto.resumoTipoProduto, rankings: contexto.rankings };
       }
@@ -1634,6 +1659,18 @@ export default function Home({ onLogout, emailAutenticado, isAdmin = false }: { 
           const lider = [...cidades].sort((a: any, b: any) => Number(b.faturamento || 0) - Number(a.faturamento || 0))[0];
           const faturamento = Number(lider.faturamento || 0).toLocaleString("pt-BR", { style: "currency", currency: "BRL" });
           setChatMensagens((atual) => [...atual, { role: "assistant", content: `Considerando o ano de **${anoCidadeLocal}** na base completa, a melhor cidade por faturamento foi **${lider.cidade}${lider.uf ? `/${lider.uf}` : ""}**, com **${faturamento}**, ${Number(lider.quantidade || 0).toLocaleString("pt-BR")} unidades faturadas, ${Number(lider.pedidos || 0).toLocaleString("pt-BR")} pedidos e ${Number(lider.clientes || 0).toLocaleString("pt-BR")} clientes.` }]);
+          return;
+        }
+      }
+      const dimensaoLocal = /representante|vendedor|consultor/.test(perguntaLocal) ? "representante" : /estado|uf/.test(perguntaLocal) ? "estado" : /cidade|munic[ií]pio/.test(perguntaLocal) ? "cidade" : /produto|modelo|carreta|implemento/.test(perguntaLocal) ? "produto" : /fam[ií]lia/.test(perguntaLocal) ? "familia" : /tipo\s+de\s+venda|forma\s+de\s+venda/.test(perguntaLocal) ? "tipo_venda" : /tipo\s+de\s+produto/.test(perguntaLocal) ? "tipo_produto" : /regi[aã]o/.test(perguntaLocal) ? "regiao" : null;
+      const pedeLiderDimensao = dimensaoLocal && /melhor|maior|lidera|l[ií]der|principal/.test(perguntaLocal);
+      const anoDimensaoLocal = perguntaLocal.match(/\b(20\d{2})\b/)?.[1];
+      if (pedeLiderDimensao && anoDimensaoLocal && Array.isArray(contextoLocal.dimensoesPorAno)) {
+        const itens = contextoLocal.dimensoesPorAno.filter((item: any) => item.dimensao === dimensaoLocal && String(item.ano) === anoDimensaoLocal);
+        if (itens.length) {
+          const lider = [...itens].sort((a: any, b: any) => Number(b.faturamento || 0) - Number(a.faturamento || 0))[0];
+          const faturamento = Number(lider.faturamento || 0).toLocaleString("pt-BR", { style: "currency", currency: "BRL" });
+          setChatMensagens((atual) => [...atual, { role: "assistant", content: `Na dimensão **${dimensaoLocal}**, considerando o ano de **${anoDimensaoLocal}** na base completa, o maior faturamento foi de **${lider.valor}**, com **${faturamento}**, ${Number(lider.quantidade || 0).toLocaleString("pt-BR")} unidades faturadas, ${Number(lider.pedidos || 0).toLocaleString("pt-BR")} pedidos e ${Number(lider.clientes || 0).toLocaleString("pt-BR")} clientes.` }]);
           return;
         }
       }
