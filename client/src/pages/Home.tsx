@@ -1470,17 +1470,52 @@ export default function Home({ onLogout, emailAutenticado, isAdmin = false }: { 
     const mensagensParaServidor = novasMensagens.filter((item): item is { role: "user" | "assistant"; content: string } => item.role !== "system");
     let contextoParaPergunta = contextoChat;
     try {
-      const contexto = JSON.parse(contextoChat) as Record<string, unknown>;
+      const contexto = JSON.parse(contextoChat) as Record<string, any>;
       const pergunta = content.toLocaleLowerCase("pt-BR");
       const perguntaDiaria = /\bdia\b|diári|diario|\d{1,2}[\/-]\d{1,2}[\/-]\d{2,4}|\d{4}[\/-]\d{1,2}[\/-]\d{1,2}/i.test(pergunta);
-      // O resumo diário é pesado e só é necessário quando a pergunta pede um dia/data.
-      if (!perguntaDiaria) delete contexto.resumoDiario;
-      // Para semestres, o resumo semestral é a fonte principal; não precisamos carregar cruzamentos diários.
-      if (/semestre|semestral/i.test(pergunta)) {
-        delete contexto.resumoMensal;
-        delete contexto.resumoMensalPorRegiao;
+      const perguntaFamilia = /fam[ií]lia/.test(pergunta);
+      const perguntaProduto = /carreta|implemento|produto|modelo|peça|peca|conjunto|sucata/.test(pergunta);
+      const perguntaRegiao = /região|regiao|estado|uf|cidade|município|municipio|vendedor|representante/.test(pergunta);
+      const perguntaSemestre = /semestre|semestral/.test(pergunta);
+      const base = {
+        periodoBase: contexto.periodoBase,
+        periodoFiltro: contexto.periodoFiltro,
+        periodoEfetivo: contexto.periodoEfetivo,
+        linhasFiltradas: contexto.linhasFiltradas,
+        faturamento: contexto.faturamento,
+        quantidade: contexto.quantidade,
+        pedidosUnicos: contexto.pedidosUnicos,
+        clientesUnicos: contexto.clientesUnicos,
+        filtros: contexto.filtros,
+        observacaoDados: contexto.observacaoDados,
+        glossario: contexto.glossario,
+      };
+      let blocos: Record<string, any> = {};
+      if (perguntaFamilia) {
+        blocos = { familiasDetalhadas: contexto.familiasDetalhadas, resumoSemestralPorFamilia: perguntaSemestre ? contexto.resumoSemestralPorFamilia : undefined };
+      } else if (perguntaProduto) {
+        blocos = { produtosDetalhados: contexto.produtosDetalhados, resumoTipoProduto: contexto.resumoTipoProduto, resumoMensal: contexto.resumoMensal };
+      } else if (perguntaDiaria) {
+        blocos = { resumoDiario: contexto.resumoDiario };
+      } else if (perguntaSemestre) {
+        blocos = { resumoSemestralPorRegiao: contexto.resumoSemestralPorRegiao, resumoSemestralPorCidade: contexto.resumoSemestralPorCidade, resumoSemestralPorFamilia: contexto.resumoSemestralPorFamilia };
+      } else if (perguntaRegiao) {
+        blocos = { rankings: contexto.rankings, resumoMensalPorRegiao: contexto.resumoMensalPorRegiao };
+      } else {
+        blocos = { resumoMensal: contexto.resumoMensal, resumoTipoProduto: contexto.resumoTipoProduto, rankings: contexto.rankings };
       }
-      contextoParaPergunta = JSON.stringify(contexto);
+      contextoParaPergunta = JSON.stringify({ ...base, ...blocos });
+      // Barreira de segurança: nenhum contexto acima de 50 mil caracteres é enviado.
+      if (contextoParaPergunta.length > 50000) {
+        const seguro = { ...base, ...blocos } as Record<string, any>;
+        for (const chave of ["resumoDiario", "resumoMensalPorRegiao", "resumoSemestralPorCidade", "resumoSemestralPorFamilia", "resumoMensal"]) {
+          if (Array.isArray(seguro[chave])) seguro[chave] = seguro[chave].slice(-24);
+        }
+        if (Array.isArray(seguro.familiasDetalhadas)) seguro.familiasDetalhadas = seguro.familiasDetalhadas.slice(0, 30);
+        if (Array.isArray(seguro.produtosDetalhados)) seguro.produtosDetalhados = seguro.produtosDetalhados.slice(0, 30);
+        contextoParaPergunta = JSON.stringify(seguro);
+      }
+      if (contextoParaPergunta.length > 55000) contextoParaPergunta = JSON.stringify(base);
     } catch {
       // Mantém o contexto original caso a serialização seja inesperadamente inválida.
     }
