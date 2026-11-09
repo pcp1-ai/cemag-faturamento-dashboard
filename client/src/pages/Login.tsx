@@ -88,8 +88,12 @@ export default function Login({ onAuthenticated, mensagemInicial = "" }: LoginPr
       localStorage.setItem("cemag_login_autenticado", "true");
       localStorage.setItem("cemag_login_ultima_atividade", String(Date.now()));
       onAuthenticated(emailNormalizado);
-    } catch {
-      setErro("Não foi possível conectar ao servidor de autenticação. Tente novamente.");
+    } catch (error) {
+      const mensagem = error instanceof Error ? error.message.toLowerCase() : "";
+      const servidorIndisponivel = mensagem.includes("503") || mensagem.includes("service unavailable") || mensagem.includes("failed to fetch") || mensagem.includes("fetch failed") || mensagem.includes("network");
+      setErro(servidorIndisponivel
+        ? "O servidor de autenticação está temporariamente indisponível. Aguarde alguns segundos e tente novamente."
+        : "Não foi possível concluir o login. Verifique sua conexão e tente novamente.");
     } finally {
       setEnviando(false);
     }
