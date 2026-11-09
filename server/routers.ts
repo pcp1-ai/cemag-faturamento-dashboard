@@ -77,38 +77,6 @@ const chatMessageInput = z.object({
   content: z.string().trim().min(1).max(4000),
 });
 
-function responderChatLocal(pergunta: string, contextoTexto: string) {
-  try {
-    const contexto = JSON.parse(contextoTexto) as Record<string, any>;
-    const texto = pergunta.toLocaleLowerCase("pt-BR");
-    const meses: Record<string, string> = { janeiro: "01", fevereiro: "02", março: "03", marco: "03", abril: "04", maio: "05", junho: "06", julho: "07", agosto: "08", setembro: "09", outubro: "10", novembro: "11", dezembro: "12" };
-    const ano = texto.match(/\b(20\d{2})\b/)?.[1];
-    const nomeMes = Object.keys(meses).find((nome) => texto.includes(nome));
-    const mes = nomeMes ? meses[nomeMes] : texto.match(/\b(\d{4})[-\/](\d{1,2})\b/)?.[2]?.padStart(2, "0");
-    const chavesMensais = Object.keys(contexto.produtosPorMes || {}).filter((chave) => /^\d{4}-\d{2}$/.test(chave));
-    const chaveMes = ano && mes
-      ? `${ano}-${mes}`
-      : mes
-        ? chavesMensais.filter((chave) => chave.endsWith(`-${mes}`)).sort().at(-1) || null
-        : null;
-    const produtos = chaveMes && contexto.produtosPorMes?.[chaveMes] ? contexto.produtosPorMes[chaveMes] : null;
-    if (produtos?.length && /carreta|implemento|produto|modelo/.test(texto) && /vendid|vendeu|vendas|quantidade/.test(texto)) {
-      const lider = [...produtos].sort((a, b) => Number(b.quantidade || 0) - Number(a.quantidade || 0))[0];
-      const faturamento = Number(lider.faturamento || 0).toLocaleString("pt-BR", { style: "currency", currency: "BRL" });
-      return `Com base na base completa tratada, o produto/carreta mais vendido em ${chaveMes} foi **${lider.produto}**, com **${Number(lider.quantidade || 0).toLocaleString("pt-BR")} unidades** e faturamento de **${faturamento}**. A quantidade representa quantidade faturada; a base não comprova produção física.`;
-    }
-    const familias = contexto.familiasDetalhadas;
-    if (Array.isArray(familias) && familias.length && /fam[ií]lia/.test(texto) && /lidera|líder|lider|maior|principal|melhor/.test(texto)) {
-      const lider = [...familias].sort((a, b) => Number(b.faturamento || 0) - Number(a.faturamento || 0))[0];
-      const faturamento = Number(lider.faturamento || 0).toLocaleString("pt-BR", { style: "currency", currency: "BRL" });
-      return `Considerando o período completo disponível na base (${contexto.periodoBase || "período da base"}), a família líder por faturamento é **${lider.nome}**, com **${faturamento}**, ${Number(lider.quantidade || 0).toLocaleString("pt-BR")} unidades faturadas, ${Number(lider.linhas || 0).toLocaleString("pt-BR")} linhas, ${Number(lider.pedidos || 0).toLocaleString("pt-BR")} pedidos e ${Number(lider.clientes || 0).toLocaleString("pt-BR")} clientes.`;
-    }
-  } catch {
-    // O fallback abaixo evita devolver erro técnico à interface.
-  }
-  return "O Assistente CEMAG está temporariamente sem resposta automática. A consulta foi recebida e pode ser repetida em alguns segundos; os filtros visuais não alteram a base usada pelo assistente.";
-}
-
 function safeFileName(name: string) {
   return name.replace(/[^a-zA-Z0-9._-]+/g, "_").slice(-180) || "arquivo.csv";
 }
@@ -150,48 +118,33 @@ export const appRouter = router({
         dashboardContext: z.string().trim().min(1).max(60000),
       }))
       .mutation(async ({ input }) => {
-        let response: Awaited<ReturnType<typeof invokeLLM>> | null = null;
-        let ultimoErro: unknown = null;
-        for (let tentativa = 0; tentativa < 3 && !response; tentativa++) {
-          try {
-            response = await invokeLLM({
+        const response = await invokeLLM({
           messages: [
             {
               role: "system",
               content: [
                 "Você é o assistente de inteligência comercial da CEMAG.",
                 "Responda em português do Brasil, de forma objetiva e acionável.",
-                "Use exclusivamente os dados do contexto enviado pelo dashboard. O contexto do Assistente CEMAG representa a base completa tratada; ignore filtros visuais e não diga que está respondendo apenas pelo recorte ativo.",
+                "Use exclusivamente os dados do contexto enviado pelo dashboard.",
                 "Interprete sinônimos da equipe: vendedor, vendedores, consultor e comercial significam o campo representante; comprador significa cliente; vendido significa faturamento registrado; cidade significa município. Preserve os nomes reais quando apresentar os resultados.",
                 "Carreta e implemento podem ser usados pelo usuário para falar do tipo de produto, mas confirme no campo tipo_produto e não misture Carreta com Conjunto, Peça ou Sucata.",
                 "Para uma carreta/modelo específico, procure produtosDetalhados e apresente faturamento, quantidade, linhas, pedidos e clientes; para uma família, procure familiasDetalhadas. Se o item não estiver entre os 50 principais enviados, diga que ele não aparece no ranking resumido e não invente um valor.",
                 "Quando o usuário perguntar pela melhor cidade sem indicar o critério, use o maior faturamento como padrão e informe explicitamente esse critério; se pedir quantidade, pedidos ou clientes, use a métrica solicitada.",
                 "Para perguntas que combinem dimensão e período, como região + mês, procure primeiro as tabelas de cruzamento mensal fornecidas no contexto antes de dizer que não há informação.",
-                "Para perguntas como 'qual foi a carreta mais vendida em outubro de 2026?', consulte produtosPorMes['2026-10'] e use a métrica pedida. Considere 'mais vendida' como maior quantidade quando a pergunta usar vendida; informe também o faturamento se disponível.",
-                "Se o usuário informar apenas o mês, sem ano, use o ano mais recente disponível em produtosPorMes para aquele mês e informe claramente o mês e ano utilizados.",
                 "Para perguntas sobre um dia específico, procure a tabela resumoDiario e explique faturamento, quantidade, pedidos, clientes e regiões daquele dia. Se a data não estiver na tabela, informe que o detalhamento diário enviado cobre somente os 365 dias mais recentes.",
                 "Para perguntas sobre primeiro ou segundo semestre, procure resumoSemestralPorRegiao. Se o ano não for informado e houver mais de um ano, mostre os anos disponíveis ou peça a confirmação do ano.",
                 "Para perguntas sobre a melhor cidade ou município, procure rankings.cidades; para um semestre específico, procure resumoSemestralPorCidade.",
                 "Para família em um semestre, procure resumoSemestralPorFamilia; para uma carreta em um semestre, use produtosDetalhados somente se o contexto indicar o período filtrado, e deixe claro quando o ranking for acumulado.",
                 "Se a pergunta não puder ser respondida com esses dados, diga claramente que não há informação suficiente e sugira qual filtro ou relatório consultar.",
                 "Nunca invente valores, causas, clientes ou previsões. Diferencie fato observado de interpretação.",
-                "Quando citar valores, use formato brasileiro e explique que o período é consultado na base completa. Se a pergunta pedir produção física, esclareça que a base CEMAG registra faturamento/quantidade faturada, não produção.",
+                "Quando citar valores, use formato brasileiro e explique o filtro/período considerado.",
                 `CONTEXTO ATUAL DO DASHBOARD:\n${input.dashboardContext}`,
               ].join("\n\n"),
             },
             ...input.messages,
           ],
-              maxTokens: 700,
-            });
-          } catch (error) {
-            ultimoErro = error;
-            if (tentativa < 2) await new Promise((resolve) => setTimeout(resolve, 350 * (tentativa + 1)));
-          }
-        }
-        if (!response) {
-          console.warn("[AIChat] invokeLLM indisponível; usando fallback local.", ultimoErro);
-          return { content: responderChatLocal(input.messages.at(-1)?.content || "", input.dashboardContext), fallback: true as const };
-        }
+          maxTokens: 700,
+        });
         const content = response.choices[0]?.message?.content;
         if (typeof content !== "string") throw new Error("A resposta do assistente não veio em formato de texto.");
         return { content };
