@@ -1412,9 +1412,9 @@ export default function Home({ onLogout, emailAutenticado, isAdmin = false }: { 
       dadosFiltrados.forEach((item) => mapa.set(String(item[campo] || "Não informado"), (mapa.get(String(item[campo] || "Não informado")) || 0) + Number(item.faturamento || 0)));
       return Array.from(mapa.entries()).sort((a, b) => b[1] - a[1]).slice(0, 8).map(([nome, faturamento]) => ({ nome, faturamento }));
     };
-    const rankingDetalhado = (campo: "produto" | "familia") => {
+    const rankingDetalhado = (campo: "produto" | "familia", fonte = dadosFiltrados) => {
       const mapa = new Map<string, { faturamento: number; quantidade: number; linhas: number; pedidos: Set<string>; clientes: Set<string> }>();
-      dadosFiltrados.forEach((item) => {
+      fonte.forEach((item) => {
         const nome = String(item[campo] || "Não informado");
         const atual = mapa.get(nome) || { faturamento: 0, quantidade: 0, linhas: 0, pedidos: new Set<string>(), clientes: new Set<string>() };
         atual.faturamento += Number(item.faturamento || 0);
@@ -1426,6 +1426,24 @@ export default function Home({ onLogout, emailAutenticado, isAdmin = false }: { 
       });
       return Array.from(mapa.entries()).map(([nome, item]) => ({ nome, faturamento: item.faturamento, quantidade: item.quantidade, linhas: item.linhas, pedidos: item.pedidos.size, clientes: item.clientes.size })).sort((a, b) => b.faturamento - a.faturamento).slice(0, 50);
     };
+    const produtosPorMes = Array.from(dados.reduce((mapa, item) => {
+      const mes = item.ano_mes || `${item.ano}-${String(item.mes_num).padStart(2, "0")}`;
+      const produto = String(item.produto || "Não informado");
+      const chave = `${mes}|${produto}`;
+      const atual = mapa.get(chave) || { mes, produto, tipo_produto: item.tipo_produto || "Outros", faturamento: 0, quantidade: 0, linhas: 0 };
+      atual.faturamento += Number(item.faturamento || 0);
+      atual.quantidade += Number(item.quantidade || 0);
+      atual.linhas += 1;
+      mapa.set(chave, atual);
+      return mapa;
+    }, new Map<string, { mes: string; produto: string; tipo_produto: string; faturamento: number; quantidade: number; linhas: number }>()).values())
+      .sort((a, b) => a.mes.localeCompare(b.mes) || b.quantidade - a.quantidade || b.faturamento - a.faturamento)
+      .reduce((mapa, item) => {
+        const lista = mapa.get(item.mes) || [];
+        if (lista.length < 20) lista.push(item);
+        mapa.set(item.mes, lista);
+        return mapa;
+      }, new Map<string, Array<{ mes: string; produto: string; tipo_produto: string; faturamento: number; quantidade: number; linhas: number }>>());
     return JSON.stringify({
       abaAtual: INFO_ABAS[abaAtiva]?.titulo || abaAtiva,
       periodoBase: periodoBaseTexto,
@@ -1457,12 +1475,13 @@ export default function Home({ onLogout, emailAutenticado, isAdmin = false }: { 
       resumoDiario,
       resumoSemestralPorRegiao,
       rankings: { clientes: ranking("cliente"), produtos: ranking("produto"), representantes: ranking("representante"), regioes: ranking("regiao"), cidades: ranking("cidade") },
-      produtosDetalhados: rankingDetalhado("produto"),
-      familiasDetalhadas: rankingDetalhado("familia"),
+      produtosDetalhados: rankingDetalhado("produto", dados),
+      familiasDetalhadas: rankingDetalhado("familia", dados),
+      produtosPorMes: Object.fromEntries(produtosPorMes),
       resumoSemestralPorCidade,
       resumoSemestralPorFamilia,
     });
-  }, [abaAtiva, dadosFiltrados, familiasExcluidasTexto, formasVendaTexto, filtros.tiposProduto, periodoBaseTexto, periodoEfetivo, periodoFiltroTexto]);
+  }, [abaAtiva, dados, dadosFiltrados, familiasExcluidasTexto, formasVendaTexto, filtros.tiposProduto, periodoBaseTexto, periodoEfetivo, periodoFiltroTexto]);
 
   const enviarMensagemChat = (content: string) => {
     const novasMensagens: Message[] = [...chatMensagens, { role: "user", content }];
@@ -1504,6 +1523,7 @@ export default function Home({ onLogout, emailAutenticado, isAdmin = false }: { 
       } else {
         blocos = { resumoMensal: contexto.resumoMensal, resumoTipoProduto: contexto.resumoTipoProduto, rankings: contexto.rankings };
       }
+      if (perguntaProduto) blocos.produtosPorMes = contexto.produtosPorMes;
       contextoParaPergunta = JSON.stringify({ ...base, ...blocos });
       // Barreira de segurança: nenhum contexto acima de 50 mil caracteres é enviado.
       if (contextoParaPergunta.length > 50000) {
@@ -1518,6 +1538,38 @@ export default function Home({ onLogout, emailAutenticado, isAdmin = false }: { 
       if (contextoParaPergunta.length > 55000) contextoParaPergunta = JSON.stringify(base);
     } catch {
       // Mantém o contexto original caso a serialização seja inesperadamente inválida.
+    }
+    // Pré-resposta determinística para a pergunta mais recorrente do chat.
+    // Ela usa a base completa e não depende da disponibilidade do LLM.
+    try {
+      const contextoLocal = JSON.parse(contextoChat) as Record<string, any>;
+      const perguntaLocal = content.toLocaleLowerCase("pt-BR");
+      const mesesLocal: Record<string, string> = { janeiro: "01", fevereiro: "02", março: "03", marco: "03", abril: "04", maio: "05", junho: "06", julho: "07", agosto: "08", setembro: "09", outubro: "10", novembro: "11", dezembro: "12" };
+      const mesLocal = Object.keys(mesesLocal).find((nome) => perguntaLocal.includes(nome));
+      const anoLocal = perguntaLocal.match(/\b(20\d{2})\b/)?.[1];
+      const chavesMensaisLocal = Object.keys(contextoLocal.produtosPorMes || {}).filter((chave) => /^\d{4}-\d{2}$/.test(chave));
+      const chaveMesLocal = mesLocal
+        ? (anoLocal ? `${anoLocal}-${mesesLocal[mesLocal]}` : chavesMensaisLocal.filter((chave) => chave.endsWith(`-${mesesLocal[mesLocal]}`)).sort().at(-1))
+        : undefined;
+      const pedeCarretaMaisVendida = /carreta|implemento/.test(perguntaLocal) && /mais\s+vendid|ma[ií]s\s+vendid|vendeu/.test(perguntaLocal);
+      const listaMesLocal = chaveMesLocal ? contextoLocal.produtosPorMes?.[chaveMesLocal] : undefined;
+      if (pedeCarretaMaisVendida && Array.isArray(listaMesLocal) && listaMesLocal.length) {
+        const candidatos = listaMesLocal.filter((item: any) => String(item.tipo_produto || "").toLocaleLowerCase("pt-BR") === "carreta" || !item.tipo_produto);
+        const lista = candidatos.length ? candidatos : listaMesLocal;
+        const lider = [...lista].sort((a: any, b: any) => Number(b.quantidade || 0) - Number(a.quantidade || 0) || Number(b.faturamento || 0) - Number(a.faturamento || 0))[0];
+        const faturamento = Number(lider.faturamento || 0).toLocaleString("pt-BR", { style: "currency", currency: "BRL" });
+        setChatMensagens((atual) => [...atual, { role: "assistant", content: `Considerando a base completa e o mês **${chaveMesLocal}**, a carreta mais vendida foi **${lider.produto}**, com **${Number(lider.quantidade || 0).toLocaleString("pt-BR")} unidades faturadas** e faturamento de **${faturamento}**. “Mais vendida” foi interpretado como maior quantidade faturada; a base não comprova produção física.` }]);
+        return;
+      }
+      const pedeFamiliaLider = /fam[ií]lia/.test(perguntaLocal) && /lidera|l[ií]der|maior|principal|melhor/.test(perguntaLocal);
+      if (pedeFamiliaLider && Array.isArray(contextoLocal.familiasDetalhadas) && contextoLocal.familiasDetalhadas.length) {
+        const lider = [...contextoLocal.familiasDetalhadas].sort((a: any, b: any) => Number(b.faturamento || 0) - Number(a.faturamento || 0))[0];
+        const faturamento = Number(lider.faturamento || 0).toLocaleString("pt-BR", { style: "currency", currency: "BRL" });
+        setChatMensagens((atual) => [...atual, { role: "assistant", content: `Considerando a base completa do site (${contextoLocal.periodoBase || "período disponível"}), a família líder por faturamento é **${lider.nome}**, com **${faturamento}**, ${Number(lider.quantidade || 0).toLocaleString("pt-BR")} unidades faturadas, ${Number(lider.linhas || 0).toLocaleString("pt-BR")} linhas, ${Number(lider.pedidos || 0).toLocaleString("pt-BR")} pedidos e ${Number(lider.clientes || 0).toLocaleString("pt-BR")} clientes.` }]);
+        return;
+      }
+    } catch {
+      // Se a pré-resposta não puder ser montada, a pergunta segue para o assistente.
     }
     chatMutation.mutate({ messages: mensagensParaServidor, dashboardContext: contextoParaPergunta }, {
       onSuccess: (resposta) => setChatMensagens((atual) => [...atual, { role: "assistant", content: resposta.content }]),
