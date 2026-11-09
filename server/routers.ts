@@ -97,6 +97,12 @@ function responderChatLocal(pergunta: string, contextoTexto: string) {
       const faturamento = Number(lider.faturamento || 0).toLocaleString("pt-BR", { style: "currency", currency: "BRL" });
       return `Com base na base completa tratada, o produto/carreta mais vendido em ${chaveMes} foi **${lider.produto}**, com **${Number(lider.quantidade || 0).toLocaleString("pt-BR")} unidades** e faturamento de **${faturamento}**. A quantidade representa quantidade faturada; a base não comprova produção física.`;
     }
+    const familias = contexto.familiasDetalhadas;
+    if (Array.isArray(familias) && familias.length && /fam[ií]lia/.test(texto) && /lidera|líder|lider|maior|principal|melhor/.test(texto)) {
+      const lider = [...familias].sort((a, b) => Number(b.faturamento || 0) - Number(a.faturamento || 0))[0];
+      const faturamento = Number(lider.faturamento || 0).toLocaleString("pt-BR", { style: "currency", currency: "BRL" });
+      return `Considerando o período completo disponível na base (${contexto.periodoBase || "período da base"}), a família líder por faturamento é **${lider.nome}**, com **${faturamento}**, ${Number(lider.quantidade || 0).toLocaleString("pt-BR")} unidades faturadas, ${Number(lider.linhas || 0).toLocaleString("pt-BR")} linhas, ${Number(lider.pedidos || 0).toLocaleString("pt-BR")} pedidos e ${Number(lider.clientes || 0).toLocaleString("pt-BR")} clientes.`;
+    }
   } catch {
     // O fallback abaixo evita devolver erro técnico à interface.
   }

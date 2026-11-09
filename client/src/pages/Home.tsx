@@ -1519,6 +1519,23 @@ export default function Home({ onLogout, emailAutenticado, isAdmin = false }: { 
         delete contexto.resumoMensalPorRegiao;
       }
       contextoParaPergunta = JSON.stringify(contexto);
+      if (contextoParaPergunta.length > 59000) {
+        const compacto = {
+          periodoBase: contexto.periodoBase,
+          periodoConsulta: contexto.periodoConsulta,
+          linhasBase: contexto.linhasBase,
+          faturamento: contexto.faturamento,
+          quantidade: contexto.quantidade,
+          observacaoDados: contexto.observacaoDados,
+          rankings: contexto.rankings,
+          produtosDetalhados: contexto.produtosDetalhados,
+          familiasDetalhadas: contexto.familiasDetalhadas,
+          produtosPorMes: contexto.produtosPorMes,
+          resumoMensal: contexto.resumoMensal,
+          resumoTipoProduto: contexto.resumoTipoProduto,
+        };
+        contextoParaPergunta = JSON.stringify(compacto);
+      }
     } catch {
       // Mantém o contexto original caso a serialização seja inesperadamente inválida.
     }
@@ -1543,6 +1560,13 @@ export default function Home({ onLogout, emailAutenticado, isAdmin = false }: { 
         const lider = [...produtosLocal].sort((a, b) => Number(b.quantidade || 0) - Number(a.quantidade || 0))[0];
         const faturamento = Number(lider.faturamento || 0).toLocaleString("pt-BR", { style: "currency", currency: "BRL" });
         setChatMensagens((atual) => [...atual, { role: "assistant", content: `Com base na base completa tratada, o produto/carreta mais vendido em ${chaveMesLocal} foi **${lider.produto}**, com **${Number(lider.quantidade || 0).toLocaleString("pt-BR")} unidades** e faturamento de **${faturamento}**. A quantidade representa quantidade faturada; a base não comprova produção física.` }]);
+        return;
+      }
+      const familiasLocal = contextoLocal.familiasDetalhadas;
+      if (Array.isArray(familiasLocal) && familiasLocal.length && /fam[ií]lia/.test(perguntaLocal) && /lidera|líder|lider|maior|principal|melhor/.test(perguntaLocal)) {
+        const lider = [...familiasLocal].sort((a, b) => Number(b.faturamento || 0) - Number(a.faturamento || 0))[0];
+        const faturamento = Number(lider.faturamento || 0).toLocaleString("pt-BR", { style: "currency", currency: "BRL" });
+        setChatMensagens((atual) => [...atual, { role: "assistant", content: `Considerando o período completo disponível na base (${contextoLocal.periodoBase || "período da base"}), a família líder por **faturamento** é **${lider.nome}**, com **${faturamento}**, ${Number(lider.quantidade || 0).toLocaleString("pt-BR")} unidades faturadas, ${Number(lider.linhas || 0).toLocaleString("pt-BR")} linhas, ${Number(lider.pedidos || 0).toLocaleString("pt-BR")} pedidos e ${Number(lider.clientes || 0).toLocaleString("pt-BR")} clientes. Se você preferir liderança por quantidade, posso alterar o critério.` }]);
         return;
       }
     } catch {
