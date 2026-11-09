@@ -1381,7 +1381,20 @@ export default function Home({ onLogout, emailAutenticado, isAdmin = false }: { 
       return mapa;
     }, new Map<string, { ano: number; semestre: string; regiao: string; faturamento: number; quantidade: number; linhas: number }>()).values())
       .sort((a, b) => a.ano - b.ano || a.semestre.localeCompare(b.semestre) || b.faturamento - a.faturamento);
-    const ranking = (campo: "cliente" | "produto" | "representante" | "regiao") => {
+    const resumoSemestralPorCidade = Array.from(dadosFiltrados.reduce((mapa, item) => {
+      const ano = item.ano;
+      const semestre = Number(item.mes_num) <= 6 ? "1º semestre" : "2º semestre";
+      const cidade = item.cidade || "Não identificado";
+      const chave = `${ano}|${semestre}|${cidade}`;
+      const atual = mapa.get(chave) || { ano, semestre, cidade, uf: item.uf || "", regiao: item.regiao || "Não identificado", faturamento: 0, quantidade: 0, linhas: 0 };
+      atual.faturamento += Number(item.faturamento || 0);
+      atual.quantidade += Number(item.quantidade || 0);
+      atual.linhas += 1;
+      mapa.set(chave, atual);
+      return mapa;
+    }, new Map<string, { ano: number; semestre: string; cidade: string; uf: string; regiao: string; faturamento: number; quantidade: number; linhas: number }>()).values())
+      .sort((a, b) => a.ano - b.ano || a.semestre.localeCompare(b.semestre) || b.faturamento - a.faturamento);
+    const ranking = (campo: "cliente" | "produto" | "representante" | "regiao" | "cidade") => {
       const mapa = new Map<string, number>();
       dadosFiltrados.forEach((item) => mapa.set(String(item[campo] || "Não informado"), (mapa.get(String(item[campo] || "Não informado")) || 0) + Number(item.faturamento || 0)));
       return Array.from(mapa.entries()).sort((a, b) => b[1] - a[1]).slice(0, 8).map(([nome, faturamento]) => ({ nome, faturamento }));
@@ -1416,7 +1429,8 @@ export default function Home({ onLogout, emailAutenticado, isAdmin = false }: { 
       resumoMensalPorRegiao,
       resumoDiario,
       resumoSemestralPorRegiao,
-      rankings: { clientes: ranking("cliente"), produtos: ranking("produto"), representantes: ranking("representante"), regioes: ranking("regiao") },
+      rankings: { clientes: ranking("cliente"), produtos: ranking("produto"), representantes: ranking("representante"), regioes: ranking("regiao"), cidades: ranking("cidade") },
+      resumoSemestralPorCidade,
     });
   }, [abaAtiva, dadosFiltrados, familiasExcluidasTexto, formasVendaTexto, filtros.tiposProduto, periodoBaseTexto, periodoEfetivo, periodoFiltroTexto]);
 
