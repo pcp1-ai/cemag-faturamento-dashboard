@@ -1532,7 +1532,12 @@ export default function Home({ onLogout, emailAutenticado, isAdmin = false }: { 
       const anoLocal = perguntaLocal.match(/\b(20\d{2})\b/)?.[1];
       const nomeMesLocal = Object.keys(mesesLocal).find((nome) => perguntaLocal.includes(nome));
       const mesLocal = nomeMesLocal ? mesesLocal[nomeMesLocal] : perguntaLocal.match(/\b(\d{4})[-\/](\d{1,2})\b/)?.[2]?.padStart(2, "0");
-      const chaveMesLocal = anoLocal && mesLocal ? `${anoLocal}-${mesLocal}` : null;
+      const chavesMensaisLocal = Object.keys(contextoLocal.produtosPorMes || {}).filter((chave) => /^\d{4}-\d{2}$/.test(chave));
+      const chaveMesLocal = anoLocal && mesLocal
+        ? `${anoLocal}-${mesLocal}`
+        : mesLocal
+          ? chavesMensaisLocal.filter((chave) => chave.endsWith(`-${mesLocal}`)).sort().at(-1) || null
+          : null;
       const produtosLocal = chaveMesLocal && contextoLocal.produtosPorMes?.[chaveMesLocal];
       if (Array.isArray(produtosLocal) && produtosLocal.length && /carreta|implemento|produto|modelo/.test(perguntaLocal) && /vendid|vendeu|vendas|quantidade/.test(perguntaLocal)) {
         const lider = [...produtosLocal].sort((a, b) => Number(b.quantidade || 0) - Number(a.quantidade || 0))[0];

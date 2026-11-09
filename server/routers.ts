@@ -85,7 +85,12 @@ function responderChatLocal(pergunta: string, contextoTexto: string) {
     const ano = texto.match(/\b(20\d{2})\b/)?.[1];
     const nomeMes = Object.keys(meses).find((nome) => texto.includes(nome));
     const mes = nomeMes ? meses[nomeMes] : texto.match(/\b(\d{4})[-\/](\d{1,2})\b/)?.[2]?.padStart(2, "0");
-    const chaveMes = ano && mes ? `${ano}-${mes}` : null;
+    const chavesMensais = Object.keys(contexto.produtosPorMes || {}).filter((chave) => /^\d{4}-\d{2}$/.test(chave));
+    const chaveMes = ano && mes
+      ? `${ano}-${mes}`
+      : mes
+        ? chavesMensais.filter((chave) => chave.endsWith(`-${mes}`)).sort().at(-1) || null
+        : null;
     const produtos = chaveMes && contexto.produtosPorMes?.[chaveMes] ? contexto.produtosPorMes[chaveMes] : null;
     if (produtos?.length && /carreta|implemento|produto|modelo/.test(texto) && /vendid|vendeu|vendas|quantidade/.test(texto)) {
       const lider = [...produtos].sort((a, b) => Number(b.quantidade || 0) - Number(a.quantidade || 0))[0];
@@ -157,6 +162,7 @@ export const appRouter = router({
                 "Quando o usuário perguntar pela melhor cidade sem indicar o critério, use o maior faturamento como padrão e informe explicitamente esse critério; se pedir quantidade, pedidos ou clientes, use a métrica solicitada.",
                 "Para perguntas que combinem dimensão e período, como região + mês, procure primeiro as tabelas de cruzamento mensal fornecidas no contexto antes de dizer que não há informação.",
                 "Para perguntas como 'qual foi a carreta mais vendida em outubro de 2026?', consulte produtosPorMes['2026-10'] e use a métrica pedida. Considere 'mais vendida' como maior quantidade quando a pergunta usar vendida; informe também o faturamento se disponível.",
+                "Se o usuário informar apenas o mês, sem ano, use o ano mais recente disponível em produtosPorMes para aquele mês e informe claramente o mês e ano utilizados.",
                 "Para perguntas sobre um dia específico, procure a tabela resumoDiario e explique faturamento, quantidade, pedidos, clientes e regiões daquele dia. Se a data não estiver na tabela, informe que o detalhamento diário enviado cobre somente os 365 dias mais recentes.",
                 "Para perguntas sobre primeiro ou segundo semestre, procure resumoSemestralPorRegiao. Se o ano não for informado e houver mais de um ano, mostre os anos disponíveis ou peça a confirmação do ano.",
                 "Para perguntas sobre a melhor cidade ou município, procure rankings.cidades; para um semestre específico, procure resumoSemestralPorCidade.",
