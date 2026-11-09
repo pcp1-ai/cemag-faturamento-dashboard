@@ -1426,6 +1426,7 @@ export default function Home({ onLogout, emailAutenticado, isAdmin = false }: { 
       });
       return Array.from(mapa.entries()).map(([nome, item]) => ({ nome, faturamento: item.faturamento, quantidade: item.quantidade, linhas: item.linhas, pedidos: item.pedidos.size, clientes: item.clientes.size })).sort((a, b) => b.faturamento - a.faturamento).slice(0, 50);
     };
+    const carretasDetalhadas = rankingDetalhado("produto", dados.filter((item) => String(item.tipo_produto || "").toLocaleLowerCase("pt-BR").includes("carreta")));
     const produtosPorMes = Array.from(dados.reduce((mapa, item) => {
       const mes = item.ano_mes || `${item.ano}-${String(item.mes_num).padStart(2, "0")}`;
       const produto = String(item.produto || "Não informado");
@@ -1508,6 +1509,7 @@ export default function Home({ onLogout, emailAutenticado, isAdmin = false }: { 
       resumoSemestralPorRegiao,
       rankings: { clientes: ranking("cliente"), produtos: ranking("produto"), representantes: ranking("representante"), regioes: ranking("regiao"), cidades: ranking("cidade") },
       produtosDetalhados: rankingDetalhado("produto", dados),
+      carretasDetalhadas,
       familiasDetalhadas: rankingDetalhado("familia", dados),
       produtosPorMes: Object.fromEntries(produtosPorMes),
       cidadesPorAno,
@@ -1557,7 +1559,10 @@ export default function Home({ onLogout, emailAutenticado, isAdmin = false }: { 
       } else {
         blocos = { resumoMensal: contexto.resumoMensal, resumoTipoProduto: contexto.resumoTipoProduto, rankings: contexto.rankings };
       }
-      if (perguntaProduto) blocos.produtosPorMes = contexto.produtosPorMes;
+      if (perguntaProduto) {
+        blocos.produtosPorMes = contexto.produtosPorMes;
+        blocos.carretasDetalhadas = contexto.carretasDetalhadas;
+      }
       contextoParaPergunta = JSON.stringify({ ...base, ...blocos });
       // Barreira de segurança: nenhum contexto acima de 50 mil caracteres é enviado.
       if (contextoParaPergunta.length > 50000) {
@@ -1594,6 +1599,17 @@ export default function Home({ onLogout, emailAutenticado, isAdmin = false }: { 
         const faturamento = Number(lider.faturamento || 0).toLocaleString("pt-BR", { style: "currency", currency: "BRL" });
         setChatMensagens((atual) => [...atual, { role: "assistant", content: `Considerando a base completa e o mês **${chaveMesLocal}**, a carreta mais vendida foi **${lider.produto}**, com **${Number(lider.quantidade || 0).toLocaleString("pt-BR")} unidades faturadas** e faturamento de **${faturamento}**. “Mais vendida” foi interpretado como maior quantidade faturada; a base não comprova produção física.` }]);
         return;
+      }
+      const pedeRankingProdutos = /carreta|implemento|produto|modelo/.test(perguntaLocal) && /mais\s+vendid|vendeu|maior\s+quantidade/.test(perguntaLocal) && !mesLocal;
+      if (pedeRankingProdutos) {
+        const mencionaCarreta = /carreta|implemento/.test(perguntaLocal);
+        const fonteRanking = mencionaCarreta ? contextoLocal.carretasDetalhadas : contextoLocal.produtosDetalhados;
+        if (Array.isArray(fonteRanking) && fonteRanking.length) {
+          const lideres = [...fonteRanking].sort((a: any, b: any) => Number(b.quantidade || 0) - Number(a.quantidade || 0) || Number(b.faturamento || 0) - Number(a.faturamento || 0)).slice(0, 5);
+          const linhas = lideres.map((item: any, index: number) => `${index + 1}. **${item.nome}** — ${Number(item.quantidade || 0).toLocaleString("pt-BR")} unidades faturadas (${Number(item.faturamento || 0).toLocaleString("pt-BR", { style: "currency", currency: "BRL" })})`).join("\n");
+          setChatMensagens((atual) => [...atual, { role: "assistant", content: `Com base na base completa do site (${contextoLocal.periodoBase || "período disponível"}), os modelos de ${mencionaCarreta ? "carreta" : "produto"} mais vendidos por quantidade faturada foram:\n\n${linhas}\n\nA classificação considera quantidade faturada; a base não comprova produção física.` }]);
+          return;
+        }
       }
       const pedeFamiliaLider = /fam[ií]lia/.test(perguntaLocal) && /lidera|l[ií]der|maior|principal|melhor/.test(perguntaLocal);
       if (pedeFamiliaLider && Array.isArray(contextoLocal.familiasDetalhadas) && contextoLocal.familiasDetalhadas.length) {
