@@ -15,6 +15,15 @@ export type IndicadoresAgro = {
   precos_agro: Array<{ produto: string; ticker: string; valor_usd: number | null; atualizado_em: string | null }>;
 };
 
+export type MercadoMaquinasAnfavea = {
+  status: "consultado" | "indisponivel" | "nao_consultado";
+  tipo_dado: string;
+  agregacao: string;
+  series: Array<{ ano_mes: string; maquina: string; unidades: number | null }>;
+  fonte: string;
+  atualizado_em: string | null;
+};
+
 export type FatoresExternosResult = {
   localidade: string | null;
   latitude: number | null;
@@ -25,6 +34,7 @@ export type FatoresExternosResult = {
   previsao_sazonal: Array<{ modelo: string; temporada: string; periodo: string; chuva_total_mm: number | null; sinal_tercil: string | null; valor_sinal: number | null; atualizado_em: string }>;
   indices_climaticos: Array<{ indice: string; periodo: string; anomalia_c: number | null; classificacao: string }>;
   indicadores_agro: IndicadoresAgro;
+  mercado_maquinas_anfavea: MercadoMaquinasAnfavea;
   fontes: string[];
   avisos: string[];
   atualizado_em: string;
@@ -155,6 +165,48 @@ async function buscarPrecosAgro() {
   }));
 }
 
+function decodificarHtml(value: string) {
+  return value.replace(/&amp;/g, "&").replace(/&#039;/g, "'").replace(/&quot;/g, '"').replace(/&nbsp;/g, " ").replace(/&lt;/g, "<").replace(/&gt;/g, ">");
+}
+
+async function buscarMercadoMaquinasAnfavea(): Promise<MercadoMaquinasAnfavea> {
+  const indisponivel = (fonte = "ANFAVEA — Central de Dados") => ({ status: "indisponivel" as const, tipo_dado: "VENDA VAREJO", agregacao: "mensal", series: [], fonte, atualizado_em: null });
+  try {
+    const pagina = await fetchText("https://anfavea.com.br/site/central-de-dados/", 30_000);
+    const config = pagina.match(/var\s+anfaveaData\s*=\s*(\{.*?\});/s)?.[1];
+    const nonce = config ? JSON.parse(config).nonce : null;
+    if (!nonce) return indisponivel("ANFAVEA — nonce público não encontrado");
+    const form = new FormData();
+    form.append("action", "anfavea_dashboard1");
+    form.append("nonce", nonce);
+    form.append("dashboard", "dashboard3");
+    form.append("tipo_dado_maquina", "VENDA VAREJO");
+    ["TOTAL_AGRICOLAS", "TRATORES DE RODAS", "COLHEITADEIRAS DE GRAOS", "TOTAL_RODOVIARIAS", "TRATORES DE ESTEIRAS", "RETROESCAVADEIRAS", "PAS-CARREGADEIRAS", "ESCAVADEIRAS HIDRAULICAS", "MOTONIVELADORAS", "ROLOS COMPACTADORES", "MINI-CARREGADEIRAS", "MANIPULADORES TELESCOPICOS"].forEach((maquina) => form.append("maquinas[]", maquina));
+    form.append("agregacao", "mensal");
+    form.append("inicio", "2022-01");
+    const hoje = new Date();
+    form.append("fim", `${hoje.getUTCFullYear()}-${String(hoje.getUTCMonth() + 1).padStart(2, "0")}`);
+    const resposta = await fetch("https://anfavea.com.br/site/wp-admin/admin-ajax.php", { method: "POST", body: form, headers: { Accept: "application/json", Referer: "https://anfavea.com.br/site/central-de-dados/", "User-Agent": "Mozilla/5.0 (compatible; CEMAG-Dashboard/1.0)" } });
+    if (!resposta.ok) throw new Error(`HTTP ${resposta.status}`);
+    const json = await resposta.json() as { success?: boolean; data?: { table_html?: string } };
+    if (!json.success || !json.data?.table_html) throw new Error("resposta sem tabela");
+    const html = json.data.table_html;
+    const cabecalho = [...html.matchAll(/<th[^>]*>\s*([^<]+?)\s*<\/th>/gi)].map((match) => decodificarHtml(match[1]).trim()).filter((item) => item.toUpperCase() !== "PERÍODO");
+    const meses: Record<string, string> = { JAN: "01", FEV: "02", MAR: "03", ABR: "04", MAI: "05", JUN: "06", JUL: "07", AGO: "08", SET: "09", OUT: "10", NOV: "11", DEZ: "12" };
+    const series: MercadoMaquinasAnfavea["series"] = [];
+    for (const row of html.matchAll(/<tr[^>]*>\s*<td[^>]*>\s*<strong[^>]*>\s*([^<]+?)\s*<\/strong>\s*<\/td>([\s\S]*?)<\/tr>/gi)) {
+      const periodo = decodificarHtml(row[1]).trim().match(/(\d{4})\s*-\s*([A-ZÇ]{3})/i);
+      if (!periodo) continue;
+      const anoMes = `${periodo[1]}-${meses[periodo[2].toUpperCase()] || "01"}`;
+      const valores = [...row[2].matchAll(/data-valor-export="([\d.-]+)"/gi)].map((match) => Number(match[1]));
+      valores.forEach((valor, indice) => series.push({ ano_mes: anoMes, maquina: cabecalho[indice] || `Máquina ${indice + 1}`, unidades: Number.isFinite(valor) ? valor : null }));
+    }
+    return { status: series.length ? "consultado" : "indisponivel", tipo_dado: "VENDA VAREJO", agregacao: "mensal", series, fonte: "ANFAVEA — Central de Dados, máquinas autopropulsadas (vendas no varejo)", atualizado_em: new Date().toISOString() };
+  } catch (error) {
+    return indisponivel(`ANFAVEA indisponível: ${error instanceof Error ? error.message : "erro de consulta"}`);
+  }
+}
+
 async function consultarEmLotes<T>(itens: readonly T[], worker: (item: T, index: number) => Promise<FatoresExternosResult>, limite = 5) {
   const resultados: PromiseSettledResult<FatoresExternosResult>[] = [];
   for (let inicio = 0; inicio < itens.length; inicio += limite) {
@@ -199,7 +251,7 @@ export function agregarFatoresNacionais(resultados: FatoresExternosResult[], des
     return { modelo: primeira.modelo, temporada: primeira.temporada, periodo: primeira.periodo, chuva_total_mm: media(rows.map((row) => row.chuva_total_mm)), sinal_tercil: valor_sinal == null ? null : valor_sinal > 0 ? "Acima do normal" : valor_sinal < 0 ? "Abaixo do normal" : "Sem sinal predominante", valor_sinal, atualizado_em: new Date().toISOString() };
   });
   const base = resultados[0];
-  return { localidade: descricao, latitude: null, longitude: null, meses, previsao_chuva, expectativas_selic: base?.expectativas_selic || [], previsao_sazonal, indices_climaticos: base?.indices_climaticos || [], indicadores_agro: base?.indicadores_agro || { ptax_media_brl: null, cafe_producao_t: null, cafe_area_colhida_ha: null, cafe_valor_producao_mil_brl: null, ano_referencia: null, credito_investimento_brl: null, credito_status: "nao_consultado", precos_agro: [] }, fontes: Array.from(new Set([...resultados.flatMap((resultado) => resultado.fontes), `Agregação: média simples de ${resultados.length} localidades selecionadas`])), avisos: [`A abrangência usa média simples das ${resultados.length} localidades selecionadas. Ela representa os pontos escolhidos, não uma média areal oficial de todo o território.`, ...avisosExtras, ...resultados.flatMap((resultado) => resultado.avisos)], atualizado_em: new Date().toISOString() };
+  return { localidade: descricao, latitude: null, longitude: null, meses, previsao_chuva, expectativas_selic: base?.expectativas_selic || [], previsao_sazonal, indices_climaticos: base?.indices_climaticos || [], indicadores_agro: base?.indicadores_agro || { ptax_media_brl: null, cafe_producao_t: null, cafe_area_colhida_ha: null, cafe_valor_producao_mil_brl: null, ano_referencia: null, credito_investimento_brl: null, credito_status: "nao_consultado", precos_agro: [] }, mercado_maquinas_anfavea: base?.mercado_maquinas_anfavea || { status: "nao_consultado", tipo_dado: "VENDA VAREJO", agregacao: "mensal", series: [], fonte: "ANFAVEA — Central de Dados", atualizado_em: null }, fontes: Array.from(new Set([...resultados.flatMap((resultado) => resultado.fontes), `Agregação: média simples de ${resultados.length} localidades selecionadas`])), avisos: [`A abrangência usa média simples das ${resultados.length} localidades selecionadas. Ela representa os pontos escolhidos, não uma média areal oficial de todo o território.`, ...avisosExtras, ...resultados.flatMap((resultado) => resultado.avisos)], atualizado_em: new Date().toISOString() };
 }
 
 async function buscarPrevisaoSazonal(latitude: number, longitude: number) {
@@ -280,6 +332,7 @@ export async function obterFatoresExternos(input: { dataInicio: string; dataFim:
   const previsao_sazonal: FatoresExternosResult["previsao_sazonal"] = [];
   const indices_climaticos: FatoresExternosResult["indices_climaticos"] = [];
   const indicadores_agro: IndicadoresAgro = { ptax_media_brl: null, cafe_producao_t: null, cafe_area_colhida_ha: null, cafe_valor_producao_mil_brl: null, ano_referencia: null, credito_investimento_brl: null, credito_status: "nao_consultado", precos_agro: [] };
+  let mercado_maquinas_anfavea: MercadoMaquinasAnfavea = { status: "nao_consultado", tipo_dado: "VENDA VAREJO", agregacao: "mensal", series: [], fonte: "ANFAVEA — Central de Dados", atualizado_em: null };
 
   if (!opcoes.consultaRapida) {
     try {
@@ -296,7 +349,10 @@ export async function obterFatoresExternos(input: { dataInicio: string; dataFim:
   }
 
   if (!opcoes.consultaRapida && !opcoes.consultaAgregada) {
-  try {
+    mercado_maquinas_anfavea = await buscarMercadoMaquinasAnfavea();
+    if (mercado_maquinas_anfavea.status === "consultado") fontes.push(mercado_maquinas_anfavea.fonte);
+    else avisos.push(mercado_maquinas_anfavea.fonte);
+    try {
     indices_climaticos.push(...await buscarIndiceOni());
     if (indices_climaticos.length) fontes.push("NOAA/CPC — índice ONI de El Niño e La Niña");
   } catch (error) {
@@ -390,6 +446,7 @@ export async function obterFatoresExternos(input: { dataInicio: string; dataFim:
     previsao_sazonal,
     indices_climaticos,
     indicadores_agro,
+    mercado_maquinas_anfavea,
     fontes,
     avisos,
     atualizado_em: new Date().toISOString(),
