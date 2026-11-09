@@ -1,4 +1,4 @@
-import React, { FormEvent, useState } from "react";
+import React, { FormEvent, useEffect, useState } from "react";
 import { LockKeyhole, Mail, ShieldCheck, Eye, EyeOff, AlertCircle } from "lucide-react";
 import { trpc } from "../lib/trpc";
 
@@ -13,7 +13,8 @@ interface LoginProps {
 
 export default function Login({ onAuthenticated, mensagemInicial = "" }: LoginProps) {
   const loginMutation = trpc.auth.login.useMutation();
-  const [periodoHistorico] = useState(() => {
+  const periodoQuery = trpc.auth.basePeriod.useQuery(undefined, { retry: false, staleTime: 10 * 60 * 1000 });
+  const [periodoHistorico, setPeriodoHistorico] = useState(() => {
     if (typeof window === "undefined") return "Histórico disponível";
     try {
       const salvo = window.localStorage.getItem("cemag_base_periodo");
@@ -25,6 +26,17 @@ export default function Login({ onAuthenticated, mensagemInicial = "" }: LoginPr
       return "Histórico disponível";
     }
   });
+  useEffect(() => {
+    const periodo = periodoQuery.data;
+    if (!periodo?.anoInicio || !periodo.anoFim) return;
+    const texto = periodo.anoInicio === periodo.anoFim ? String(periodo.anoInicio) : `${periodo.anoInicio}–${periodo.anoFim}`;
+    setPeriodoHistorico(texto);
+    try {
+      localStorage.setItem("cemag_base_periodo", JSON.stringify(periodo));
+    } catch {
+      // O cartão continua exibindo o valor recebido do servidor.
+    }
+  }, [periodoQuery.data]);
   const [email, setEmail] = useState("");
   const [senha, setSenha] = useState("");
   const [mostrarSenha, setMostrarSenha] = useState(false);

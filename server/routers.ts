@@ -6,7 +6,63 @@ import { getSessionCookieOptions } from "./_core/cookies";
 import { systemRouter } from "./_core/systemRouter";
 import { adminProcedure, protectedProcedure, publicProcedure, router } from "./_core/trpc";
 import { storagePut } from "./storage";
+import { storageGetSignedUrl } from "./storage";
 import { obterFatoresExternos } from "./externalFactors";
+import * as XLSX from "xlsx";
+import { existsSync } from "node:fs";
+import { readFile } from "node:fs/promises";
+import path from "node:path";
+
+let periodoBaseCache: { anoInicio: number; anoFim: number; atualizadoEm: number } | null = null;
+
+function extrairAno(valor: unknown): number | null {
+  if (valor instanceof Date && !Number.isNaN(valor.getTime())) return valor.getFullYear();
+  if (typeof valor === "number" && valor > 20000 && valor < 100000) {
+    const data = new Date(Date.UTC(1899, 11, 30) + valor * 86400000);
+    return Number.isNaN(data.getTime()) ? null : data.getUTCFullYear();
+  }
+  const texto = String(valor ?? "").trim();
+  const br = texto.match(/^(\d{1,2})[\/-](\d{1,2})[\/-](\d{4})/);
+  if (br) return Number(br[3]);
+  const iso = texto.match(/^(\d{4})[\/-]\d{1,2}[\/-]\d{1,2}/);
+  if (iso) return Number(iso[1]);
+  const ano = texto.match(/\b(19\d{2}|20\d{2})\b/);
+  return ano ? Number(ano[1]) : null;
+}
+
+async function obterPeriodoBaseCentral() {
+  if (periodoBaseCache && Date.now() - periodoBaseCache.atualizadoEm < 10 * 60 * 1000) return periodoBaseCache;
+  const arquivo = await getSharedFile("base");
+  let bytes: Buffer;
+  if (arquivo) {
+    const signedUrl = await storageGetSignedUrl(arquivo.storageKey);
+    const resposta = await fetch(signedUrl);
+    if (!resposta.ok) throw new Error(`Não foi possível ler a base central (${resposta.status}).`);
+    bytes = Buffer.from(await resposta.arrayBuffer());
+  } else {
+    const candidatos = [
+      path.resolve(process.cwd(), "client/public/data/tabelaFaturamento.csv"),
+      path.resolve(process.cwd(), "dist/public/data/tabelaFaturamento.csv"),
+      path.resolve(process.cwd(), "client/src/data/tabelaFaturamento.csv"),
+    ];
+    const caminho = candidatos.find((item) => existsSync(item));
+    if (!caminho) return null;
+    bytes = await readFile(caminho);
+  }
+  const workbook = XLSX.read(bytes, { type: "buffer", cellDates: true, cellNF: false });
+  const primeiraAba = workbook.SheetNames[0];
+  const linhas = XLSX.utils.sheet_to_json<Record<string, unknown>>(workbook.Sheets[primeiraAba] || {}, { defval: "" });
+  const nomesData = ["data_movimentacao", "data movimentação", "movimentacao", "data_emissao", "data emissão", "data", "date", "bai_movimentac", "bai_emissao"];
+  const anos: number[] = [];
+  for (const linha of linhas) {
+    const chave = Object.keys(linha).find((nome) => nomesData.includes(nome.trim().toLowerCase()));
+    const ano = chave ? extrairAno(linha[chave]) : null;
+    if (ano && ano >= 1900 && ano <= 2200) anos.push(ano);
+  }
+  if (!anos.length) return null;
+  periodoBaseCache = { anoInicio: Math.min(...anos), anoFim: Math.max(...anos), atualizadoEm: Date.now() };
+  return periodoBaseCache;
+}
 
 const sharedFileInput = z.object({
   kind: z.enum(["base", "metas"]),
@@ -23,6 +79,15 @@ export const appRouter = router({
   system: systemRouter,
   auth: router({
     me: publicProcedure.query(opts => opts.ctx.user),
+    basePeriod: publicProcedure.query(async () => {
+      try {
+        const periodo = await obterPeriodoBaseCentral();
+        return periodo ? { anoInicio: periodo.anoInicio, anoFim: periodo.anoFim } : null;
+      } catch (error) {
+        console.warn("[Auth] Não foi possível consultar o período da base central:", error);
+        return null;
+      }
+    }),
     login: publicProcedure
       .input(z.object({ email: z.string().email(), password: z.string().min(1) }))
       .mutation(async ({ input, ctx }) => {
