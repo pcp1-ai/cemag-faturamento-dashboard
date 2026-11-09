@@ -285,7 +285,13 @@ const MetaCheckboxFilter: React.FC<{ label: string; values: string[]; selected: 
 };
 
 export default function Home({ onLogout, emailAutenticado, isAdmin = false }: { onLogout?: () => void; emailAutenticado?: string; isAdmin?: boolean }) {
-  const arquivosCentrais = trpc.cemag.currentFiles.useQuery(undefined, { retry: false });
+  const arquivosCentrais = trpc.cemag.currentFiles.useQuery(undefined, {
+    retry: false,
+    staleTime: 30 * 60 * 1000,
+    gcTime: 2 * 60 * 60 * 1000,
+    refetchOnMount: false,
+    refetchOnWindowFocus: false,
+  });
   const uploadCentralMutation = trpc.cemag.uploadFile.useMutation();
   const [loading, setLoading] = useState<boolean>(true);
   const [erroCarregamento, setErroCarregamento] = useState<string | null>(null);
@@ -1007,6 +1013,9 @@ export default function Home({ onLogout, emailAutenticado, isAdmin = false }: { 
     enabled: (abaAtiva === "previsoes" || abaAtiva === "previsoes_agro") && localidadesFatoresSelecionadas.length > 0,
     retry: false,
     staleTime: 15 * 60 * 1000,
+    gcTime: 2 * 60 * 60 * 1000,
+    refetchOnMount: false,
+    refetchOnWindowFocus: false,
   });
   const statusFontesExternas = useMemo(() => {
     const resultado = fatoresExternosQuery.data;
