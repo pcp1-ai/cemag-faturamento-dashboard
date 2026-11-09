@@ -1394,10 +1394,37 @@ export default function Home({ onLogout, emailAutenticado, isAdmin = false }: { 
       return mapa;
     }, new Map<string, { ano: number; semestre: string; cidade: string; uf: string; regiao: string; faturamento: number; quantidade: number; linhas: number }>()).values())
       .sort((a, b) => a.ano - b.ano || a.semestre.localeCompare(b.semestre) || b.faturamento - a.faturamento);
+    const resumoSemestralPorFamilia = Array.from(dadosFiltrados.reduce((mapa, item) => {
+      const ano = item.ano;
+      const semestre = Number(item.mes_num) <= 6 ? "1º semestre" : "2º semestre";
+      const familia = item.familia || "Não identificada";
+      const chave = `${ano}|${semestre}|${familia}`;
+      const atual = mapa.get(chave) || { ano, semestre, familia, faturamento: 0, quantidade: 0, linhas: 0 };
+      atual.faturamento += Number(item.faturamento || 0);
+      atual.quantidade += Number(item.quantidade || 0);
+      atual.linhas += 1;
+      mapa.set(chave, atual);
+      return mapa;
+    }, new Map<string, { ano: number; semestre: string; familia: string; faturamento: number; quantidade: number; linhas: number }>()).values())
+      .sort((a, b) => a.ano - b.ano || a.semestre.localeCompare(b.semestre) || b.faturamento - a.faturamento);
     const ranking = (campo: "cliente" | "produto" | "representante" | "regiao" | "cidade") => {
       const mapa = new Map<string, number>();
       dadosFiltrados.forEach((item) => mapa.set(String(item[campo] || "Não informado"), (mapa.get(String(item[campo] || "Não informado")) || 0) + Number(item.faturamento || 0)));
       return Array.from(mapa.entries()).sort((a, b) => b[1] - a[1]).slice(0, 8).map(([nome, faturamento]) => ({ nome, faturamento }));
+    };
+    const rankingDetalhado = (campo: "produto" | "familia") => {
+      const mapa = new Map<string, { faturamento: number; quantidade: number; linhas: number; pedidos: Set<string>; clientes: Set<string> }>();
+      dadosFiltrados.forEach((item) => {
+        const nome = String(item[campo] || "Não informado");
+        const atual = mapa.get(nome) || { faturamento: 0, quantidade: 0, linhas: 0, pedidos: new Set<string>(), clientes: new Set<string>() };
+        atual.faturamento += Number(item.faturamento || 0);
+        atual.quantidade += Number(item.quantidade || 0);
+        atual.linhas += 1;
+        if (item.pedido) atual.pedidos.add(item.pedido);
+        if (item.cliente) atual.clientes.add(item.cliente);
+        mapa.set(nome, atual);
+      });
+      return Array.from(mapa.entries()).map(([nome, item]) => ({ nome, faturamento: item.faturamento, quantidade: item.quantidade, linhas: item.linhas, pedidos: item.pedidos.size, clientes: item.clientes.size })).sort((a, b) => b.faturamento - a.faturamento).slice(0, 50);
     };
     return JSON.stringify({
       abaAtual: INFO_ABAS[abaAtiva]?.titulo || abaAtiva,
@@ -1430,7 +1457,10 @@ export default function Home({ onLogout, emailAutenticado, isAdmin = false }: { 
       resumoDiario,
       resumoSemestralPorRegiao,
       rankings: { clientes: ranking("cliente"), produtos: ranking("produto"), representantes: ranking("representante"), regioes: ranking("regiao"), cidades: ranking("cidade") },
+      produtosDetalhados: rankingDetalhado("produto"),
+      familiasDetalhadas: rankingDetalhado("familia"),
       resumoSemestralPorCidade,
+      resumoSemestralPorFamilia,
     });
   }, [abaAtiva, dadosFiltrados, familiasExcluidasTexto, formasVendaTexto, filtros.tiposProduto, periodoBaseTexto, periodoEfetivo, periodoFiltroTexto]);
 
@@ -1530,6 +1560,19 @@ export default function Home({ onLogout, emailAutenticado, isAdmin = false }: { 
   }, [linhasRelatorio]);
 
   const infoAba = INFO_ABAS[abaAtiva] || { titulo: "Painel CEMAG", descricao: "Análise de inteligência comercial." };
+  const sugestoesChat = useMemo(() => {
+    const tipo = filtros.tiposProduto.length === 1 ? filtros.tiposProduto[0] : "produtos";
+    const periodo = filtros.dataInicio || filtros.dataFim ? ` no período atual` : "";
+    const sugestoes = [
+      `Qual é a melhor cidade por faturamento${periodo}?`,
+      `Quais ${tipo.toLocaleLowerCase("pt-BR")} ou modelos foram mais vendidos${periodo}?`,
+      `Qual família de produtos lidera${periodo}?`,
+      "Quais vendedores mais contribuíram para o resultado?",
+    ];
+    if (abaAtiva === "metas") sugestoes.unshift("A meta do período foi atingida?");
+    if (abaAtiva === "previsoes" || abaAtiva === "previsoes_agro") sugestoes.unshift("Qual é a previsão provável para os próximos meses?");
+    return sugestoes.slice(0, 5);
+  }, [abaAtiva, filtros.dataFim, filtros.dataInicio, filtros.tiposProduto]);
 
   if (loading) {
     return (
@@ -1546,7 +1589,7 @@ export default function Home({ onLogout, emailAutenticado, isAdmin = false }: { 
       {!chatAberto && <button type="button" onClick={() => setChatAberto(true)} className="no-print fixed bottom-5 right-5 z-50 inline-flex items-center gap-2 rounded-full bg-orange-600 px-4 py-3 text-sm font-bold text-white shadow-2xl transition hover:bg-orange-500" title="Perguntar ao assistente CEMAG"><MessageCircle className="h-5 w-5" /> <span className="hidden sm:inline">Perguntar ao CEMAG</span></button>}
       {chatAberto && <div className="no-print fixed bottom-5 right-5 z-50 flex w-[min(92vw,420px)] flex-col overflow-hidden rounded-2xl border border-slate-700 bg-slate-950 shadow-2xl">
         <div className="flex items-center justify-between border-b border-slate-800 bg-slate-900 px-4 py-3"><div><div className="flex items-center gap-2 text-sm font-bold text-white"><MessageCircle className="h-4 w-4 text-orange-400" /> Assistente CEMAG</div><p className="mt-0.5 text-[10px] text-slate-400">Responde com base nos filtros atuais do painel.</p></div><button type="button" onClick={() => setChatAberto(false)} className="rounded p-1 text-slate-400 hover:bg-slate-800 hover:text-white" title="Fechar chat"><X className="h-4 w-4" /></button></div>
-        <AIChatBox messages={chatMensagens} onSendMessage={enviarMensagemChat} isLoading={chatMutation.isPending} height={"min(68vh, 560px)"} emptyStateMessage="Pergunte sobre faturamento, clientes, produtos, metas ou regiões." suggestedPrompts={["Qual é o faturamento do filtro atual?", "Quais clientes lideram o resultado?", "O que mais contribuiu para este resultado?", "Compare os principais produtos."]} placeholder="Ex.: qual região mais cresceu?" />
+        <AIChatBox messages={chatMensagens} onSendMessage={enviarMensagemChat} isLoading={chatMutation.isPending} height={"min(68vh, 560px)"} emptyStateMessage="Pergunte sobre faturamento, clientes, produtos, metas ou regiões." suggestedPrompts={sugestoesChat} placeholder="Ex.: qual região mais cresceu?" />
       </div>}
       {/* Top Header CEMAG */}
       <header className="bg-[#111827] border-b border-slate-800 px-4 py-3 sticky top-0 z-30 shadow-md">
