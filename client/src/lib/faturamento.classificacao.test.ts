@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { classificarTipoProduto, grupoModelo } from "./faturamento";
+import { classificarCor, classificarTipoProduto, grupoModelo } from "./faturamento";
 
 describe("classificação de carretas conforme padrão CEMAG", () => {
   const carretas = [
@@ -45,6 +45,15 @@ describe("classificação de carretas conforme padrão CEMAG", () => {
   it("mantém sucata e itens comprados como categorias prioritárias", () => {
     expect(classificarTipoProduto("00000-PEÇA", "", "", "")).toBe("Sucata");
     expect(classificarTipoProduto("200123", "", "", "")).toBe("Itens comprados");
+  });
+
+  it.each([["CBH6R FO SS T M21 AN", "AN"], ["CBH6R FO SS T M21 LC", "LC"], ["FA2 SS T M23", "Laranja"]] as const)("identifica a cor %s", (produto, cor) => {
+    expect(classificarCor(produto, "Carreta")).toBe(cor);
+  });
+
+  it("não aplica cor a peças ou sucata", () => {
+    expect(classificarCor("ROLAMENTO", "Peça")).toBe("Não aplicável");
+    expect(classificarCor("00000", "Sucata")).toBe("Não aplicável");
   });
 
   it("identifica os grupos de modelo das famílias novas", () => {

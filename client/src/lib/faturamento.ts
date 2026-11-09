@@ -9,6 +9,7 @@ export interface TransacaoTratada {
   id: string;
   produto: string;
   tipo_produto: string;
+  cor: string;
   cliente: string;
   cliente_base: string;
   cidade: string;
@@ -319,6 +320,13 @@ export function classificarTipoProduto(produto: any, categoria: any, descricao: 
   return "Outros";
 }
 
+export function classificarCor(produto: any, tipoProduto: string): string {
+  if (tipoProduto !== "Carreta" && tipoProduto !== "Conjunto") return "Não aplicável";
+  const texto = semAcento(String(produto ?? "")).trim().toUpperCase();
+  const sufixo = texto.match(/(?:^|\s)(AV|LC|AN|VM|CE|LJ|VJ|CO)$/)?.[1];
+  return sufixo || "Laranja";
+}
+
 export function grupoModelo(produto: any): string {
   const fam = familiaProduto(produto).toUpperCase();
   if (fam.startsWith("CBHM")) return "CBHM";
@@ -536,11 +544,13 @@ export function prepararDados(
     const familia = familiaProduto(produto);
     const grupo = grupoModelo(produto);
     const tipoProduto = classificarTipoProduto(produto, catProduto, descGenerica, tipoVenda);
+    const cor = classificarCor(produto, tipoProduto);
 
     dadosTratados.push({
       id: `${pedido}_${idx}`,
       produto,
       tipo_produto: tipoProduto,
+      cor,
       cliente,
       cliente_base: clienteBase,
       cidade,

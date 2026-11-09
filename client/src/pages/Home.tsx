@@ -341,6 +341,7 @@ export default function Home({ onLogout, emailAutenticado, isAdmin = false }: { 
     gruposModelo: [],
     familias: [],
     tiposProduto: ["Carreta"],
+    cores: [],
     buscaProduto: "",
   });
 
@@ -455,6 +456,7 @@ export default function Home({ onLogout, emailAutenticado, isAdmin = false }: { 
         categorias: [],
         descricoes: [],
         gruposModelo: [],
+        cores: [],
       };
     }
     const setOf = (key: keyof TransacaoTratada) =>
@@ -475,6 +477,7 @@ export default function Home({ onLogout, emailAutenticado, isAdmin = false }: { 
       descricoes: setOf("descricao_generica") as string[],
       gruposModelo: setOf("grupo_modelo") as string[],
       tiposProduto: setOf("tipo_produto") as string[],
+      cores: setOf("cor") as string[],
     };
   }, [dados]);
 
@@ -521,6 +524,7 @@ export default function Home({ onLogout, emailAutenticado, isAdmin = false }: { 
       if (filtros.gruposModelo.length > 0 && !filtros.gruposModelo.includes(d.grupo_modelo)) return false;
       if (filtros.familias.length > 0 && !filtros.familias.includes(d.familia)) return false;
       if (filtros.tiposProduto.length > 0 && !filtros.tiposProduto.includes(d.tipo_produto)) return false;
+      if (filtros.cores.length > 0 && !filtros.cores.includes(d.cor)) return false;
 
       // Busca textual
       if (filtros.buscaProduto.trim()) {
@@ -551,6 +555,7 @@ export default function Home({ onLogout, emailAutenticado, isAdmin = false }: { 
       if (filtros.gruposModelo.length > 0 && !filtros.gruposModelo.includes(d.grupo_modelo)) return false;
       if (filtros.familias.length > 0 && !filtros.familias.includes(d.familia)) return false;
       if (filtros.tiposProduto.length > 0 && !filtros.tiposProduto.includes(d.tipo_produto)) return false;
+      if (filtros.cores.length > 0 && !filtros.cores.includes(d.cor)) return false;
       if (filtros.buscaProduto.trim() && !d.produto.toLowerCase().includes(filtros.buscaProduto.trim().toLowerCase())) return false;
       return true;
     });
@@ -676,6 +681,7 @@ export default function Home({ onLogout, emailAutenticado, isAdmin = false }: { 
         gruposModelo: [],
         familias: [],
         tiposProduto: [],
+        cores: [],
         buscaProduto: "",
       });
     }
@@ -1493,7 +1499,7 @@ export default function Home({ onLogout, emailAutenticado, isAdmin = false }: { 
       quantidade: somar("quantidade"),
       pedidosUnicos: new Set(dadosFiltrados.map((item) => item.pedido)).size,
       clientesUnicos: new Set(dadosFiltrados.map((item) => item.cliente)).size,
-      filtros: { formasVenda: formasVendaTexto, familiasExcluidas: familiasExcluidasTexto, tiposProduto: filtros.tiposProduto },
+      filtros: { formasVenda: formasVendaTexto, familiasExcluidas: familiasExcluidasTexto, tiposProduto: filtros.tiposProduto, cores: filtros.cores },
       observacaoDados: "A quantidade representa o campo quantidade das linhas faturadas. A base não comprova produção física; use 'faturamento' ou 'quantidade faturada' quando responder.",
       glossario: {
         vendedor: "representante",
@@ -1523,7 +1529,7 @@ export default function Home({ onLogout, emailAutenticado, isAdmin = false }: { 
       resumoSemestralPorCidade,
       resumoSemestralPorFamilia,
     });
-  }, [abaAtiva, dados, dadosFiltrados, familiasExcluidasTexto, formasVendaTexto, filtros.tiposProduto, periodoBaseTexto, periodoEfetivo, periodoFiltroTexto]);
+  }, [abaAtiva, dados, dadosFiltrados, familiasExcluidasTexto, formasVendaTexto, filtros.cores, filtros.tiposProduto, periodoBaseTexto, periodoEfetivo, periodoFiltroTexto]);
 
   const enviarMensagemChat = (content: string) => {
     const novasMensagens: Message[] = [...chatMensagens, { role: "user", content }];
