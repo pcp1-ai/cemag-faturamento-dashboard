@@ -1520,6 +1520,9 @@ export default function Home({ onLogout, emailAutenticado, isAdmin = false }: { 
       }
       contextoParaPergunta = JSON.stringify(contexto);
       if (contextoParaPergunta.length > 59000) {
+        const produtosPorMesCompactos = Object.fromEntries(
+          Object.entries((contexto.produtosPorMes || {}) as Record<string, unknown[]>).map(([mes, itens]) => [mes, itens.slice(0, 5)])
+        );
         const compacto = {
           periodoBase: contexto.periodoBase,
           periodoConsulta: contexto.periodoConsulta,
@@ -1528,13 +1531,28 @@ export default function Home({ onLogout, emailAutenticado, isAdmin = false }: { 
           quantidade: contexto.quantidade,
           observacaoDados: contexto.observacaoDados,
           rankings: contexto.rankings,
-          produtosDetalhados: contexto.produtosDetalhados,
-          familiasDetalhadas: contexto.familiasDetalhadas,
-          produtosPorMes: contexto.produtosPorMes,
-          resumoMensal: contexto.resumoMensal,
+          produtosDetalhados: Array.isArray(contexto.produtosDetalhados) ? contexto.produtosDetalhados.slice(0, 25) : [],
+          familiasDetalhadas: Array.isArray(contexto.familiasDetalhadas) ? contexto.familiasDetalhadas.slice(0, 25) : [],
+          produtosPorMes: produtosPorMesCompactos,
+          resumoMensal: Array.isArray(contexto.resumoMensal) ? contexto.resumoMensal.slice(-24) : [],
           resumoTipoProduto: contexto.resumoTipoProduto,
         };
         contextoParaPergunta = JSON.stringify(compacto);
+        // Última barreira: o contrato tRPC nunca recebe um payload próximo do limite.
+        if (contextoParaPergunta.length > 55000) {
+          contextoParaPergunta = JSON.stringify({
+            periodoBase: contexto.periodoBase,
+            periodoConsulta: contexto.periodoConsulta,
+            linhasBase: contexto.linhasBase,
+            faturamento: contexto.faturamento,
+            quantidade: contexto.quantidade,
+            observacaoDados: contexto.observacaoDados,
+            rankings: contexto.rankings,
+            familiasDetalhadas: Array.isArray(contexto.familiasDetalhadas) ? contexto.familiasDetalhadas.slice(0, 15) : [],
+            produtosDetalhados: Array.isArray(contexto.produtosDetalhados) ? contexto.produtosDetalhados.slice(0, 15) : [],
+            produtosPorMes: Object.fromEntries(Object.entries(produtosPorMesCompactos).map(([mes, itens]) => [mes, (itens as unknown[]).slice(0, 3)])),
+          });
+        }
       }
     } catch {
       // Mantém o contexto original caso a serialização seja inesperadamente inválida.
