@@ -1333,6 +1333,32 @@ export default function Home({ onLogout, emailAutenticado, isAdmin = false }: { 
     }, new Map<string, { mes: string; regiao: string; faturamento: number; quantidade: number; linhas: number }>()).values())
       .sort((a, b) => a.mes.localeCompare(b.mes) || b.faturamento - a.faturamento)
       .filter((item, index, lista) => index >= Math.max(0, lista.length - 144));
+    const resumoDiario = Array.from(dadosFiltrados.reduce((mapa, item) => {
+      const data = item.data_emissao instanceof Date ? item.data_emissao : new Date(item.data_emissao);
+      if (Number.isNaN(data.getTime())) return mapa;
+      const dia = data.toISOString().slice(0, 10);
+      const atual = mapa.get(dia) || { dia, faturamento: 0, quantidade: 0, linhas: 0, pedidos: new Set<string>(), clientes: new Set<string>(), regioes: new Map<string, number>() };
+      atual.faturamento += Number(item.faturamento || 0);
+      atual.quantidade += Number(item.quantidade || 0);
+      atual.linhas += 1;
+      if (item.pedido) atual.pedidos.add(item.pedido);
+      if (item.cliente) atual.clientes.add(item.cliente);
+      const regiao = item.regiao || "Não identificado";
+      atual.regioes.set(regiao, (atual.regioes.get(regiao) || 0) + Number(item.faturamento || 0));
+      mapa.set(dia, atual);
+      return mapa;
+    }, new Map<string, { dia: string; faturamento: number; quantidade: number; linhas: number; pedidos: Set<string>; clientes: Set<string>; regioes: Map<string, number> }>()).values())
+      .sort((a, b) => a.dia.localeCompare(b.dia))
+      .slice(-730)
+      .map((item) => ({
+        dia: item.dia,
+        faturamento: item.faturamento,
+        quantidade: item.quantidade,
+        linhas: item.linhas,
+        pedidos: item.pedidos.size,
+        clientes: item.clientes.size,
+        principaisRegioes: Array.from(item.regioes.entries()).sort((a, b) => b[1] - a[1]).slice(0, 3).map(([regiao, faturamento]) => ({ regiao, faturamento })),
+      }));
     const ranking = (campo: "cliente" | "produto" | "representante" | "regiao") => {
       const mapa = new Map<string, number>();
       dadosFiltrados.forEach((item) => mapa.set(String(item[campo] || "Não informado"), (mapa.get(String(item[campo] || "Não informado")) || 0) + Number(item.faturamento || 0)));
@@ -1353,6 +1379,7 @@ export default function Home({ onLogout, emailAutenticado, isAdmin = false }: { 
       resumoMensal,
       resumoTipoProduto,
       resumoMensalPorRegiao,
+      resumoDiario,
       rankings: { clientes: ranking("cliente"), produtos: ranking("produto"), representantes: ranking("representante"), regioes: ranking("regiao") },
     });
   }, [abaAtiva, dadosFiltrados, familiasExcluidasTexto, formasVendaTexto, filtros.tiposProduto, periodoBaseTexto, periodoEfetivo, periodoFiltroTexto]);
