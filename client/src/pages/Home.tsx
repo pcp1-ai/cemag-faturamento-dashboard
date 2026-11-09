@@ -384,6 +384,20 @@ export default function Home({ onLogout, emailAutenticado, isAdmin = false }: { 
     return prepararDados(baseOriginal, CLIENTE_INFO_OVERRIDE);
   }, [baseOriginal]);
 
+  useEffect(() => {
+    if (!meta?.data_min || !meta?.data_max) return;
+    try {
+      localStorage.setItem("cemag_base_periodo", JSON.stringify({
+        dataInicio: meta.data_min.toISOString().slice(0, 10),
+        dataFim: meta.data_max.toISOString().slice(0, 10),
+        anoInicio: meta.data_min.getFullYear(),
+        anoFim: meta.data_max.getFullYear(),
+      }));
+    } catch {
+      // A visualização continua funcionando mesmo se o armazenamento local estiver indisponível.
+    }
+  }, [meta?.data_min, meta?.data_max]);
+
   // Inicializar datas de período quando a base for carregada
   useEffect(() => {
     if (meta?.data_min && meta?.data_max && !filtros.dataFim) {

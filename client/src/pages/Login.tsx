@@ -13,6 +13,18 @@ interface LoginProps {
 
 export default function Login({ onAuthenticated, mensagemInicial = "" }: LoginProps) {
   const loginMutation = trpc.auth.login.useMutation();
+  const [periodoHistorico] = useState(() => {
+    if (typeof window === "undefined") return "Histórico disponível";
+    try {
+      const salvo = window.localStorage.getItem("cemag_base_periodo");
+      if (!salvo) return "Histórico disponível";
+      const periodo = JSON.parse(salvo) as { anoInicio?: number; anoFim?: number };
+      if (!periodo.anoInicio || !periodo.anoFim) return "Histórico disponível";
+      return periodo.anoInicio === periodo.anoFim ? String(periodo.anoInicio) : `${periodo.anoInicio}–${periodo.anoFim}`;
+    } catch {
+      return "Histórico disponível";
+    }
+  });
   const [email, setEmail] = useState("");
   const [senha, setSenha] = useState("");
   const [mostrarSenha, setMostrarSenha] = useState(false);
@@ -70,7 +82,7 @@ export default function Login({ onAuthenticated, mensagemInicial = "" }: LoginPr
               <p className="mt-5 max-w-md text-sm leading-6 text-orange-100">Acompanhe faturamento, metas, produtos, clientes, regiões e previsões em um único painel.</p>
             </div>
             <div className="relative grid grid-cols-2 gap-3 text-xs text-orange-50">
-              <div className="rounded-2xl border border-white/25 bg-white/10 p-4 backdrop-blur-sm"><strong className="block text-lg text-white">2018+</strong><span>Histórico disponível</span></div>
+              <div className="rounded-2xl border border-white/25 bg-white/10 p-4 backdrop-blur-sm"><strong className="block text-lg text-white">{periodoHistorico}</strong><span>Histórico disponível</span></div>
               <div className="rounded-2xl border border-white/25 bg-white/10 p-4 backdrop-blur-sm"><strong className="block text-lg text-white">CEMAG</strong><span>Acesso corporativo</span></div>
             </div>
           </section>
