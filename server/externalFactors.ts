@@ -24,6 +24,17 @@ export type MercadoMaquinasAnfavea = {
   atualizado_em: string | null;
 };
 
+export type FonteAgroStatus = {
+  id: "ibge_pam" | "bcb_credito_rural" | "conab" | "comexstat";
+  nome: string;
+  status: "consultado" | "indisponivel" | "nao_consultado";
+  periodicidade: string;
+  periodo_disponivel: string;
+  fonte: string;
+  atualizado_em: string | null;
+  observacao: string;
+};
+
 export type FatoresExternosResult = {
   localidade: string | null;
   latitude: number | null;
@@ -35,6 +46,7 @@ export type FatoresExternosResult = {
   indices_climaticos: Array<{ indice: string; periodo: string; anomalia_c: number | null; classificacao: string }>;
   indicadores_agro: IndicadoresAgro;
   mercado_maquinas_anfavea: MercadoMaquinasAnfavea;
+  fontes_agro: FonteAgroStatus[];
   fontes: string[];
   avisos: string[];
   atualizado_em: string;
@@ -129,6 +141,24 @@ async function buscarCafeIbge() {
     return Number.isFinite(value) ? value : null;
   };
   return { ano_referencia: ano, cafe_area_colhida_ha: find("216"), cafe_producao_t: find("214"), cafe_valor_producao_mil_brl: find("215") };
+}
+
+async function verificarFonteAgro(url: string, fonte: FonteAgroStatus["fonte"], id: FonteAgroStatus["id"], nome: string, periodicidade: string, periodo_disponivel: string, observacao: string): Promise<FonteAgroStatus> {
+  try {
+    await fetchText(url, 20_000);
+    return { id, nome, status: "consultado", periodicidade, periodo_disponivel, fonte, atualizado_em: new Date().toISOString(), observacao };
+  } catch (error) {
+    return { id, nome, status: "indisponivel", periodicidade, periodo_disponivel, fonte, atualizado_em: null, observacao: `${observacao} (${error instanceof Error ? error.message : "erro de consulta"})` };
+  }
+}
+
+function fontesAgroIniciais(): FonteAgroStatus[] {
+  return [
+    { id: "ibge_pam", nome: "Produção agrícola municipal — IBGE/PAM", status: "nao_consultado", periodicidade: "Anual", periodo_disponivel: "Último ano publicado pelo IBGE", fonte: "IBGE/SIDRA", atualizado_em: null, observacao: "Produção, área, rendimento e valor por município, estado e região." },
+    { id: "bcb_credito_rural", nome: "Crédito rural — Banco Central/SICOR", status: "nao_consultado", periodicidade: "Consulta por operação e período", periodo_disponivel: "Conforme registros publicados pelo Banco Central", fonte: "Banco Central do Brasil — SICOR/MDCR", atualizado_em: null, observacao: "Investimento, custeio, contratos e valores por localidade quando a consulta municipal está disponível." },
+    { id: "conab", nome: "Safra e preços agrícolas — CONAB", status: "nao_consultado", periodicidade: "Mensal, por produto/levantamento", periodo_disponivel: "Último levantamento publicado", fonte: "CONAB", atualizado_em: null, observacao: "Safra, preços mínimos, comercialização e programas de apoio; ausência de publicação não é tratada como zero." },
+    { id: "comexstat", nome: "Comércio exterior — Comex Stat", status: "nao_consultado", periodicidade: "Mensal", periodo_disponivel: "Período disponível na consulta oficial", fonte: "MDIC — Comex Stat", atualizado_em: null, observacao: "Exportações e importações por produto, UF, país e período." },
+  ];
 }
 
 async function buscarIndiceOni() {
@@ -251,7 +281,7 @@ export function agregarFatoresNacionais(resultados: FatoresExternosResult[], des
     return { modelo: primeira.modelo, temporada: primeira.temporada, periodo: primeira.periodo, chuva_total_mm: media(rows.map((row) => row.chuva_total_mm)), sinal_tercil: valor_sinal == null ? null : valor_sinal > 0 ? "Acima do normal" : valor_sinal < 0 ? "Abaixo do normal" : "Sem sinal predominante", valor_sinal, atualizado_em: new Date().toISOString() };
   });
   const base = resultados[0];
-  return { localidade: descricao, latitude: null, longitude: null, meses, previsao_chuva, expectativas_selic: base?.expectativas_selic || [], previsao_sazonal, indices_climaticos: base?.indices_climaticos || [], indicadores_agro: base?.indicadores_agro || { ptax_media_brl: null, cafe_producao_t: null, cafe_area_colhida_ha: null, cafe_valor_producao_mil_brl: null, ano_referencia: null, credito_investimento_brl: null, credito_status: "nao_consultado", precos_agro: [] }, mercado_maquinas_anfavea: base?.mercado_maquinas_anfavea || { status: "nao_consultado", tipo_dado: "VENDA VAREJO", agregacao: "mensal", series: [], fonte: "ANFAVEA — Central de Dados", atualizado_em: null }, fontes: Array.from(new Set([...resultados.flatMap((resultado) => resultado.fontes), `Agregação: média simples de ${resultados.length} localidades selecionadas`])), avisos: [`A abrangência usa média simples das ${resultados.length} localidades selecionadas. Ela representa os pontos escolhidos, não uma média areal oficial de todo o território.`, ...avisosExtras, ...resultados.flatMap((resultado) => resultado.avisos)], atualizado_em: new Date().toISOString() };
+  return { localidade: descricao, latitude: null, longitude: null, meses, previsao_chuva, expectativas_selic: base?.expectativas_selic || [], previsao_sazonal, indices_climaticos: base?.indices_climaticos || [], indicadores_agro: base?.indicadores_agro || { ptax_media_brl: null, cafe_producao_t: null, cafe_area_colhida_ha: null, cafe_valor_producao_mil_brl: null, ano_referencia: null, credito_investimento_brl: null, credito_status: "nao_consultado", precos_agro: [] }, mercado_maquinas_anfavea: base?.mercado_maquinas_anfavea || { status: "nao_consultado", tipo_dado: "VENDA VAREJO", agregacao: "mensal", series: [], fonte: "ANFAVEA — Central de Dados", atualizado_em: null }, fontes_agro: base?.fontes_agro || fontesAgroIniciais(), fontes: Array.from(new Set([...resultados.flatMap((resultado) => resultado.fontes), `Agregação: média simples de ${resultados.length} localidades selecionadas`])), avisos: [`A abrangência usa média simples das ${resultados.length} localidades selecionadas. Ela representa os pontos escolhidos, não uma média areal oficial de todo o território.`, ...avisosExtras, ...resultados.flatMap((resultado) => resultado.avisos)], atualizado_em: new Date().toISOString() };
 }
 
 async function buscarPrevisaoSazonal(latitude: number, longitude: number) {
@@ -332,6 +362,7 @@ export async function obterFatoresExternos(input: { dataInicio: string; dataFim:
   const previsao_sazonal: FatoresExternosResult["previsao_sazonal"] = [];
   const indices_climaticos: FatoresExternosResult["indices_climaticos"] = [];
   const indicadores_agro: IndicadoresAgro = { ptax_media_brl: null, cafe_producao_t: null, cafe_area_colhida_ha: null, cafe_valor_producao_mil_brl: null, ano_referencia: null, credito_investimento_brl: null, credito_status: "nao_consultado", precos_agro: [] };
+  const fontes_agro = fontesAgroIniciais();
   let mercado_maquinas_anfavea: MercadoMaquinasAnfavea = { status: "nao_consultado", tipo_dado: "VENDA VAREJO", agregacao: "mensal", series: [], fonte: "ANFAVEA — Central de Dados", atualizado_em: null };
 
   if (!opcoes.consultaRapida) {
@@ -367,8 +398,12 @@ export async function obterFatoresExternos(input: { dataInicio: string; dataFim:
 
   try {
     Object.assign(indicadores_agro, await buscarCafeIbge());
+    const fonteIbge = fontes_agro.find((fonte) => fonte.id === "ibge_pam");
+    if (fonteIbge) { fonteIbge.status = "consultado"; fonteIbge.periodo_disponivel = String(indicadores_agro.ano_referencia || "último ano publicado"); fonteIbge.atualizado_em = new Date().toISOString(); }
     fontes.push("IBGE — SIDRA/PAM tabela 1613 (café, último ano disponível)");
   } catch (error) {
+    const fonteIbge = fontes_agro.find((fonte) => fonte.id === "ibge_pam");
+    if (fonteIbge) { fonteIbge.status = "indisponivel"; fonteIbge.observacao = `Consulta IBGE indisponível: ${error instanceof Error ? error.message : "erro de consulta"}`; }
     avisos.push(`Produção de café do IBGE indisponível: ${error instanceof Error ? error.message : "erro de consulta"}`);
   }
 
@@ -379,6 +414,8 @@ export async function obterFatoresExternos(input: { dataInicio: string; dataFim:
     const credito = await buscarCreditoInvestimento(input.cidade, input.uf);
     indicadores_agro.credito_investimento_brl = credito.value;
     indicadores_agro.credito_status = credito.status;
+    const fonteCredito = fontes_agro.find((fonte) => fonte.id === "bcb_credito_rural");
+    if (fonteCredito) { fonteCredito.status = credito.status; fonteCredito.atualizado_em = credito.status === "consultado" ? new Date().toISOString() : null; }
     if (credito.status === "consultado") fontes.push("Banco Central do Brasil — SICOR/MDCR investimento");
     if (credito.status === "indisponivel") avisos.push("Crédito rural de investimento não respondeu; será mantido como indisponível até a próxima atualização.");
   } else {
@@ -436,6 +473,14 @@ export async function obterFatoresExternos(input: { dataInicio: string; dataFim:
     avisos.push("Selecione um município identificado para consultar a chuva.");
   }
 
+  if (!opcoes.consultaRapida && !opcoes.consultaAgregada) {
+    const fontesVerificadas = await Promise.all([
+      verificarFonteAgro("https://www.conab.gov.br/precos-minimos", "CONAB", "conab", "Safra e preços agrícolas — CONAB", "Mensal, por levantamento", "Último levantamento publicado", "A página oficial respondeu; os conjuntos detalhados dependem do produto e do levantamento selecionado."),
+      verificarFonteAgro("https://comexstat.mdic.gov.br/pt/home", "MDIC — Comex Stat", "comexstat", "Comércio exterior — Comex Stat", "Mensal", "Período disponível na consulta oficial", "O portal oficial respondeu; a consulta detalhada de exportações será parametrizada por produto e UF."),
+    ]);
+    for (const fonte of fontesVerificadas) { const indice = fontes_agro.findIndex((item) => item.id === fonte.id); if (indice >= 0) fontes_agro[indice] = fonte; }
+  }
+
   return {
     localidade: localidade?.name || null,
     latitude: Number.isFinite(localidade?.latitude) ? Number(localidade?.latitude) : null,
@@ -447,6 +492,7 @@ export async function obterFatoresExternos(input: { dataInicio: string; dataFim:
     indices_climaticos,
     indicadores_agro,
     mercado_maquinas_anfavea,
+    fontes_agro,
     fontes,
     avisos,
     atualizado_em: new Date().toISOString(),
