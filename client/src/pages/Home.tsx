@@ -210,7 +210,7 @@ async function carregarBasePersistente(): Promise<{ rows: any[]; nome: string } 
 const GRUPOS_ABAS = [
   { id: "resumo", label: "Resumo", icon: "🏠", abas: [{ id: "visao_geral", label: "Visão geral" }, { id: "metas", label: "Metas mensais" }, { id: "modo_apresentacao", label: "Modo apresentação" }] },
   { id: "analises", label: "Análises comerciais", icon: "📊", abas: [{ id: "ano_ano", label: "Ano x ano" }, { id: "mes_mes", label: "Mês x mês" }, { id: "produtos", label: "Produtos e carretas" }, { id: "clientes", label: "Clientes" }, { id: "regioes", label: "Regiões" }, { id: "representantes", label: "Representantes" }, { id: "tipos", label: "Tipos e categorias" }, { id: "inteligencia", label: "Inteligência comercial" }] },
-  { id: "previsoes", label: "Previsões", icon: "📈", abas: [{ id: "previsoes", label: "Previsões" }, { id: "analise_historica", label: "Análise histórica" }, { id: "previsoes_agro", label: "Previsões Agro" }, { id: "central_externa", label: "Central de dados" }] },
+  { id: "previsoes", label: "Previsões", icon: "📈", abas: [{ id: "previsoes", label: "Previsões" }, { id: "analise_historica", label: "Análise histórica" }, { id: "previsoes_agro", label: "Previsões Agro e fatores externos" }, { id: "central_externa", label: "Central de dados / ANFAVEA" }] },
   { id: "dados", label: "Dados e relatórios", icon: "📁", abas: [{ id: "diagnostico", label: "Diagnóstico da base" }, { id: "base_tratada", label: "Base tratada" }, { id: "exportacoes", label: "Exportações" }] },
 ] as const;
 const INFO_ABAS: Record<string, { titulo: string; descricao: string }> = {
@@ -1022,7 +1022,7 @@ export default function Home({ onLogout, emailAutenticado, isAdmin = false }: { 
     descricaoAbrangencia: descricaoAbrangenciaFatores,
   }), [abrangenciaFatores, centralDataFim, centralDataInicio, cidadeFatoresExternos, descricaoAbrangenciaFatores, filtros.dataInicio, filtros.dataFim, localidadesFatoresSelecionadas, meta?.data_min, meta?.data_max, abaAtiva]);
   const fatoresExternosQuery = trpc.cemag.fatoresExternos.useQuery(fatoresExternosInput, {
-    enabled: (abaAtiva === "previsoes" || abaAtiva === "previsoes_agro") && localidadesFatoresSelecionadas.length > 0,
+    enabled: (abaAtiva === "previsoes" || abaAtiva === "previsoes_agro" || abaAtiva === "central_externa") && localidadesFatoresSelecionadas.length > 0,
     retry: false,
     staleTime: 15 * 60 * 1000,
     gcTime: 2 * 60 * 60 * 1000,
@@ -3337,7 +3337,7 @@ export default function Home({ onLogout, emailAutenticado, isAdmin = false }: { 
               {/* ========================================================= */}
               {/* ABA: PREVISÕES AGRO */}
               {/* ========================================================= */}
-              {abaAtiva === "previsoes_agro" && (
+              {(abaAtiva === "previsoes_agro" || abaAtiva === "central_externa") && (
                 <div className="space-y-6">
                   <div className="bg-slate-900/60 p-5 rounded-xl border border-emerald-900/60"><div className="flex flex-wrap items-start justify-between gap-4"><div><h2 className="text-lg font-bold text-white">Previsões Agro e fatores externos</h2><p className="text-xs text-slate-400 mt-1">Painel separado para clima, juros, produção agrícola, crédito rural e preços de commodities. Os indicadores não alteram a previsão comercial sem validação histórica.</p></div><div className="flex flex-wrap items-end justify-end gap-3"><div className="text-right text-[11px] text-slate-500">{descricaoAbrangenciaFatores}</div><button type="button" onClick={() => void fatoresExternosQuery.refetch()} disabled={fatoresExternosQuery.isFetching || localidadesFatoresSelecionadas.length === 0} className="rounded-lg bg-orange-500 px-3 py-2 text-xs font-bold text-white transition hover:bg-orange-400 disabled:cursor-not-allowed disabled:opacity-50">{fatoresExternosQuery.isFetching ? "Atualizando..." : "Atualizar APIs"}</button></div></div></div>
                   {fatoresExternosQuery.isFetching && <div className="rounded-xl border border-sky-900/60 bg-sky-950/20 p-4 text-sm text-sky-300">Consultando APIs oficiais e fontes de mercado...</div>}
