@@ -53,6 +53,7 @@ export type FatoresExternosResult = {
 };
 
 type BcbRow = { data?: string; valor?: string | number };
+type BcbCreditoRow = { nomeUF?: string; VlInvestimento?: number | string; QtdInvestimento?: number | string; AnoEmissao?: number | string; MesEmissao?: number | string };
 type BcbFocusRow = { Indicador?: string; Data?: string; Reuniao?: string; Media?: number; Mediana?: number; numeroRespondentes?: number; baseCalculo?: number };
 
 type GeocodeResult = { name?: string; latitude?: number; longitude?: number; admin1?: string; country?: string };
@@ -173,10 +174,13 @@ async function buscarIndiceOni() {
 
 async function buscarCreditoInvestimento(cidade: string, uf?: string) {
   if (!cidade || cidade === "Brasil" || !uf) return { value: null, status: "nao_consultado" as const };
-  const url = "https://olinda.bcb.gov.br/olinda/servico/SICOR/versao/v2/odata/InvestMunicipioProduto?$format=json&$top=1";
+  const ufNormalizada = uf.trim().toUpperCase();
+  const url = `https://olinda.bcb.gov.br/olinda/servico/SICOR/versao/v2/odata/RegiaoUF?$format=json&$filter=${encodeURIComponent(`nomeUF eq '${ufNormalizada}'`)}&$top=10000`;
   try {
-    await fetchJson<unknown>(url, 20_000);
-    return { value: null, status: "consultado" as const };
+    const data = await fetchJson<{ value?: BcbCreditoRow[] }>(url, 30_000);
+    const rows = data.value || [];
+    const total = rows.reduce((sum, row) => sum + (Number(row.VlInvestimento) || 0), 0);
+    return { value: total, status: "consultado" as const };
   } catch {
     return { value: null, status: "indisponivel" as const };
   }
