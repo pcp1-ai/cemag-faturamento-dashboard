@@ -344,6 +344,14 @@ export const appRouter = router({
           }
           if (ano && /faturamento|faturado|acumulado|vendas?|valor/.test(pergunta) && /ano|acumulad|até agora|ate agora|atual/.test(pergunta) && Array.isArray(analitico.resumoMensal)) {
             const limiteMes = new Date().toISOString().slice(0, 7);
+            const tipoSolicitado = /apenas|somente|exclusiv|só|so/.test(pergunta) && /carreta|carretas/.test(pergunta) ? "Carreta" : /apenas|somente|exclusiv|só|so/.test(pergunta) && /conjunto|conjuntos/.test(pergunta) ? "Conjunto" : /apenas|somente|exclusiv|só|so/.test(pergunta) && /peça|peca|peças|pecas/.test(pergunta) ? "Peça" : /apenas|somente|exclusiv|só|so/.test(pergunta) && /sucata/.test(pergunta) ? "Sucata" : null;
+            if (tipoSolicitado && Array.isArray(analitico.resumoMensalPorTipoProduto)) {
+              const mesesDoTipo = analitico.resumoMensalPorTipoProduto.filter((item: any) => String(item.mes).startsWith(`${ano}-`) && String(item.mes) <= limiteMes && item.tipo_produto === tipoSolicitado);
+              if (mesesDoTipo.length) {
+                const acumuladoTipo = mesesDoTipo.reduce((soma: any, item: any) => ({ faturamento: soma.faturamento + Number(item.faturamento || 0), quantidade: soma.quantidade + Number(item.quantidade || 0), linhas: soma.linhas + Number(item.linhas || 0) }), { faturamento: 0, quantidade: 0, linhas: 0 });
+                return { content: `Até **${limiteMes.slice(5, 7)}/${ano}**, considerando **somente ${tipoSolicitado}**, o faturamento bruto acumulado é **${acumuladoTipo.faturamento.toLocaleString("pt-BR", { style: "currency", currency: "BRL" })}**, com **${acumuladoTipo.quantidade.toLocaleString("pt-BR")} unidades registradas** em **${acumuladoTipo.linhas.toLocaleString("pt-BR")} linhas**.\n\nForam considerados os meses: ${mesesDoTipo.map((item: any) => item.mes).join(", ")}. Esse resultado não inclui Peças, Conjuntos, Sucata ou outras categorias.` };
+              }
+            }
             const mesesDoAno = analitico.resumoMensal.filter((item: any) => String(item.mes).startsWith(`${ano}-`) && String(item.mes) <= limiteMes);
             if (mesesDoAno.length) {
               const acumulado = mesesDoAno.reduce((soma: any, item: any) => ({ faturamento: soma.faturamento + Number(item.faturamento || 0), quantidade: soma.quantidade + Number(item.quantidade || 0), linhas: soma.linhas + Number(item.linhas || 0) }), { faturamento: 0, quantidade: 0, linhas: 0 });
