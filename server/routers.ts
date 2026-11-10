@@ -10,6 +10,7 @@ import { storageGetSignedUrl } from "./storage";
 import { obterFatoresExternos } from "./externalFactors";
 import { invokeLLM } from "./_core/llm";
 import * as XLSX from "xlsx";
+import Papa from "papaparse";
 import { existsSync } from "node:fs";
 import { readFile } from "node:fs/promises";
 import path from "node:path";
@@ -18,6 +19,17 @@ import { CLIENTE_INFO_OVERRIDE, prepararDados } from "../client/src/lib/faturame
 let periodoBaseCache: { anoInicio: number; anoFim: number; atualizadoEm: number } | null = null;
 let contextoAnaliticoCache: { version: string; atualizadoEm: number; contexto: string } | null = null;
 let reconstruindoAnalitica: Promise<void> | null = null;
+
+function lerLinhasArquivo(bytes: Buffer, fileName: string): Record<string, unknown>[] {
+  if (/\.csv$/i.test(fileName)) {
+    const parsed = Papa.parse<Record<string, unknown>>(bytes.toString("utf8"), { header: true, skipEmptyLines: true, dynamicTyping: false, delimiter: "" });
+    if (parsed.errors.length) console.warn("[CSV] Avisos de leitura:", parsed.errors.slice(0, 3));
+    return parsed.data.filter((linha) => Object.values(linha).some((valor) => String(valor ?? "").trim() !== ""));
+  }
+  const workbook = XLSX.read(bytes, { type: "buffer", cellDates: true, cellNF: false });
+  const primeiraAba = workbook.SheetNames[0];
+  return XLSX.utils.sheet_to_json<Record<string, unknown>>(workbook.Sheets[primeiraAba] || {}, { defval: "" });
+}
 
 function extrairAno(valor: unknown): number | null {
   if (valor instanceof Date && !Number.isNaN(valor.getTime())) return valor.getFullYear();
@@ -53,9 +65,7 @@ async function obterPeriodoBaseCentral() {
     if (!caminho) return null;
     bytes = await readFile(caminho);
   }
-  const workbook = XLSX.read(bytes, { type: "buffer", cellDates: true, cellNF: false });
-  const primeiraAba = workbook.SheetNames[0];
-  const linhas = XLSX.utils.sheet_to_json<Record<string, unknown>>(workbook.Sheets[primeiraAba] || {}, { defval: "" });
+  const linhas = lerLinhasArquivo(bytes, arquivo?.fileName || "tabelaFaturamento.csv");
   const nomesData = ["data_movimentacao", "data movimentação", "movimentacao", "data_emissao", "data emissão", "data", "date", "bai_movimentac", "bai_emissao"];
   const anos: number[] = [];
   for (const linha of linhas) {
@@ -98,9 +108,7 @@ function extrairDataTexto(valor: unknown): string | null {
 }
 
 async function reconstruirBaseAnalitica(bytes: Buffer, storageKey: string, fileName: string) {
-  const workbook = XLSX.read(bytes, { type: "buffer", cellDates: true, cellNF: false });
-  const primeiraAba = workbook.SheetNames[0];
-  const linhas = XLSX.utils.sheet_to_json<Record<string, unknown>>(workbook.Sheets[primeiraAba] || {}, { defval: "" });
+  const linhas = lerLinhasArquivo(bytes, fileName);
   if (!linhas.length) throw new Error("A base enviada não possui linhas para a base analítica.");
   let linhasAnaliticas: Record<string, unknown>[] = linhas;
   try {
@@ -115,7 +123,7 @@ async function reconstruirBaseAnalitica(bytes: Buffer, storageKey: string, fileN
     return chave ? extrairDataTexto(linha[chave]) : null;
   }).filter((valor): valor is string => Boolean(valor)).sort();
   const dimensoes = Object.keys(linhasAnaliticas[0]).filter((nome) => /data|ano|m[eê]s|cidade|uf|estado|regi[aã]o|representante|vendedor|cliente|produto|modelo|fam[ií]lia|tipo|pedido|lista|quantidade|faturamento|valor|cor/i.test(nome));
-  const version = `${Date.now()}-a2-${safeFileName(fileName)}`;
+  const version = `${Date.now()}-a3-${safeFileName(fileName)}`;
   const rows = linhasAnaliticas.map((linha, index) => ({ baseVersion: version, rowNumber: index + 1, payload: JSON.stringify(linha) }));
   await replaceAnalyticBase({
     id: 1,
@@ -160,7 +168,7 @@ function dataAnalitica(valor: unknown): string | null {
 async function obterContextoAnaliticoPersistido() {
   const arquivoAtual = await getSharedFile("base");
   let base = await getCurrentAnalyticBase();
-  if (arquivoAtual && (!base || base.sourceStorageKey !== arquivoAtual.storageKey || !base.version.includes("-a2-"))) {
+  if (arquivoAtual && (!base || base.sourceStorageKey !== arquivoAtual.storageKey || !base.version.includes("-a3-"))) {
     if (!reconstruindoAnalitica) {
       reconstruindoAnalitica = (async () => {
         const signedUrl = await storageGetSignedUrl(arquivoAtual.storageKey);
