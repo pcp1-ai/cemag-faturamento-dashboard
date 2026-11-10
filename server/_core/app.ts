@@ -1,5 +1,6 @@
 import "dotenv/config";
 import express from "express";
+import path from "node:path";
 import { createExpressMiddleware } from "@trpc/server/adapters/express";
 import { appRouter } from "../routers";
 import { refreshExternalFactorsScheduled } from "../scheduledExternalFactors";
@@ -20,6 +21,14 @@ export function createApiApp(app = express()) {
     }),
   );
   app.post("/api/scheduled/refresh-external-factors", refreshExternalFactorsScheduled);
+
+  const staticDirectory = path.resolve(process.cwd(), "public");
+  app.use(express.static(staticDirectory));
+  app.get(/^\/(?!api(?:\/|$)).*/, (_req, res, next) => {
+    res.sendFile(path.join(staticDirectory, "index.html"), (error) => {
+      if (error) next(error);
+    });
+  });
 
   return app;
 }
