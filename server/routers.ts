@@ -334,6 +334,15 @@ export const appRouter = router({
               return { content: `No ano de **${ano}**, considerando somente registros classificados como **Carreta** na base analítica persistida, o ranking por **${criterio}** é:\n\n${lista}\n\nEsse é um ranking anual real, não o ranking histórico acumulado. Os números são os valores registrados na base e não representam necessariamente produção física.` };
             }
           }
+          if (ano && /faturamento|faturado|acumulado|vendas?|valor/.test(pergunta) && /ano|acumulad|até agora|ate agora|atual/.test(pergunta) && Array.isArray(analitico.resumoMensal)) {
+            const limiteMes = new Date().toISOString().slice(0, 7);
+            const mesesDoAno = analitico.resumoMensal.filter((item: any) => String(item.mes).startsWith(`${ano}-`) && String(item.mes) <= limiteMes);
+            if (mesesDoAno.length) {
+              const acumulado = mesesDoAno.reduce((soma: any, item: any) => ({ faturamento: soma.faturamento + Number(item.faturamento || 0), quantidade: soma.quantidade + Number(item.quantidade || 0), linhas: soma.linhas + Number(item.linhas || 0) }), { faturamento: 0, quantidade: 0, linhas: 0 });
+              const mesesFuturos = analitico.resumoMensal.filter((item: any) => String(item.mes).startsWith(`${ano}-`) && String(item.mes) > limiteMes).map((item: any) => item.mes);
+              return { content: `Até o mês atual disponível (**${limiteMes.slice(5, 7)}/${ano}**), o faturamento bruto acumulado de **${ano}** na base analítica completa é **${acumulado.faturamento.toLocaleString("pt-BR", { style: "currency", currency: "BRL" })}**, com **${acumulado.quantidade.toLocaleString("pt-BR")} unidades registradas** em **${acumulado.linhas.toLocaleString("pt-BR")} linhas**.\n\nA soma foi feita diretamente pelos meses: ${mesesDoAno.map((item: any) => item.mes).join(", ")}.${mesesFuturos.length ? ` Os registros de ${mesesFuturos.join(", ")} foram excluídos por serem posteriores ao mês atual; a base contém dados futuros.` : ""}\n\nEsse é o total bruto de todas as categorias e formas de venda, não apenas Carreta ou V ProdPrópria p Consumo.` };
+            }
+          }
           if (ano && /vendedor|representante|consultor/.test(pergunta) && Array.isArray(analitico.representantesPorAno)) {
             const lider = analitico.representantesPorAno.filter((item: any) => String(item.ano) === ano).sort((a: any, b: any) => b.faturamento - a.faturamento)[0];
             if (lider) return { content: `Em **${ano}**, o representante com maior faturamento foi **${lider.representante}**, com **${Number(lider.faturamento || 0).toLocaleString("pt-BR", { style: "currency", currency: "BRL" })}** e **${Number(lider.quantidade || 0).toLocaleString("pt-BR")} unidades faturadas**.` };
