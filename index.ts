@@ -1,4 +1,7 @@
 import "dotenv/config";
+import express from "express";
 import { createApiApp } from "./server/_core/app";
 
-export default createApiApp();
+const app = createApiApp(express());
+
+export default app;
