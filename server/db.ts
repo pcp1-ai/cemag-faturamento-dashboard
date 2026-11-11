@@ -1,5 +1,6 @@
 import { eq, desc, asc, ne, count } from "drizzle-orm";
 import { drizzle } from "drizzle-orm/mysql2";
+import { getMySqlConnectionConfig } from "./dbConfig";
 import { CemagAnalyticBase, CemagExternalSnapshot, CemagSharedFile, InsertCemagAnalyticBase, InsertCemagExternalSnapshot, InsertCemagSharedFile, InsertUser, cemagAnalyticBases, cemagAnalyticRows, cemagExternalSnapshots, cemagSharedFiles, users } from "../drizzle/schema";
 import { ENV } from './_core/env';
 
@@ -7,9 +8,12 @@ let _db: ReturnType<typeof drizzle> | null = null;
 
 // Lazily create the drizzle instance so local tooling can run without a DB.
 export async function getDb() {
-  if (!_db && process.env.DATABASE_URL) {
+  const connection = getMySqlConnectionConfig();
+  if (!_db && connection) {
     try {
-      _db = drizzle(process.env.DATABASE_URL);
+      _db = typeof connection === "string"
+        ? drizzle(connection)
+        : drizzle({ connection });
     } catch (error) {
       console.warn("[Database] Failed to connect:", error);
       _db = null;
