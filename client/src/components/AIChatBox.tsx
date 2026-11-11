@@ -12,6 +12,7 @@ import { Streamdown } from "streamdown";
 export type Message = {
   role: "system" | "user" | "assistant";
   content: string;
+  suggestions?: string[];
 };
 
 export type AIChatBoxProps = {
@@ -261,9 +262,26 @@ export function AIChatBox({
                       )}
                     >
                       {message.role === "assistant" ? (
-                        <div className="prose prose-sm dark:prose-invert max-w-none">
-                          <Streamdown>{message.content}</Streamdown>
-                        </div>
+                        <>
+                          <div className="prose prose-sm dark:prose-invert max-w-none">
+                            <Streamdown>{message.content}</Streamdown>
+                          </div>
+                          {!isLoading && message.suggestions?.length ? (
+                            <div className="mt-3 flex flex-wrap gap-2" aria-label="Perguntas relacionadas">
+                              {message.suggestions.slice(0, 3).map((suggestion, suggestionIndex) => (
+                                <button
+                                  key={`${suggestion}-${suggestionIndex}`}
+                                  type="button"
+                                  onClick={() => onSendMessage(suggestion)}
+                                  disabled={isLoading}
+                                  className="rounded-full border border-primary/30 bg-background/70 px-3 py-1.5 text-left text-xs text-foreground transition-colors hover:border-primary/60 hover:bg-primary/10 disabled:cursor-not-allowed disabled:opacity-50"
+                                >
+                                  {suggestion}
+                                </button>
+                              ))}
+                            </div>
+                          ) : null}
+                        </>
                       ) : (
                         <p className="whitespace-pre-wrap text-sm">
                           {message.content}
