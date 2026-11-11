@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { getMySqlConnectionConfig } from "./dbConfig";
+import { getDatabaseMigrationState, getMySqlConnectionConfig } from "./dbConfig";
 
 describe("getMySqlConnectionConfig", () => {
   it("prefers DATABASE_URL when configured", () => {
@@ -42,5 +42,24 @@ describe("getMySqlConnectionConfig", () => {
 
   it("does not return partial credentials", () => {
     expect(getMySqlConnectionConfig({ TIDB_HOST: "db.example.com" })).toBeNull();
+  });
+});
+
+describe("getDatabaseMigrationState", () => {
+  it("skips migrations when no database is connected", () => {
+    expect(getDatabaseMigrationState({})).toBe("skip");
+  });
+
+  it("runs migrations when TiDB credentials are complete", () => {
+    expect(getDatabaseMigrationState({
+      TIDB_HOST: "db.example.com",
+      TIDB_USER: "app.root",
+      TIDB_PASSWORD: "secret",
+      TIDB_DATABASE: "cemag",
+    })).toBe("migrate");
+  });
+
+  it("fails clearly when TiDB credentials are partially configured", () => {
+    expect(getDatabaseMigrationState({ TIDB_HOST: "db.example.com" })).toBe("invalid");
   });
 });

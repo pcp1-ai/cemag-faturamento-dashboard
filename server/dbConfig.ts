@@ -12,6 +12,29 @@ type DatabaseEnvironment = Partial<Record<
   string
 >>;
 
+export function getDatabaseMigrationState(
+  env: DatabaseEnvironment = process.env,
+): "skip" | "migrate" | "invalid" {
+  if (env.DATABASE_URL) return "migrate";
+
+  const hasAnyTiDbVariable = [
+    env.TIDB_HOST,
+    env.TIDB_PORT,
+    env.TIDB_USER,
+    env.TIDB_PASSWORD,
+    env.TIDB_DATABASE,
+    env.TIDB_DB_NAME,
+    env.TIDB_ENABLE_SSL,
+  ].some((value) => value !== undefined);
+
+  if (!hasAnyTiDbVariable) return "skip";
+
+  return env.TIDB_HOST && env.TIDB_USER && env.TIDB_PASSWORD !== undefined
+    && (env.TIDB_DATABASE || env.TIDB_DB_NAME)
+    ? "migrate"
+    : "invalid";
+}
+
 /** Resolve the database configuration provided either directly or by TiDB's Vercel integration. */
 export function getMySqlConnectionConfig(
   env: DatabaseEnvironment = process.env,
