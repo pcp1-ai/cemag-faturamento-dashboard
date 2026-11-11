@@ -108,7 +108,7 @@ export default function Login({ onAuthenticated, mensagemInicial = "" }: LoginPr
             <div className="absolute -bottom-28 -left-20 h-80 w-80 rounded-full bg-[#8f2500]/30 blur-3xl" />
             <div className="relative">
               <div className="mb-8 flex items-center gap-3">
-                <div className="rounded-xl bg-white p-3 shadow-lg"><img src="/manus-storage/cemag-logo-orange_4de005c2.png" alt="CEMAG" className="h-9 w-auto object-contain" /></div>
+                <div className="rounded-xl bg-white p-3 shadow-lg"><img src="/cemag-logo.svg" alt="CEMAG — Transportes Agrícolas" className="h-9 w-auto object-contain" /></div>
                 <div>
                   <h1 className="text-2xl font-bold tracking-tight text-white">Inteligência Comercial</h1>
                   <p className="text-sm text-orange-100">CEMAG Carretas Agrícolas</p>
@@ -126,7 +126,7 @@ export default function Login({ onAuthenticated, mensagemInicial = "" }: LoginPr
           <section className="flex min-h-[620px] flex-col justify-center p-6 sm:p-10">
             <div className="mx-auto w-full max-w-md">
               <div className="mb-8 lg:hidden">
-                <div className="mb-4 flex items-center gap-3"><div className="rounded-xl border border-[#ececea] bg-white p-2"><img src="/manus-storage/cemag-logo-orange_4de005c2.png" alt="CEMAG" className="h-8 w-auto" /></div><div><h1 className="text-xl font-bold text-[#222222]">Inteligência Comercial</h1><p className="text-xs text-[#FF4E09]">CEMAG Carretas Agrícolas</p></div></div>
+                <div className="mb-4 flex items-center gap-3"><div className="rounded-xl border border-[#ececea] bg-white p-2"><img src="/cemag-logo.svg" alt="CEMAG — Transportes Agrícolas" className="h-8 w-auto" /></div><div><h1 className="text-xl font-bold text-[#222222]">Inteligência Comercial</h1><p className="text-xs text-[#FF4E09]">CEMAG Carretas Agrícolas</p></div></div>
               </div>
               <div className="mb-8">
                 <div className="mb-4 inline-flex rounded-2xl border border-[#FF4E09]/20 bg-[#FF4E09]/10 p-3 text-[#FF4E09]"><ShieldCheck className="h-6 w-6" /></div>

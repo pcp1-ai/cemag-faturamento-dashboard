@@ -1740,11 +1740,11 @@ export default function Home({ onLogout, emailAutenticado, isAdmin = false }: { 
         <AIChatBox messages={chatMensagens} onSendMessage={enviarMensagemChat} isLoading={chatMutation.isPending} height={"min(68vh, 560px)"} emptyStateMessage="Pergunte sobre faturamento, clientes, produtos, metas ou regiões." suggestedPrompts={sugestoesChat} placeholder="Ex.: qual região mais cresceu?" />
       </div>}
       {/* Top Header CEMAG */}
-      <header className="bg-[#111827] border-b border-slate-800 px-4 py-3 sticky top-0 z-30 shadow-md">
+      <header className="cemag-topbar bg-[#111827] border-b border-slate-800 px-4 py-3 sticky top-0 z-30 shadow-md">
         <div className="max-w-[1700px] mx-auto flex items-center justify-between gap-4">
           <div className="flex min-w-0 items-center gap-3">
-            <div className="flex items-center gap-2">
-              <div className="rounded-lg bg-white px-2 py-1 shadow-sm"><img src="/manus-storage/cemag-logo-orange_4de005c2.png" alt="CEMAG" className="h-7 w-auto object-contain" /></div>
+            <div className="cemag-brand-lockup flex items-center gap-3">
+              <div className="cemag-brand-mark rounded-lg bg-white px-3 py-2 shadow-sm"><img src="/cemag-logo.svg" alt="CEMAG — Transportes Agrícolas" className="h-8 w-auto object-contain md:h-9" /></div>
               <div>
                 <h1 className="text-base md:text-lg font-bold text-white tracking-tight flex items-center gap-2">
                   <span>Inteligência Comercial</span>
@@ -1832,9 +1832,10 @@ export default function Home({ onLogout, emailAutenticado, isAdmin = false }: { 
               {GRUPOS_ABAS.find((grupo) => grupo.id === grupoAbaAtivo)?.abas.map((aba) => <button key={aba.id} type="button" onClick={() => navegarParaAba(aba.id)} className={`whitespace-nowrap rounded-md px-2.5 py-1.5 text-[11px] font-semibold transition-colors ${abaAtiva === aba.id ? "bg-orange-500/20 text-orange-300" : "text-slate-400 hover:bg-slate-800 hover:text-white"}`}>{aba.label}</button>)}
             </div>
           </div>
-          <div className="mb-5 rounded-2xl border border-slate-800 bg-slate-900/70 px-4 py-4 shadow-sm transition-colors duration-200">
+          <section className="cemag-command-center mb-5 rounded-2xl border border-slate-800 bg-slate-900/70 px-4 py-4 shadow-sm transition-colors duration-200">
+          <div className="cemag-command-intro">
             <div className="flex flex-wrap items-start justify-between gap-4">
-              <div className="min-w-0"><div className="flex flex-wrap items-center gap-2"><h2 className="text-base font-bold text-white">{infoAba.titulo}</h2><span className="rounded-full border border-orange-500/30 bg-orange-500/10 px-2 py-0.5 text-[10px] font-semibold text-orange-300">{GRUPOS_ABAS.find((grupo) => grupo.id === grupoAbaAtivo)?.label}</span></div><p className="mt-1 max-w-3xl text-xs leading-5 text-slate-400">{infoAba.descricao}</p></div>
+              <div className="min-w-0"><div className="mb-2 flex items-center gap-2 text-[10px] font-bold uppercase tracking-[0.2em] text-orange-300"><span className="h-1.5 w-1.5 rounded-full bg-orange-400 shadow-[0_0_12px_#ff5a1f]" /> Inteligência comercial <span className="text-slate-600">/</span> {GRUPOS_ABAS.find((grupo) => grupo.id === grupoAbaAtivo)?.label}</div><div className="flex flex-wrap items-center gap-2"><h2 className="text-xl font-bold text-white md:text-2xl">{infoAba.titulo}</h2></div><p className="mt-1 max-w-3xl text-xs leading-5 text-slate-400">{infoAba.descricao}</p></div>
               <div className="flex min-w-[210px] flex-col gap-1.5 text-[10px] text-slate-400 sm:items-end">
                 <div className="flex w-full items-center justify-between gap-3 sm:justify-end"><span className="inline-flex items-center gap-1.5 rounded-full border border-emerald-500/20 bg-emerald-500/10 px-2 py-1 font-semibold text-emerald-300"><span className="h-1.5 w-1.5 animate-pulse rounded-full bg-emerald-400" />Atualização ao vivo</span><span><strong className="text-white">{dadosFiltrados.length.toLocaleString("pt-BR")}</strong> de {(meta?.linhas_validas || 0).toLocaleString("pt-BR")} linhas</span></div>
                 <div className="h-1.5 w-full overflow-hidden rounded-full bg-slate-800 sm:max-w-64"><div className="h-full rounded-full bg-gradient-to-r from-orange-600 to-orange-400 transition-[width] duration-200 ease-out" style={{ width: `${percentualRegistrosFiltrados}%` }} /></div>
@@ -1855,6 +1856,7 @@ export default function Home({ onLogout, emailAutenticado, isAdmin = false }: { 
               valorMedioPedido={kpis.valorMedioPedido}
             />
           )}
+          </section>
 
           {dadosFiltrados.length === 0 ? (
             <div className="bg-amber-950/30 border border-amber-800/60 rounded-xl p-8 text-center my-6">
