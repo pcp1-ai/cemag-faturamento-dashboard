@@ -25,42 +25,42 @@ export const MetricCards: React.FC<MetricCardsProps> = ({
       valor: formatarMoeda(faturamento),
       sub: "Total bruto faturado",
       icone: DollarSign,
-      corBorda: "#F97316", // Orange CEMAG
+      corBorda: "#FF4E09", // Orange CEMAG
     },
     {
       titulo: "Quantidade",
       valor: formatarInteiro(quantidade),
       sub: "Unidades comercializadas",
       icone: Package,
-      corBorda: "#FB923C",
+      corBorda: "#FF4E09",
     },
     {
       titulo: "Pedidos/notas",
       valor: formatarInteiro(pedidos),
       sub: "Documentos únicos",
       icone: ShoppingCart,
-      corBorda: "#7DD3FC", // Blue CEMAG
+      corBorda: "#FF4E09",
     },
     {
       titulo: "Clientes",
       valor: formatarInteiro(clientes),
       sub: "Compradores no período",
       icone: Users,
-      corBorda: "#38BDF8",
+      corBorda: "#FF4E09",
     },
     {
       titulo: "Ticket unitário",
       valor: formatarMoeda(ticketUnitario),
       sub: "Preço médio por produto",
       icone: Tag,
-      corBorda: "#22C55E", // Green
+      corBorda: "#FF4E09",
     },
     {
       titulo: "Valor médio/pedido",
       valor: formatarMoeda(valorMedioPedido),
       sub: "Média por pedido fechado",
       icone: TrendingUp,
-      corBorda: "#A855F7",
+      corBorda: "#FF4E09",
     },
   ];
 
@@ -71,7 +71,7 @@ export const MetricCards: React.FC<MetricCardsProps> = ({
         return (
           <div
             key={idx}
-            className="bg-gradient-to-br from-[#111827] to-[#0B1220] border border-[#263244] rounded-xl p-3.5 shadow-md flex flex-col justify-between relative overflow-hidden transition-all duration-200 hover:border-slate-600"
+            className="bg-gradient-to-br from-[#111827] to-[#0B1220] border border-[#263244] rounded-xl p-3.5 shadow-md flex flex-col justify-between relative overflow-hidden transition-all duration-200 hover:border-orange-500/50 hover:-translate-y-0.5"
             style={{ borderLeft: `4px solid ${c.corBorda}` }}
           >
             <div className="flex items-center justify-between gap-1 mb-1.5">

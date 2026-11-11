@@ -1,4 +1,4 @@
-import React, { useRef, useState } from "react";
+import React, { useEffect, useRef, useState } from "react";
 import { Upload, X, Filter, RotateCcw, Search, CheckSquare, Square } from "lucide-react";
 
 export interface FiltrosState {
@@ -68,7 +68,39 @@ export const SidebarFilters: React.FC<SidebarFiltersProps> = ({
   onCloseMobile,
 }) => {
   const fileInputRef = useRef<HTMLInputElement>(null);
+  const drawerRef = useRef<HTMLElement>(null);
   const [buscasFiltros, setBuscasFiltros] = useState<Record<string, string>>({});
+
+  useEffect(() => {
+    if (!isOpenMobile) return;
+    const previouslyFocused = document.activeElement instanceof HTMLElement ? document.activeElement : null;
+    const drawer = drawerRef.current;
+    const focusable = () => drawer?.querySelectorAll<HTMLElement>(
+      'button:not([disabled]), input:not([disabled]), select:not([disabled]), textarea:not([disabled]), a[href], [tabindex]:not([tabindex="-1"])'
+    );
+    focusable()?.[0]?.focus();
+
+    const keepFocusInside = (event: KeyboardEvent) => {
+      if (event.key !== "Tab" || !drawer) return;
+      const items = Array.from(focusable() ?? []);
+      if (!items.length) return;
+      const first = items[0];
+      const last = items[items.length - 1];
+      if (event.shiftKey && (document.activeElement === first || !drawer.contains(document.activeElement))) {
+        event.preventDefault();
+        last.focus();
+      } else if (!event.shiftKey && (document.activeElement === last || !drawer.contains(document.activeElement))) {
+        event.preventDefault();
+        first.focus();
+      }
+    };
+
+    document.addEventListener("keydown", keepFocusInside);
+    return () => {
+      document.removeEventListener("keydown", keepFocusInside);
+      previouslyFocused?.focus();
+    };
+  }, [isOpenMobile]);
 
   const buscaDoFiltro = (key: string) => buscasFiltros[key] || "";
   const atualizarBuscaFiltro = (key: string, value: string) =>
@@ -156,17 +188,24 @@ export const SidebarFilters: React.FC<SidebarFiltersProps> = ({
 
   return (
     <>
-      {/* Backdrop mobile */}
-      {isOpenMobile && (
-        <div
-          className="fixed inset-0 bg-black/60 backdrop-blur-sm z-40 lg:hidden"
-          onClick={onCloseMobile}
-        />
-      )}
+      <button
+        type="button"
+        aria-label="Fechar painel de filtros"
+        tabIndex={isOpenMobile ? 0 : -1}
+        className={`fixed inset-0 z-40 bg-black/60 backdrop-blur-sm transition-opacity duration-200 ${isOpenMobile ? "opacity-100" : "pointer-events-none opacity-0"}`}
+        onClick={onCloseMobile}
+      />
 
       <aside
-        className={`fixed lg:static top-0 left-0 h-full lg:h-auto w-80 bg-[#0E131F] border-r border-slate-800 z-50 lg:z-auto flex flex-col transition-transform duration-200 shadow-2xl lg:shadow-none overflow-hidden lg:overflow-visible ${
-          isOpenMobile ? "translate-x-0" : "-translate-x-full lg:translate-x-0"
+        ref={drawerRef}
+        id="cemag-filter-drawer"
+        role="dialog"
+        aria-modal={isOpenMobile}
+        aria-label="Painel de filtros"
+        aria-hidden={!isOpenMobile}
+        inert={!isOpenMobile}
+        className={`fixed inset-y-0 left-0 z-50 flex h-dvh w-[min(88vw,360px)] flex-col overflow-hidden border-r border-slate-800 bg-[#0E131F] shadow-2xl transition-transform duration-200 ease-out ${
+          isOpenMobile ? "translate-x-0" : "-translate-x-full"
         }`}
       >
         {/* Topo da barra lateral */}
@@ -186,8 +225,10 @@ export const SidebarFilters: React.FC<SidebarFiltersProps> = ({
               <RotateCcw className="w-3.5 h-3.5" />
             </button>
             <button
+              type="button"
               onClick={onCloseMobile}
-              className="p-1 text-slate-400 hover:text-white rounded hover:bg-slate-800 lg:hidden"
+              aria-label="Fechar filtros"
+              className="p-1 text-slate-400 hover:text-white rounded hover:bg-slate-800"
             >
               <X className="w-4 h-4" />
             </button>
@@ -203,7 +244,7 @@ export const SidebarFilters: React.FC<SidebarFiltersProps> = ({
         </div>
 
         {/* Conteúdo com scroll */}
-        <div className="flex-1 overflow-y-auto lg:overflow-visible p-4 space-y-5 text-xs">
+        <div className="flex-1 overflow-y-auto p-4 space-y-5 text-xs">
           {/* Seção Base de Dados */}
           <div className="space-y-2">
             <label className="text-[11px] font-bold text-slate-300 uppercase tracking-wider block">

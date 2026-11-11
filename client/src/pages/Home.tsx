@@ -234,10 +234,10 @@ export default function Home({ onLogout, emailAutenticado, isAdmin = false }: { 
   const [abaAtiva, setAbaAtiva] = useState<string>("visao_geral");
   const [grupoAbaAtivo, setGrupoAbaAtivo] = useState<string>("resumo");
   const [ufMapaSelecionada, setUfMapaSelecionada] = useState<string | null>(null);
-  const [isMobileMenuOpen, setIsMobileMenuOpen] = useState<boolean>(false);
   const [sidebarOculta, setSidebarOculta] = useState<boolean>(() => {
-    if (typeof window === "undefined") return false;
-    return window.localStorage.getItem("cemag_sidebar_oculta") === "true";
+    if (typeof window === "undefined") return true;
+    const saved = window.localStorage.getItem("cemag_sidebar_oculta");
+    return saved === null ? true : saved === "true";
   });
   const [visualizacaoExpandida, setVisualizacaoExpandida] = useState<boolean>(false);
   const [chatAberto, setChatAberto] = useState(false);
@@ -252,6 +252,15 @@ export default function Home({ onLogout, emailAutenticado, isAdmin = false }: { 
 
   useEffect(() => {
     window.localStorage.setItem("cemag_sidebar_oculta", String(sidebarOculta));
+  }, [sidebarOculta]);
+
+  useEffect(() => {
+    if (sidebarOculta) return;
+    const closeOnEscape = (event: KeyboardEvent) => {
+      if (event.key === "Escape") setSidebarOculta(true);
+    };
+    window.addEventListener("keydown", closeOnEscape);
+    return () => window.removeEventListener("keydown", closeOnEscape);
   }, [sidebarOculta]);
 
   // Filtros Globais
@@ -1694,13 +1703,7 @@ export default function Home({ onLogout, emailAutenticado, isAdmin = false }: { 
       {/* Top Header CEMAG */}
       <header className="bg-[#111827] border-b border-slate-800 px-4 py-3 sticky top-0 z-30 shadow-md">
         <div className="max-w-[1700px] mx-auto flex items-center justify-between gap-4">
-          <div className="flex items-center gap-3">
-            <button
-              onClick={() => setIsMobileMenuOpen(true)}
-              className="p-1.5 rounded bg-slate-800 hover:bg-slate-700 text-slate-200 lg:hidden"
-            >
-              <Menu className="w-5 h-5" />
-            </button>
+          <div className="flex min-w-0 items-center gap-3">
             <div className="flex items-center gap-2">
               <div className="rounded-lg bg-white px-2 py-1 shadow-sm"><img src="/manus-storage/cemag-logo-orange_4de005c2.png" alt="CEMAG" className="h-7 w-auto object-contain" /></div>
               <div>
@@ -1718,57 +1721,24 @@ export default function Home({ onLogout, emailAutenticado, isAdmin = false }: { 
             </div>
           </div>
 
-          <div className="flex items-center gap-3">
+          <div className="flex shrink-0 flex-wrap items-center justify-end gap-2">
             {emailAutenticado && <span className="hidden xl:inline max-w-[220px] truncate text-[11px] text-slate-400" title={emailAutenticado}>{emailAutenticado}</span>}
-            <button type="button" onClick={() => setTemaDashboard((tema) => tema === "claro" ? "black" : "claro")} className="flex items-center gap-1.5 text-xs bg-slate-800 hover:bg-slate-700 text-slate-200 px-3 py-1.5 rounded-lg border border-slate-700 transition-colors shadow-sm" title="Alternar tema visual">
-              <span className="h-3 w-3 rounded-full border border-orange-300 bg-orange-500" />
-              <span className="hidden sm:inline">{temaDashboard === "black" ? "Tema claro" : "Black"}</span>
+            <button type="button" onClick={() => setSidebarOculta(false)} className="no-print flex items-center gap-1.5 text-xs bg-slate-800 hover:bg-slate-700 text-slate-200 px-3 py-2 rounded-lg border border-slate-700 transition-colors shadow-sm" aria-expanded={!sidebarOculta} aria-controls="cemag-filter-drawer">
+              <Sliders className="w-3.5 h-3.5 text-orange-300" /><span>Filtros</span>
             </button>
-            <button type="button" onClick={() => setRelatorioAberto(true)} className="no-print flex items-center gap-1.5 text-xs bg-orange-600 hover:bg-orange-500 text-white px-3 py-1.5 rounded-lg border border-orange-500 transition-colors shadow-sm" title="Gerar relatório para impressão">
-              <Printer className="w-3.5 h-3.5" />
-              <span className="hidden sm:inline">Gerar relatório</span>
+            <button onClick={() => navegarParaAba("exportacoes")} className="no-print flex items-center gap-1.5 text-xs bg-orange-600 hover:bg-orange-500 text-white font-semibold px-3.5 py-2 rounded-lg transition-colors shadow-sm">
+              <Download className="w-3.5 h-3.5" /><span>Exportar</span>
             </button>
-            <button
-              onClick={() => setSidebarOculta((v) => !v)}
-              className="hidden lg:flex items-center gap-1.5 text-xs bg-slate-800 hover:bg-slate-700 text-slate-200 px-3 py-1.5 rounded-lg border border-slate-700 transition-colors shadow-sm"
-              title={sidebarOculta ? "Mostrar painel de filtros" : "Ocultar painel de filtros"}
-            >
-              <Sliders className="w-3.5 h-3.5 text-sky-300" />
-              <span>{sidebarOculta ? "Mostrar filtros" : "Ocultar filtros"}</span>
-            </button>
-            <button
-              onClick={() => setVisualizacaoExpandida((v) => !v)}
-              className="flex items-center gap-1.5 text-xs bg-slate-800 hover:bg-slate-700 text-slate-200 px-3 py-1.5 rounded-lg border border-slate-700 transition-colors shadow-sm"
-              title={visualizacaoExpandida ? "Sair da visualização ampliada" : "Expandir gráficos e mapas"}
-            >
-              {visualizacaoExpandida ? <Eye className="w-3.5 h-3.5 text-orange-300" /> : <Tv className="w-3.5 h-3.5 text-orange-300" />}
-              <span className="hidden sm:inline">{visualizacaoExpandida ? "Sair da expansão" : "Expandir visualizações"}</span>
-            </button>
-            <button
-              onClick={handleResetFiltros}
-              className="flex items-center gap-1.5 text-xs bg-slate-800 hover:bg-slate-700 text-slate-200 px-3 py-1.5 rounded-lg border border-slate-700 transition-colors shadow-sm"
-              title="Restaurar parâmetros padrão"
-            >
-              <RefreshCw className="w-3.5 h-3.5 text-orange-400" />
-              <span className="hidden sm:inline">Restaurar Padrões</span>
-            </button>
-            <button
-              onClick={() => navegarParaAba("exportacoes")}
-              className="flex items-center gap-1.5 text-xs bg-orange-600 hover:bg-orange-500 text-white font-semibold px-3.5 py-1.5 rounded-lg transition-colors shadow-sm"
-            >
-              <Download className="w-3.5 h-3.5" />
-              <span>Exportar</span>
-            </button>
-            {onLogout && (
-              <button
-                onClick={onLogout}
-                className="flex items-center gap-1.5 text-xs bg-slate-800 hover:bg-red-900/60 text-slate-200 hover:text-red-200 px-3 py-1.5 rounded-lg border border-slate-700 transition-colors shadow-sm"
-                title="Sair da conta"
-              >
-                <LogOut className="w-3.5 h-3.5" />
-                <span className="hidden sm:inline">Sair</span>
-              </button>
-            )}
+            <details className="no-print relative">
+              <summary className="flex cursor-pointer list-none items-center gap-1.5 rounded-lg border border-slate-700 bg-slate-800 px-3 py-2 text-xs text-slate-200 transition-colors hover:bg-slate-700 focus-visible:outline focus-visible:outline-2 focus-visible:outline-orange-400" aria-label="Mais ações"><span className="hidden sm:inline">Mais</span><ChevronDown className="h-3.5 w-3.5" /></summary>
+              <div className="absolute right-0 top-full z-50 mt-2 min-w-56 rounded-xl border border-slate-700 bg-slate-900 p-1.5 shadow-2xl">
+                <button type="button" onClick={(event) => { setTemaDashboard((tema) => tema === "claro" ? "black" : "claro"); event.currentTarget.closest("details")?.removeAttribute("open"); }} className="flex w-full items-center gap-2 rounded-lg px-3 py-2 text-left text-xs text-slate-200 hover:bg-slate-800"><span className="h-3 w-3 rounded-full border border-orange-300 bg-orange-500" />{temaDashboard === "black" ? "Alternar para tema claro" : "Alternar para modo escuro"}</button>
+                <button type="button" onClick={(event) => { setVisualizacaoExpandida((v) => !v); event.currentTarget.closest("details")?.removeAttribute("open"); }} className="flex w-full items-center gap-2 rounded-lg px-3 py-2 text-left text-xs text-slate-200 hover:bg-slate-800">{visualizacaoExpandida ? <Eye className="h-4 w-4 text-orange-300" /> : <Tv className="h-4 w-4 text-orange-300" />}{visualizacaoExpandida ? "Sair da visualização ampliada" : "Expandir visualizações"}</button>
+                <button type="button" onClick={(event) => { handleResetFiltros(); event.currentTarget.closest("details")?.removeAttribute("open"); }} className="flex w-full items-center gap-2 rounded-lg px-3 py-2 text-left text-xs text-slate-200 hover:bg-slate-800"><RefreshCw className="h-4 w-4 text-orange-400" />Restaurar padrões</button>
+                <button type="button" onClick={(event) => { setRelatorioAberto(true); event.currentTarget.closest("details")?.removeAttribute("open"); }} className="flex w-full items-center gap-2 rounded-lg px-3 py-2 text-left text-xs text-slate-200 hover:bg-slate-800"><Printer className="h-4 w-4 text-orange-400" />Gerar relatório</button>
+                {onLogout && <button type="button" onClick={onLogout} className="flex w-full items-center gap-2 rounded-lg px-3 py-2 text-left text-xs text-red-200 hover:bg-red-950/50"><LogOut className="h-4 w-4" />Sair da conta</button>}
+              </div>
+            </details>
           </div>
         </div>
 
@@ -1796,8 +1766,8 @@ export default function Home({ onLogout, emailAutenticado, isAdmin = false }: { 
       </header>
 
       {/* Conteúdo com Sidebar fixa na esquerda */}
-      <div className="flex-1 flex max-w-[1700px] w-full mx-auto">
-        {!sidebarOculta && <SidebarFilters
+      <div className="relative flex-1 max-w-[1700px] w-full mx-auto">
+        <SidebarFilters
           filtros={filtros}
           setFiltros={setFiltros}
           opcoesFiltros={opcoesFiltros}
@@ -1807,23 +1777,12 @@ export default function Home({ onLogout, emailAutenticado, isAdmin = false }: { 
           onResetFiltros={handleResetFiltros}
           linhasFiltradas={dadosFiltrados.length}
           totalLinhasValidas={meta?.linhas_validas || 0}
-          isOpenMobile={isMobileMenuOpen}
-          onCloseMobile={() => setIsMobileMenuOpen(false)}
-        />}
-        {sidebarOculta && !visualizacaoExpandida && (
-          <button
-            type="button"
-            onClick={() => setSidebarOculta(false)}
-            className="fixed left-0 top-1/2 -translate-y-1/2 z-40 flex items-center gap-2 rounded-r-xl border border-l-0 border-orange-500/50 bg-slate-900 px-2.5 py-3 text-xs font-semibold text-orange-300 shadow-xl hover:bg-slate-800"
-            title="Mostrar painel de filtros"
-          >
-            <Sliders className="w-4 h-4" />
-            <span className="[writing-mode:vertical-rl]">Filtros</span>
-          </button>
-        )}
+          isOpenMobile={!sidebarOculta}
+          onCloseMobile={() => setSidebarOculta(true)}
+        />
 
         {/* Área Central Principal */}
-        <main className={`printable-content ${visualizacaoExpandida ? "visualizacao-ampliada fixed inset-0 z-50 bg-[#0E1117] overflow-y-auto" : "flex-1"} p-4 md:p-6 overflow-x-hidden`}>
+        <main className={`printable-content ${visualizacaoExpandida ? "visualizacao-ampliada fixed inset-0 z-50 bg-[#0E1117] overflow-y-auto" : "w-full"} p-4 md:p-6 overflow-x-hidden`}>
           {visualizacaoExpandida && <div className="sticky top-0 z-20 flex justify-end pb-3"><button type="button" onClick={() => setVisualizacaoExpandida(false)} className="flex items-center gap-2 rounded-lg border border-orange-500/40 bg-slate-900 px-3 py-2 text-xs font-semibold text-orange-300 shadow-lg hover:bg-slate-800"><Eye className="h-4 w-4" /> Sair da visualização ampliada</button></div>}
           {/* Navegação agrupada: reduz a poluição sem esconder nenhuma funcionalidade. */}
           <div className="no-print mb-5 space-y-2">

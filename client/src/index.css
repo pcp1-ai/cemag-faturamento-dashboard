@@ -200,6 +200,21 @@
     --cemag-surface: #ffffff;
     --cemag-surface-soft: #fafaf8;
     --cemag-border: #e4e4e1;
+    --cemag-motion-fast: 160ms;
+    --cemag-motion-panel: 200ms;
+  }
+
+  .cemag-dashboard button,
+  .cemag-dashboard a,
+  .cemag-dashboard input,
+  .cemag-dashboard select,
+  .cemag-dashboard textarea {
+    transition-duration: var(--cemag-motion-fast);
+  }
+
+  .cemag-dashboard :focus-visible {
+    outline: 2px solid var(--cemag-orange);
+    outline-offset: 2px;
   }
 
   .cemag-dashboard .bg-\[\#111827\],
@@ -290,6 +305,7 @@
     --cemag-surface: #171717;
     --cemag-surface-soft: #0f0f0f;
     --cemag-border: #343434;
+    --cemag-orange: #ff5a1f;
     background-color: #0f0f0f !important;
     color: #f5f5f4 !important;
   }
@@ -352,6 +368,38 @@
   .cemag-dashboard.tema-black .recharts-text,
   .cemag-dashboard.tema-black .recharts-cartesian-axis-tick-value {
     fill: #d0d0ca;
+  }
+
+  .cemag-dashboard.tema-black .bg-\[\#111827\],
+  .cemag-dashboard.tema-black .bg-slate-950,
+  .cemag-dashboard.tema-black .bg-slate-950\/50,
+  .cemag-dashboard.tema-black .bg-slate-950\/60,
+  .cemag-dashboard.tema-black .bg-slate-900,
+  .cemag-dashboard.tema-black .bg-slate-900\/50,
+  .cemag-dashboard.tema-black .bg-slate-900\/60,
+  .cemag-dashboard.tema-black .bg-slate-900\/80,
+  .cemag-dashboard.tema-black .bg-slate-900\/90,
+  .cemag-dashboard.tema-black .bg-slate-800,
+  .cemag-dashboard.tema-black .bg-slate-800\/80 {
+    background-color: var(--cemag-surface) !important;
+  }
+
+  .cemag-dashboard.tema-black .bg-\[\#0E1117\],
+  .cemag-dashboard.tema-black .bg-\[\#0B1220\],
+  .cemag-dashboard.tema-black .bg-\[\#102036\],
+  .cemag-dashboard.tema-black .bg-\[\#0E131F\] {
+    background-color: var(--cemag-surface-soft) !important;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .cemag-dashboard *,
+  .cemag-dashboard *::before,
+  .cemag-dashboard *::after {
+    scroll-behavior: auto !important;
+    animation-duration: 0.01ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.01ms !important;
   }
 }
 
