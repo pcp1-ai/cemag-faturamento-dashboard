@@ -192,7 +192,7 @@ export const SidebarFilters: React.FC<SidebarFiltersProps> = ({
         type="button"
         aria-label="Fechar painel de filtros"
         tabIndex={isOpenMobile ? 0 : -1}
-        className={`fixed inset-0 z-40 bg-black/60 backdrop-blur-sm transition-opacity duration-200 ${isOpenMobile ? "opacity-100" : "pointer-events-none opacity-0"}`}
+        className={`fixed inset-0 z-40 bg-transparent transition-opacity duration-200 ${isOpenMobile ? "opacity-100" : "pointer-events-none opacity-0"}`}
         onClick={onCloseMobile}
       />
 
