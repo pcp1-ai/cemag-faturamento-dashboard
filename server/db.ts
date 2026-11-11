@@ -1,4 +1,4 @@
-import { eq, desc } from "drizzle-orm";
+import { eq, desc, asc, ne, count } from "drizzle-orm";
 import { drizzle } from "drizzle-orm/mysql2";
 import { CemagAnalyticBase, CemagExternalSnapshot, CemagSharedFile, InsertCemagAnalyticBase, InsertCemagExternalSnapshot, InsertCemagSharedFile, InsertUser, cemagAnalyticBases, cemagAnalyticRows, cemagExternalSnapshots, cemagSharedFiles, users } from "../drizzle/schema";
 import { ENV } from './_core/env';
@@ -106,8 +106,36 @@ export async function upsertSharedFile(file: InsertCemagSharedFile): Promise<voi
 export async function getCurrentAnalyticBase(): Promise<CemagAnalyticBase | undefined> {
   const db = await getDb();
   if (!db) return undefined;
-  const rows = await db.select().from(cemagAnalyticBases).orderBy(desc(cemagAnalyticBases.updatedAt)).limit(1);
+  const rows = await db.select().from(cemagAnalyticBases).where(eq(cemagAnalyticBases.status, "ready")).orderBy(desc(cemagAnalyticBases.updatedAt)).limit(1);
   return rows[0];
+}
+
+export async function appendAnalyticRows(rows: Array<{ baseVersion: string; rowNumber: number; payload: string }>): Promise<void> {
+  if (!rows.length) return;
+  const db = await getDb();
+  if (!db) throw new Error("Banco de dados indisponível para receber a base compartilhada.");
+  await db.insert(cemagAnalyticRows).values(rows);
+}
+
+export async function countAnalyticRows(baseVersion: string): Promise<number> {
+  const db = await getDb();
+  if (!db) throw new Error("Banco de dados indisponível para conferir a base compartilhada.");
+  const [result] = await db.select({ total: count() }).from(cemagAnalyticRows).where(eq(cemagAnalyticRows.baseVersion, baseVersion));
+  return Number(result?.total || 0);
+}
+
+export async function publishAnalyticBase(base: InsertCemagAnalyticBase): Promise<void> {
+  const db = await getDb();
+  if (!db) throw new Error("Banco de dados indisponível para publicar a base compartilhada.");
+  const { id, ...updateFields } = base;
+  await db.insert(cemagAnalyticBases).values(base).onDuplicateKeyUpdate({ set: updateFields });
+  await db.delete(cemagAnalyticRows).where(ne(cemagAnalyticRows.baseVersion, base.version));
+}
+
+export async function deleteAnalyticRows(baseVersion: string): Promise<void> {
+  const db = await getDb();
+  if (!db) throw new Error("Banco de dados indisponível para remover o envio incompleto.");
+  await db.delete(cemagAnalyticRows).where(eq(cemagAnalyticRows.baseVersion, baseVersion));
 }
 
 export async function replaceAnalyticBase(base: InsertCemagAnalyticBase, rows: Array<{ baseVersion: string; rowNumber: number; payload: string }>): Promise<void> {
@@ -127,6 +155,17 @@ export async function listAnalyticRows(baseVersion: string): Promise<Array<{ row
   return db.select({ rowNumber: cemagAnalyticRows.rowNumber, payload: cemagAnalyticRows.payload })
     .from(cemagAnalyticRows)
     .where(eq(cemagAnalyticRows.baseVersion, baseVersion));
+}
+
+export async function listAnalyticRowsPage(baseVersion: string, offset: number, limit: number): Promise<Array<{ rowNumber: number; payload: string }>> {
+  const db = await getDb();
+  if (!db) return [];
+  return db.select({ rowNumber: cemagAnalyticRows.rowNumber, payload: cemagAnalyticRows.payload })
+    .from(cemagAnalyticRows)
+    .where(eq(cemagAnalyticRows.baseVersion, baseVersion))
+    .orderBy(asc(cemagAnalyticRows.rowNumber))
+    .limit(limit)
+    .offset(offset);
 }
 
 export async function getExternalSnapshot(cidade: string, uf?: string): Promise<CemagExternalSnapshot | undefined> {

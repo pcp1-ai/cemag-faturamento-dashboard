@@ -143,53 +143,6 @@ const SeletorMetrica: React.FC<{ value: string; onChange: (value: string) => voi
   </label>
 );
 
-const BASE_DB = "cemag_faturamento_db";
-const BASE_STORE = "bases";
-
-function abrirBaseDb(): Promise<IDBDatabase> {
-  return new Promise((resolve, reject) => {
-    const request = indexedDB.open(BASE_DB, 1);
-    request.onupgradeneeded = () => request.result.createObjectStore(BASE_STORE);
-    request.onsuccess = () => resolve(request.result);
-    request.onerror = () => reject(request.error);
-  });
-}
-
-async function salvarBasePersistente(rows: any[], nome: string) {
-  const payload = JSON.stringify(rows);
-  try {
-    // Bases pequenas continuam simples e compatíveis com a implementação anterior.
-    if (payload.length < 1_500_000) {
-      localStorage.setItem("cemag_base_padrao", payload);
-      localStorage.setItem("cemag_base_padrao_nome", nome);
-      return "localStorage";
-    }
-    throw new Error("base grande");
-  } catch {
-    const db = await abrirBaseDb();
-    await new Promise<void>((resolve, reject) => {
-      const tx = db.transaction(BASE_STORE, "readwrite");
-      tx.objectStore(BASE_STORE).put({ rows, nome }, "base_padrao");
-      tx.oncomplete = () => resolve();
-      tx.onerror = () => reject(tx.error);
-    });
-    // Remove cópia antiga que poderia continuar ocupando quota.
-    try { localStorage.removeItem("cemag_base_padrao"); localStorage.removeItem("cemag_base_padrao_nome"); } catch { /* sem ação */ }
-    return "indexedDB";
-  }
-}
-
-async function carregarBasePersistente(): Promise<{ rows: any[]; nome: string } | null> {
-  try {
-    const db = await abrirBaseDb();
-    return await new Promise((resolve) => {
-      const request = db.transaction(BASE_STORE, "readonly").objectStore(BASE_STORE).get("base_padrao");
-      request.onsuccess = () => resolve(request.result?.rows?.length ? request.result : null);
-      request.onerror = () => resolve(null);
-    });
-  } catch { return null; }
-}
-
 const GRUPOS_ABAS = [
   { id: "resumo", label: "Resumo", icon: "🏠", abas: [{ id: "visao_geral", label: "Visão geral" }, { id: "metas", label: "Metas mensais" }, { id: "modo_apresentacao", label: "Modo apresentação" }] },
   { id: "analises", label: "Análises comerciais", icon: "📊", abas: [{ id: "ano_ano", label: "Ano x ano" }, { id: "mes_mes", label: "Mês x mês" }, { id: "produtos", label: "Produtos e carretas" }, { id: "clientes", label: "Clientes" }, { id: "regioes", label: "Regiões" }, { id: "representantes", label: "Representantes" }, { id: "tipos", label: "Tipos e categorias" }, { id: "inteligencia", label: "Inteligência comercial" }] },
@@ -269,6 +222,10 @@ const MetaCheckboxFilter: React.FC<{ label: string; values: string[]; selected: 
 };
 
 export default function Home({ onLogout, emailAutenticado, isAdmin = false }: { onLogout?: () => void; emailAutenticado?: string; isAdmin?: boolean }) {
+  const trpcUtils = trpc.useUtils();
+  const enviarLoteBase = trpc.cemag.uploadBaseChunk.useMutation();
+  const publicarBase = trpc.cemag.publishSharedBase.useMutation();
+  const descartarEnvioBase = trpc.cemag.discardSharedBaseUpload.useMutation();
   const [loading, setLoading] = useState<boolean>(true);
   const [erroCarregamento, setErroCarregamento] = useState<string | null>(null);
   const [mensagemUpload, setMensagemUpload] = useState<{ tipo: "sucesso" | "aviso" | "erro"; texto: string } | null>(null);
@@ -321,26 +278,21 @@ export default function Home({ onLogout, emailAutenticado, isAdmin = false }: { 
     buscaProduto: "",
   });
 
-  // Carregar os dados guardados neste navegador ou a base embarcada.
+  // A base publicada no servidor é a fonte compartilhada para todas as contas.
   useEffect(() => {
     async function carregarBaseInicial() {
       try {
         setLoading(true);
-        // Fallback para a cópia salva no navegador ou para a base embarcada.
-        const baseSalva = localStorage.getItem("cemag_base_padrao");
-        const nomeSalvo = localStorage.getItem("cemag_base_padrao_nome");
-        if (baseSalva) {
-          const rows = JSON.parse(baseSalva);
-          if (Array.isArray(rows) && rows.length) {
-            setBaseOriginal(rows);
-            setNomeArquivoBase(nomeSalvo || "base_padrao_local.csv");
-            return;
+        const baseCompartilhada = await trpcUtils.cemag.sharedBase.fetch();
+        if (baseCompartilhada?.rowCount) {
+          const rows: any[] = [];
+          const tamanhoLote = 1000;
+          for (let offset = 0; offset < baseCompartilhada.rowCount; offset += tamanhoLote) {
+            const lote = await trpcUtils.cemag.sharedBaseRows.fetch({ version: baseCompartilhada.version, offset, limit: tamanhoLote });
+            rows.push(...lote.map((item) => JSON.parse(item.payload)));
           }
-        }
-        const baseIndexed = await carregarBasePersistente();
-        if (baseIndexed?.rows?.length) {
-          setBaseOriginal(baseIndexed.rows);
-          setNomeArquivoBase(baseIndexed.nome || "base_padrao_local.csv");
+          setBaseOriginal(rows);
+          setNomeArquivoBase(baseCompartilhada.fileName);
           return;
         }
         const resp = await fetch("/data/tabelaFaturamento.csv");
@@ -358,7 +310,7 @@ export default function Home({ onLogout, emailAutenticado, isAdmin = false }: { 
       }
     }
     carregarBaseInicial();
-  }, []);
+  }, [trpcUtils]);
 
   // Preparar os dados tratados com as regras CEMAG
   const { dados, meta } = useMemo(() => {
@@ -548,17 +500,36 @@ export default function Home({ onLogout, emailAutenticado, isAdmin = false }: { 
 
   // Handler de upload de novo arquivo
   const handleUploadArquivo = (file: File) => {
+    if (!isAdmin) {
+      setMensagemUpload({ tipo: "aviso", texto: "Somente a conta administradora pode publicar uma nova base." });
+      return;
+    }
     const nome = file.name.toLowerCase();
     const reader = new FileReader();
     setMensagemUpload({ tipo: "aviso", texto: `Lendo ${file.name}...` });
 
-    const concluirUpload = (linhas: any[]) => {
-      setBaseOriginal(linhas);
-      setNomeArquivoBase(file.name);
-      setMensagemUpload({ tipo: "sucesso", texto: `${file.name} carregado com sucesso: ${linhas.length.toLocaleString("pt-BR")} registros encontrados.` });
-      void salvarBasePersistente(linhas, file.name)
-        .then(() => setMensagemUpload({ tipo: "sucesso", texto: `${file.name} carregado e salvo neste navegador (${linhas.length.toLocaleString("pt-BR")} registros). Disponível apenas neste navegador.` }))
-        .catch((error: any) => setMensagemUpload({ tipo: "aviso", texto: `${file.name} carregado nesta sessão, mas não foi possível salvá-lo neste navegador: ${error?.message || "armazenamento local indisponível"}.` }));
+    const concluirUpload = async (linhas: any[]) => {
+      if (!linhas.length) {
+        setMensagemUpload({ tipo: "erro", texto: "A planilha não contém registros válidos." });
+        return;
+      }
+      const versao = crypto.randomUUID();
+      const tamanhoLote = 500;
+      try {
+        for (let inicio = 0; inicio < linhas.length; inicio += tamanhoLote) {
+          const lote = linhas.slice(inicio, inicio + tamanhoLote).map((linha, indice) => ({ rowNumber: inicio + indice + 1, payload: JSON.stringify(linha) }));
+          await enviarLoteBase.mutateAsync({ version: versao, rows: lote });
+          setMensagemUpload({ tipo: "aviso", texto: `Enviando base compartilhada: ${Math.min(inicio + lote.length, linhas.length).toLocaleString("pt-BR")} de ${linhas.length.toLocaleString("pt-BR")} registros...` });
+        }
+        await publicarBase.mutateAsync({ version: versao, fileName: file.name, rowCount: linhas.length, dimensions: Object.keys(linhas[0] || {}).slice(0, 250) });
+        setBaseOriginal(linhas);
+        setNomeArquivoBase(file.name);
+        setMensagemUpload({ tipo: "sucesso", texto: `${file.name} publicada para todos os usuários (${linhas.length.toLocaleString("pt-BR")} registros).` });
+        await trpcUtils.cemag.sharedBase.invalidate();
+      } catch (error: any) {
+        try { await descartarEnvioBase.mutateAsync({ version: versao }); } catch { /* o envio pode já ter sido publicado */ }
+        setMensagemUpload({ tipo: "erro", texto: `Não foi possível publicar a base compartilhada: ${error?.message || "erro no servidor"}. A base anterior continua disponível.` });
+      }
     };
 
     if (nome.endsWith(".xlsx") || nome.endsWith(".xls")) {

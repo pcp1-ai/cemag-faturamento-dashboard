@@ -1,7 +1,7 @@
 import { z } from "zod";
 import { COOKIE_NAME } from "@shared/const";
 import { clearCemagSession, createCemagSession, validateCemagCredentials } from "./cemagAuth";
-import { getCurrentAnalyticBase, listAnalyticRows, replaceAnalyticBase, upsertExternalSnapshot } from "./db";
+import { appendAnalyticRows, countAnalyticRows, deleteAnalyticRows, getCurrentAnalyticBase, listAnalyticRows, listAnalyticRowsPage, publishAnalyticBase, replaceAnalyticBase, upsertExternalSnapshot } from "./db";
 import { getSessionCookieOptions } from "./_core/cookies";
 import { systemRouter } from "./_core/systemRouter";
 import { adminProcedure, protectedProcedure, publicProcedure, router } from "./_core/trpc";
@@ -378,6 +378,53 @@ export const appRouter = router({
       }),
   }),
   cemag: router({
+    sharedBase: protectedProcedure.query(async () => {
+      const base = await getCurrentAnalyticBase();
+      if (!base) return null;
+      return { version: base.version, fileName: base.sourceFileName, rowCount: base.rowCount, updatedAt: base.updatedAt };
+    }),
+    sharedBaseRows: protectedProcedure
+      .input(z.object({ version: z.string().min(1).max(180), offset: z.number().int().min(0), limit: z.number().int().min(1).max(1000) }))
+      .query(async ({ input }) => {
+        const base = await getCurrentAnalyticBase();
+        if (!base || base.version !== input.version) throw new Error("A base compartilhada foi atualizada. Recarregue o painel.");
+        return listAnalyticRowsPage(input.version, input.offset, input.limit);
+      }),
+    uploadBaseChunk: adminProcedure
+      .input(z.object({
+        version: z.string().regex(/^[a-zA-Z0-9_-]{1,180}$/),
+        rows: z.array(z.object({ rowNumber: z.number().int().positive(), payload: z.string().max(60000) })).min(1).max(500),
+      }))
+      .mutation(async ({ input }) => {
+        await appendAnalyticRows(input.rows.map((row) => ({ ...row, baseVersion: input.version })));
+        return { received: input.rows.length };
+      }),
+    publishSharedBase: adminProcedure
+      .input(z.object({ version: z.string().regex(/^[a-zA-Z0-9_-]{1,180}$/), fileName: z.string().min(1).max(255), rowCount: z.number().int().positive(), dimensions: z.array(z.string().max(255)).max(250) }))
+      .mutation(async ({ input }) => {
+        const received = await countAnalyticRows(input.version);
+        if (received !== input.rowCount) throw new Error(`Envio incompleto: ${received} de ${input.rowCount} registros chegaram ao servidor.`);
+        await publishAnalyticBase({
+          id: 1,
+          version: input.version,
+          sourceStorageKey: `database:${input.version}`,
+          sourceFileName: safeFileName(input.fileName),
+          status: "ready",
+          rowCount: input.rowCount,
+          dimensions: JSON.stringify(input.dimensions),
+          dataInicio: null,
+          dataFim: null,
+          errorMessage: null,
+        });
+        return { success: true, rowCount: input.rowCount };
+      }),
+    discardSharedBaseUpload: adminProcedure
+      .input(z.object({ version: z.string().regex(/^[a-zA-Z0-9_-]{1,180}$/) }))
+      .mutation(async ({ input }) => {
+        const current = await getCurrentAnalyticBase();
+        if (current?.version !== input.version) await deleteAnalyticRows(input.version);
+        return { success: true };
+      }),
     fatoresExternos: protectedProcedure
       .input(z.object({
         dataInicio: z.string().regex(/^\d{4}-\d{2}-\d{2}$/),
