@@ -100,19 +100,6 @@ function formatarMetricaYoY(valor: number, metrica: MetricaComparativoAnual) {
     : formatarInteiro(valor);
 }
 
-function bytesToBase64(bytes: Uint8Array): string {
-  let binary = "";
-  const chunkSize = 0x8000;
-  for (let index = 0; index < bytes.length; index += chunkSize) {
-    binary += String.fromCharCode(...bytes.subarray(index, Math.min(index + chunkSize, bytes.length)));
-  }
-  return btoa(binary);
-}
-
-function textToBase64(text: string): string {
-  return bytesToBase64(new TextEncoder().encode(text));
-}
-
 const metricKey = (label: string): string => ({
   "Faturamento": "faturamento",
   "Quantidade": "quantidade",
@@ -282,16 +269,6 @@ const MetaCheckboxFilter: React.FC<{ label: string; values: string[]; selected: 
 };
 
 export default function Home({ onLogout, emailAutenticado, isAdmin = false }: { onLogout?: () => void; emailAutenticado?: string; isAdmin?: boolean }) {
-  const arquivosCentrais = trpc.cemag.currentFiles.useQuery(undefined, {
-    retry: false,
-    staleTime: 30 * 60 * 1000,
-    gcTime: 2 * 60 * 60 * 1000,
-    refetchOnMount: false,
-    refetchOnWindowFocus: false,
-  });
-  const uploadCentralMutation = trpc.cemag.uploadFile.useMutation();
-  const prepareCentralUploadMutation = trpc.cemag.prepareFileUpload.useMutation();
-  const completeCentralUploadMutation = trpc.cemag.completeFileUpload.useMutation();
   const [loading, setLoading] = useState<boolean>(true);
   const [erroCarregamento, setErroCarregamento] = useState<string | null>(null);
   const [mensagemUpload, setMensagemUpload] = useState<{ tipo: "sucesso" | "aviso" | "erro"; texto: string } | null>(null);
@@ -344,31 +321,11 @@ export default function Home({ onLogout, emailAutenticado, isAdmin = false }: { 
     buscaProduto: "",
   });
 
-  // Carregar a base central administrada; cópias locais e a base embarcada são fallbacks.
+  // Carregar os dados guardados neste navegador ou a base embarcada.
   useEffect(() => {
     async function carregarBaseInicial() {
       try {
         setLoading(true);
-        if (arquivosCentrais.isLoading) return;
-        const arquivoCentral = arquivosCentrais.data?.base;
-        if (arquivoCentral?.url) {
-          const respCentral = await fetch(arquivoCentral.url);
-          if (!respCentral.ok) throw new Error("Não foi possível baixar a base central atual.");
-          if (/\.xlsx?$/i.test(arquivoCentral.fileName)) {
-            const workbook = XLSX.read(new Uint8Array(await respCentral.arrayBuffer()), { type: "array" });
-            const firstSheet = workbook.SheetNames[0];
-            const rows = XLSX.utils.sheet_to_json(workbook.Sheets[firstSheet]);
-            if (!rows.length) throw new Error("A base central está vazia.");
-            setBaseOriginal(rows);
-          } else {
-            const parsedCentral = Papa.parse(await respCentral.text(), { header: true, skipEmptyLines: true });
-            if (!parsedCentral.data?.length) throw new Error("A base central está vazia.");
-            setBaseOriginal(parsedCentral.data);
-          }
-          setNomeArquivoBase(arquivoCentral.fileName);
-          return;
-        }
-
         // Fallback para a cópia salva no navegador ou para a base embarcada.
         const baseSalva = localStorage.getItem("cemag_base_padrao");
         const nomeSalvo = localStorage.getItem("cemag_base_padrao_nome");
@@ -401,7 +358,7 @@ export default function Home({ onLogout, emailAutenticado, isAdmin = false }: { 
       }
     }
     carregarBaseInicial();
-  }, [arquivosCentrais.data, arquivosCentrais.isLoading]);
+  }, []);
 
   // Preparar os dados tratados com as regras CEMAG
   const { dados, meta } = useMemo(() => {
@@ -595,42 +552,13 @@ export default function Home({ onLogout, emailAutenticado, isAdmin = false }: { 
     const reader = new FileReader();
     setMensagemUpload({ tipo: "aviso", texto: `Lendo ${file.name}...` });
 
-    const publicarBaseCentral = async () => {
-      if (!isAdmin) return;
-      try {
-        if (file.size > 50 * 1024 * 1024) throw new Error("Arquivo excede o limite de 50 MB.");
-        const contentType = file.type || (nome.endsWith(".xlsx") ? "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet" : nome.endsWith(".xls") ? "application/vnd.ms-excel" : "text/csv");
-        setMensagemUpload({ tipo: "aviso", texto: `Enviando ${file.name} para publicação...` });
-        const destino = await prepareCentralUploadMutation.mutateAsync({ kind: "base", fileName: file.name });
-        const upload = await fetch(destino.url, { method: "PUT", headers: { "Content-Type": contentType }, body: file });
-        if (!upload.ok) throw new Error(`Falha ao enviar arquivo ao armazenamento (${upload.status}).`);
-        const resultado = await completeCentralUploadMutation.mutateAsync({
-          kind: "base",
-          fileName: file.name,
-          contentType,
-          storageKey: destino.key,
-          sizeBytes: file.size,
-        });
-        await arquivosCentrais.refetch();
-        const analitica = resultado.analyticBase;
-        const textoAnalitica = analitica
-          ? ` Base analítica atualizada com ${analitica.rowCount.toLocaleString("pt-BR")} registros (${analitica.dataInicio || "data inicial não identificada"} a ${analitica.dataFim || "data final não identificada"}).`
-          : resultado.analyticError
-            ? ` A base central foi publicada, mas a base analítica não foi reconstruída: ${resultado.analyticError}`
-            : "";
-        setMensagemUpload({ tipo: analitica || !resultado.analyticError ? "sucesso" : "aviso", texto: `${file.name} publicado como base central. Todos os usuários verão esta versão ao acessar.${textoAnalitica}` });
-      } catch (error: any) {
-        setMensagemUpload({ tipo: "erro", texto: `Arquivo carregado nesta sessão, mas não foi publicado no servidor: ${error?.message || "erro de conexão"}` });
-      }
-    };
-
     const concluirUpload = (linhas: any[]) => {
       setBaseOriginal(linhas);
       setNomeArquivoBase(file.name);
       setMensagemUpload({ tipo: "sucesso", texto: `${file.name} carregado com sucesso: ${linhas.length.toLocaleString("pt-BR")} registros encontrados.` });
-      void publicarBaseCentral();
       void salvarBasePersistente(linhas, file.name)
-        .catch(() => undefined);
+        .then(() => setMensagemUpload({ tipo: "sucesso", texto: `${file.name} carregado e salvo neste navegador (${linhas.length.toLocaleString("pt-BR")} registros). Disponível apenas neste navegador.` }))
+        .catch((error: any) => setMensagemUpload({ tipo: "aviso", texto: `${file.name} carregado nesta sessão, mas não foi possível salvá-lo neste navegador: ${error?.message || "armazenamento local indisponível"}.` }));
     };
 
     if (nome.endsWith(".xlsx") || nome.endsWith(".xls")) {
@@ -827,23 +755,8 @@ export default function Home({ onLogout, emailAutenticado, isAdmin = false }: { 
   const [metaClientes, setMetaClientes] = useState<string[]>([]);
 
   useEffect(() => {
-    if (arquivosCentrais.isLoading) return;
     const carregarMetas = async () => {
       try {
-        const arquivoCentral = arquivosCentrais.data?.metas;
-        if (arquivoCentral?.url) {
-          const resp = await fetch(arquivoCentral.url);
-          if (!resp.ok) throw new Error("Não foi possível baixar as metas centrais.");
-          const payload = await resp.json();
-          const metas = Array.isArray(payload?.metas) ? payload.metas : Array.isArray(payload) ? payload : [];
-          setMetasImportadas(metas.filter((item: any) => item?.origem !== "Manual — mês vigente"));
-          const manual = metas.find((item: any) => item?.origem === "Manual — mês vigente");
-          if (manual) {
-            setMetaManualAno(manual.ano); setMetaManualMes(manual.mes); setMetaManualValor(String(manual.meta)); setMetaManualSalva(manual);
-          }
-          setMetaStatus(`Metas centrais atualizadas: ${metas.length} registro(s).`);
-          return;
-        }
         const saved = localStorage.getItem("cemag_metas_mensais");
         if (saved) setMetasImportadas(JSON.parse(saved));
         const manual = localStorage.getItem("cemag_meta_manual_vigente");
@@ -854,7 +767,7 @@ export default function Home({ onLogout, emailAutenticado, isAdmin = false }: { 
       } catch { /* fallback para armazenamento local legado */ }
     };
     void carregarMetas();
-  }, [arquivosCentrais.data, arquivosCentrais.isLoading]);
+  }, []);
 
   const normalizarMeta = (row: any): MetaMensal | null => {
     const keys = Object.keys(row || {});
@@ -870,22 +783,6 @@ export default function Home({ onLogout, emailAutenticado, isAdmin = false }: { 
     return Number.isFinite(meta) && meta >= 0 ? { ano, mes, meta, origem: "CSV" } : null;
   };
 
-  const publicarMetasCentrais = async (metas: MetaMensal[]) => {
-    if (!isAdmin) return;
-    try {
-      await uploadCentralMutation.mutateAsync({
-        kind: "metas",
-        fileName: "metas_mensais.json",
-        contentType: "application/json",
-        contentBase64: textToBase64(JSON.stringify({ metas, updatedAt: new Date().toISOString() })),
-      });
-      await arquivosCentrais.refetch();
-      setMetaStatus("Metas publicadas no servidor central. Todos os usuários verão esta versão.");
-    } catch (error: any) {
-      setMetaStatus(`Metas salvas neste navegador, mas não foram publicadas no servidor: ${error?.message || "erro de conexão"}`);
-    }
-  };
-
   const handleUploadMetas = (file: File) => {
     if (!isAdmin) { setMetaStatus("Somente a conta administradora pode atualizar as metas centrais."); return; }
     const reader = new FileReader();
@@ -896,8 +793,7 @@ export default function Home({ onLogout, emailAutenticado, isAdmin = false }: { 
         const rows = (parsed.data as any[]).map(normalizarMeta).filter(Boolean) as MetaMensal[];
         const unicas = Array.from(new Map(rows.map((r) => [`${r.ano}-${r.mes}`, r])).values());
         setMetasImportadas(unicas); localStorage.setItem("cemag_metas_mensais", JSON.stringify(unicas));
-        setMetaStatus(`${unicas.length} meta(s) importada(s) com sucesso.`);
-        void publicarMetasCentrais([...unicas, ...(metaManualSalva ? [metaManualSalva] : [])]);
+        setMetaStatus(`${unicas.length} meta(s) importada(s) e salva(s) neste navegador.`);
       } catch (err: any) { setMetaStatus(`Erro ao ler metas: ${err.message || "arquivo inválido"}`); }
     };
     reader.readAsText(file);
@@ -908,14 +804,12 @@ export default function Home({ onLogout, emailAutenticado, isAdmin = false }: { 
     const valor = Number(String(metaManualValor).replace(/\./g, "").replace(",", "."));
     if (!valor || valor < 0 || !metaManualAno || !metaManualMes) { setMetaStatus("Informe ano, mês e uma meta válida."); return; }
     const meta: MetaMensal = { ano: metaManualAno, mes: metaManualMes, meta: valor, origem: "Manual — mês vigente" };
-    setMetaManualSalva(meta); localStorage.setItem("cemag_meta_manual_vigente", JSON.stringify(meta)); setMetaStatus("Meta manual do mês vigente salva.");
-    void publicarMetasCentrais([...metasImportadas, meta]);
+    setMetaManualSalva(meta); localStorage.setItem("cemag_meta_manual_vigente", JSON.stringify(meta)); setMetaStatus("Meta manual salva neste navegador.");
   };
 
   const limparMetas = () => {
     if (!isAdmin) { setMetaStatus("Somente a conta administradora pode limpar as metas centrais."); return; }
-    setMetasImportadas([]); setMetaManualSalva(null); setMetaManualValor(""); localStorage.removeItem("cemag_metas_mensais"); localStorage.removeItem("cemag_meta_manual_vigente"); setMetaStatus("Metas removidas localmente; publicando a remoção no servidor...");
-    void publicarMetasCentrais([]);
+    setMetasImportadas([]); setMetaManualSalva(null); setMetaManualValor(""); localStorage.removeItem("cemag_metas_mensais"); localStorage.removeItem("cemag_meta_manual_vigente"); setMetaStatus("Metas removidas deste navegador.");
   };
 
   // --------------------------------------------------------------------------
@@ -1926,11 +1820,6 @@ export default function Home({ onLogout, emailAutenticado, isAdmin = false }: { 
         {mensagemUpload && (
           <div className={`max-w-[1700px] mx-auto mt-2 rounded-lg border px-3 py-2 text-xs ${mensagemUpload.tipo === "sucesso" ? "border-emerald-700/60 bg-emerald-950/40 text-emerald-200" : mensagemUpload.tipo === "erro" ? "border-red-700/60 bg-red-950/40 text-red-200" : "border-amber-700/60 bg-amber-950/40 text-amber-200"}`} role="status">
             {mensagemUpload.texto}
-          </div>
-        )}
-        {arquivosCentrais.data?.analyticBase && (
-          <div className="max-w-[1700px] mx-auto mt-2 rounded-lg border border-slate-700 bg-slate-950/60 px-3 py-2 text-[11px] text-slate-400" role="status">
-            <strong className="text-slate-200">Base analítica interna:</strong> {arquivosCentrais.data.analyticBase.status === "ready" ? "atualizada" : arquivosCentrais.data.analyticBase.status} · {Number(arquivosCentrais.data.analyticBase.rowCount || 0).toLocaleString("pt-BR")} registros · período {arquivosCentrais.data.analyticBase.dataInicio || "—"} a {arquivosCentrais.data.analyticBase.dataFim || "—"}
           </div>
         )}
       </header>

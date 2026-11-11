@@ -1,11 +1,10 @@
 import { z } from "zod";
 import { COOKIE_NAME } from "@shared/const";
 import { clearCemagSession, createCemagSession, validateCemagCredentials } from "./cemagAuth";
-import { getCurrentAnalyticBase, getSharedFile, listAnalyticRows, replaceAnalyticBase, upsertExternalSnapshot, upsertSharedFile } from "./db";
+import { getCurrentAnalyticBase, listAnalyticRows, replaceAnalyticBase, upsertExternalSnapshot } from "./db";
 import { getSessionCookieOptions } from "./_core/cookies";
 import { systemRouter } from "./_core/systemRouter";
 import { adminProcedure, protectedProcedure, publicProcedure, router } from "./_core/trpc";
-import { storageCreateUploadTarget, storageGetSignedUrl, storagePut } from "./storage";
 import { obterFatoresExternos } from "./externalFactors";
 import { invokeLLM } from "./_core/llm";
 import * as XLSX from "xlsx";
@@ -47,24 +46,14 @@ function extrairAno(valor: unknown): number | null {
 
 async function obterPeriodoBaseCentral() {
   if (periodoBaseCache && Date.now() - periodoBaseCache.atualizadoEm < 10 * 60 * 1000) return periodoBaseCache;
-  const arquivo = await getSharedFile("base");
-  let bytes: Buffer;
-  if (arquivo) {
-    const signedUrl = await storageGetSignedUrl(arquivo.storageKey);
-    const resposta = await fetch(signedUrl);
-    if (!resposta.ok) throw new Error(`Não foi possível ler a base central (${resposta.status}).`);
-    bytes = Buffer.from(await resposta.arrayBuffer());
-  } else {
-    const candidatos = [
-      path.resolve(process.cwd(), "client/public/data/tabelaFaturamento.csv"),
-      path.resolve(process.cwd(), "dist/public/data/tabelaFaturamento.csv"),
-      path.resolve(process.cwd(), "client/src/data/tabelaFaturamento.csv"),
-    ];
-    const caminho = candidatos.find((item) => existsSync(item));
-    if (!caminho) return null;
-    bytes = await readFile(caminho);
-  }
-  const linhas = lerLinhasArquivo(bytes, arquivo?.fileName || "tabelaFaturamento.csv");
+  const candidatos = [
+    path.resolve(process.cwd(), "client/public/data/tabelaFaturamento.csv"),
+    path.resolve(process.cwd(), "dist/public/data/tabelaFaturamento.csv"),
+    path.resolve(process.cwd(), "client/src/data/tabelaFaturamento.csv"),
+  ];
+  const caminho = candidatos.find((item) => existsSync(item));
+  if (!caminho) return null;
+  const linhas = lerLinhasArquivo(await readFile(caminho), path.basename(caminho));
   const nomesData = ["data_movimentacao", "data movimentação", "movimentacao", "data_emissao", "data emissão", "data", "date", "bai_movimentac", "bai_emissao"];
   const anos: number[] = [];
   for (const linha of linhas) {
@@ -76,13 +65,6 @@ async function obterPeriodoBaseCentral() {
   periodoBaseCache = { anoInicio: Math.min(...anos), anoFim: Math.max(...anos), atualizadoEm: Date.now() };
   return periodoBaseCache;
 }
-
-const sharedFileInput = z.object({
-  kind: z.enum(["base", "metas"]),
-  fileName: z.string().min(1).max(255),
-  contentType: z.string().min(1).max(160),
-  contentBase64: z.string().min(1),
-});
 
 const chatMessageInput = z.object({
   role: z.enum(["user", "assistant"]),
@@ -165,21 +147,8 @@ function dataAnalitica(valor: unknown): string | null {
 }
 
 async function obterContextoAnaliticoPersistido() {
-  const arquivoAtual = await getSharedFile("base");
   let base = await getCurrentAnalyticBase();
-  if (arquivoAtual && (!base || base.sourceStorageKey !== arquivoAtual.storageKey || !base.version.includes("-a3-"))) {
-    if (!reconstruindoAnalitica) {
-      reconstruindoAnalitica = (async () => {
-        const signedUrl = await storageGetSignedUrl(arquivoAtual.storageKey);
-        const resposta = await fetch(signedUrl);
-        if (!resposta.ok) throw new Error(`Não foi possível ler a base central para o chat (${resposta.status}).`);
-        await reconstruirBaseAnalitica(Buffer.from(await resposta.arrayBuffer()), arquivoAtual.storageKey, arquivoAtual.fileName);
-      })().finally(() => { reconstruindoAnalitica = null; });
-    }
-    await reconstruindoAnalitica;
-    base = await getCurrentAnalyticBase();
-  }
-  if (!arquivoAtual && (!base || !base.sourceStorageKey.startsWith("local:v2:"))) {
+  if (!base || base.status !== "ready") {
     const candidatos = [
       path.resolve(process.cwd(), "client/public/data/tabelaFaturamento.csv"),
       path.resolve(process.cwd(), "dist/public/data/tabelaFaturamento.csv"),
@@ -188,7 +157,9 @@ async function obterContextoAnaliticoPersistido() {
     const caminho = candidatos.find((item) => existsSync(item));
     if (caminho) {
       if (!reconstruindoAnalitica) {
-        reconstruindoAnalitica = (async () => { await reconstruirBaseAnalitica(await readFile(caminho), `local:v2:${caminho}`, path.basename(caminho)); })().finally(() => { reconstruindoAnalitica = null; });
+        reconstruindoAnalitica = (async () => {
+          await reconstruirBaseAnalitica(await readFile(caminho), "local:v2:" + caminho, path.basename(caminho));
+        })().finally(() => { reconstruindoAnalitica = null; });
       }
       await reconstruindoAnalitica;
       base = await getCurrentAnalyticBase();
@@ -424,78 +395,6 @@ export const appRouter = router({
           console.warn("[ExternalFactors] Não foi possível persistir o snapshot:", error);
         }
         return result;
-      }),
-    currentFiles: protectedProcedure.query(async () => {
-      const [base, metas, analyticBase] = await Promise.all([getSharedFile("base"), getSharedFile("metas"), getCurrentAnalyticBase()]);
-      return {
-        base: base ? { ...base, url: `/manus-storage/${base.storageKey}` } : null,
-        metas: metas ? { ...metas, url: `/manus-storage/${metas.storageKey}` } : null,
-        analyticBase: analyticBase ? { ...analyticBase, dimensions: JSON.parse(analyticBase.dimensions) } : null,
-      };
-    }),
-    uploadFile: adminProcedure
-      .input(sharedFileInput)
-      .mutation(async ({ input, ctx }) => {
-        const bytes = Buffer.from(input.contentBase64, "base64");
-        if (!bytes.length) throw new Error("Arquivo vazio.");
-        if (bytes.length > 50 * 1024 * 1024) throw new Error("Arquivo excede o limite de 50 MB.");
-        const stored = await storagePut(
-          `cemag/${input.kind}/${Date.now()}-${safeFileName(input.fileName)}`,
-          bytes,
-          input.contentType,
-        );
-        await upsertSharedFile({
-          kind: input.kind,
-          fileName: input.fileName,
-          storageKey: stored.key,
-          contentType: input.contentType,
-          sizeBytes: bytes.length,
-        });
-        let analyticBase: Awaited<ReturnType<typeof reconstruirBaseAnalitica>> | null = null;
-        let analyticError: string | null = null;
-        if (input.kind === "base") {
-          try {
-            analyticBase = await reconstruirBaseAnalitica(bytes, stored.key, input.fileName);
-          } catch (error) {
-            analyticError = error instanceof Error ? error.message : "Não foi possível gerar a base analítica.";
-            console.error("[AnalyticBase] Falha ao reconstruir base analítica:", error);
-          }
-        }
-        return {
-          success: true as const,
-          kind: input.kind,
-          fileName: input.fileName,
-          sizeBytes: bytes.length,
-          url: stored.url,
-          updatedBy: ctx.user.email,
-          analyticBase,
-          analyticError,
-        };
-      }),
-    prepareFileUpload: adminProcedure
-      .input(z.object({ kind: z.enum(["base", "metas"]), fileName: z.string().min(1).max(255) }))
-      .mutation(async ({ input }) => storageCreateUploadTarget(`cemag/${input.kind}/${Date.now()}-${safeFileName(input.fileName)}`)),
-    completeFileUpload: adminProcedure
-      .input(z.object({ kind: z.enum(["base", "metas"]), fileName: z.string().min(1).max(255), contentType: z.string().min(1).max(160), storageKey: z.string().min(1).max(1024), sizeBytes: z.number().int().positive().max(50 * 1024 * 1024) }))
-      .mutation(async ({ input, ctx }) => {
-        const signedUrl = await storageGetSignedUrl(input.storageKey);
-        const response = await fetch(signedUrl);
-        if (!response.ok) throw new Error(`NÃ£o foi possÃ­vel validar o arquivo enviado (${response.status}).`);
-        const bytes = Buffer.from(await response.arrayBuffer());
-        if (!bytes.length || bytes.length > 50 * 1024 * 1024) throw new Error("Arquivo vazio ou acima do limite de 50 MB.");
-        if (bytes.length !== input.sizeBytes) throw new Error("O tamanho do arquivo recebido nÃ£o corresponde ao arquivo enviado.");
-        await upsertSharedFile({ kind: input.kind, fileName: input.fileName, storageKey: input.storageKey, contentType: input.contentType, sizeBytes: bytes.length });
-        let analyticBase: Awaited<ReturnType<typeof reconstruirBaseAnalitica>> | null = null;
-        let analyticError: string | null = null;
-        if (input.kind === "base") {
-          try {
-            analyticBase = await reconstruirBaseAnalitica(bytes, input.storageKey, input.fileName);
-          } catch (error) {
-            analyticError = error instanceof Error ? error.message : "NÃ£o foi possÃ­vel gerar a base analÃ­tica.";
-            console.error("[AnalyticBase] Falha ao reconstruir base analÃ­tica:", error);
-          }
-        }
-        return { success: true as const, kind: input.kind, fileName: input.fileName, sizeBytes: bytes.length, url: `/manus-storage/${input.storageKey}`, updatedBy: ctx.user.email, analyticBase, analyticError };
       }),
   }),
 });
