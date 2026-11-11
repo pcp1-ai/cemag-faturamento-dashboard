@@ -165,7 +165,7 @@ export const SidebarFilters: React.FC<SidebarFiltersProps> = ({
             return (
               <label
                 key={String(op)}
-                className="flex items-center gap-1.5 p-1 rounded hover:bg-slate-800/80 cursor-pointer select-none text-[11px]"
+                className="flex min-h-9 items-center gap-2 p-1.5 rounded hover:bg-slate-800/80 cursor-pointer select-none text-[11px] sm:min-h-0 sm:p-1"
               >
                 <input
                   type="checkbox"
@@ -205,7 +205,7 @@ export const SidebarFilters: React.FC<SidebarFiltersProps> = ({
         aria-label="Painel de filtros"
         aria-hidden={!isOpenMobile}
         inert={!isOpenMobile}
-        className={`fixed inset-y-0 left-0 z-50 flex h-dvh w-[min(88vw,360px)] flex-col overflow-hidden border-r border-slate-800 bg-[#0E131F] shadow-2xl transition-[transform,width,opacity] duration-200 ease-out lg:sticky lg:top-32 lg:bottom-auto lg:z-20 lg:h-[calc(100dvh-8rem)] lg:w-0 lg:shrink-0 lg:translate-x-0 lg:opacity-0 lg:shadow-none ${
+        className={`fixed inset-y-0 left-0 z-50 flex h-dvh w-[min(94vw,420px)] flex-col overflow-hidden border-r border-slate-800 bg-[#0E131F] shadow-2xl transition-[transform,width,opacity] duration-200 ease-out lg:sticky lg:top-32 lg:bottom-auto lg:z-20 lg:h-[calc(100dvh-8rem)] lg:w-0 lg:shrink-0 lg:translate-x-0 lg:opacity-0 lg:shadow-none ${
           isOpenMobile ? "translate-x-0 lg:w-[360px] lg:opacity-100 lg:shadow-2xl" : "-translate-x-full lg:pointer-events-none"
         }`}
       >

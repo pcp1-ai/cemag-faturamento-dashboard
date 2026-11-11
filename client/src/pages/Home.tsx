@@ -1740,15 +1740,16 @@ export default function Home({ onLogout, emailAutenticado, isAdmin = false }: { 
         <AIChatBox messages={chatMensagens} onSendMessage={enviarMensagemChat} isLoading={chatMutation.isPending} height={"min(68vh, 560px)"} emptyStateMessage="Pergunte sobre faturamento, clientes, produtos, metas ou regiões." suggestedPrompts={sugestoesChat} placeholder="Ex.: qual região mais cresceu?" />
       </div>}
       {/* Top Header CEMAG */}
-      <header className="cemag-topbar bg-[#111827] border-b border-slate-800 px-4 py-3 sticky top-0 z-30 shadow-md">
-        <div className="max-w-[1700px] mx-auto flex items-center justify-between gap-4">
-          <div className="flex min-w-0 items-center gap-3">
-            <div className="cemag-brand-lockup flex items-center gap-3">
-              <div className="cemag-brand-mark rounded-lg bg-white px-3 py-2 shadow-sm"><img src="/cemag-logo.svg" alt="CEMAG — Transportes Agrícolas" className="h-8 w-auto object-contain md:h-9" /></div>
+      <header className="cemag-topbar bg-[#111827] border-b border-slate-800 px-3 py-2.5 md:px-4 md:py-3 sticky top-0 z-30 shadow-md">
+        <div className="max-w-[1700px] mx-auto flex items-center justify-between gap-2 md:gap-4">
+          <div className="flex min-w-0 items-center gap-2 md:gap-3">
+            <div className="cemag-brand-lockup flex min-w-0 items-center gap-2 md:gap-3">
+              <div className="cemag-brand-mark rounded-lg bg-white px-2 py-1.5 sm:px-3 sm:py-2 shadow-sm"><img src="/cemag-logo.svg" alt="CEMAG — Transportes Agrícolas" className="h-7 w-auto max-w-[4.25rem] object-contain sm:h-8 sm:max-w-[9rem] md:h-9" /></div>
               <div>
-                <h1 className="text-base md:text-lg font-bold text-white tracking-tight flex items-center gap-2">
-                  <span>Inteligência Comercial</span>
-                  <span className="text-xs px-2 py-0.5 rounded bg-orange-500/20 text-orange-400 border border-orange-500/30">
+                <h1 className="text-sm sm:text-base md:text-lg font-bold text-white tracking-tight flex items-center gap-2">
+                  <span className="hidden sm:inline">Inteligência Comercial</span>
+                  <span className="sm:hidden">CEMAG Comercial</span>
+                  <span className="hidden sm:inline-flex text-xs px-2 py-0.5 rounded bg-orange-500/20 text-orange-400 border border-orange-500/30">
                     CEMAG Carretas Agrícolas
                   </span>
                   {emailAutenticado && <span className={`hidden lg:inline-flex items-center rounded border px-2 py-0.5 text-[10px] ${isAdmin ? "border-emerald-500/30 bg-emerald-500/10 text-emerald-300" : "border-slate-700 bg-slate-800 text-slate-300"}`} title={emailAutenticado}>{isAdmin ? "Administrador" : "Consulta"}</span>}
@@ -1760,16 +1761,16 @@ export default function Home({ onLogout, emailAutenticado, isAdmin = false }: { 
             </div>
           </div>
 
-          <div className="flex shrink-0 flex-wrap items-center justify-end gap-2">
+          <div className="flex shrink-0 items-center justify-end gap-1.5 sm:gap-2">
             {emailAutenticado && <span className="hidden xl:inline max-w-[220px] truncate text-[11px] text-slate-400" title={emailAutenticado}>{emailAutenticado}</span>}
-            <button type="button" onClick={() => setSidebarOculta(false)} className="no-print flex items-center gap-1.5 text-xs bg-slate-800 hover:bg-slate-700 text-slate-200 px-3 py-2 rounded-lg border border-slate-700 transition-colors shadow-sm" aria-expanded={!sidebarOculta} aria-controls="cemag-filter-drawer">
-              <Sliders className="w-3.5 h-3.5 text-orange-300" /><span>Filtros</span>
+            <button type="button" onClick={() => setSidebarOculta(false)} className="no-print flex min-h-10 items-center gap-1.5 text-xs bg-slate-800 hover:bg-slate-700 text-slate-200 px-2.5 sm:px-3 py-2 rounded-lg border border-slate-700 transition-colors shadow-sm" aria-expanded={!sidebarOculta} aria-controls="cemag-filter-drawer">
+              <Sliders className="w-4 h-4 text-orange-300" /><span className="hidden sm:inline">Filtros</span>
             </button>
-            <button onClick={() => navegarParaAba("exportacoes")} className="no-print flex items-center gap-1.5 text-xs bg-orange-600 hover:bg-orange-500 text-white font-semibold px-3.5 py-2 rounded-lg transition-colors shadow-sm">
-              <Download className="w-3.5 h-3.5" /><span>Exportar</span>
+            <button type="button" onClick={() => navegarParaAba("exportacoes")} aria-label="Exportar dados" title="Exportar dados" className="no-print flex min-h-10 items-center gap-1.5 text-xs bg-orange-600 hover:bg-orange-500 text-white font-semibold px-2.5 sm:px-3.5 py-2 rounded-lg transition-colors shadow-sm">
+              <Download className="w-4 h-4" /><span className="hidden sm:inline">Exportar</span>
             </button>
             <details className="no-print relative">
-              <summary className="flex cursor-pointer list-none items-center gap-1.5 rounded-lg border border-slate-700 bg-slate-800 px-3 py-2 text-xs text-slate-200 transition-colors hover:bg-slate-700 focus-visible:outline focus-visible:outline-2 focus-visible:outline-orange-400" aria-label="Mais ações"><span className="hidden sm:inline">Mais</span><ChevronDown className="h-3.5 w-3.5" /></summary>
+              <summary className="flex min-h-10 cursor-pointer list-none items-center gap-1.5 rounded-lg border border-slate-700 bg-slate-800 px-2 sm:px-3 py-2 text-xs text-slate-200 transition-colors hover:bg-slate-700 focus-visible:outline focus-visible:outline-2 focus-visible:outline-orange-400" aria-label="Mais ações"><span className="hidden sm:inline">Mais</span><ChevronDown className="h-3.5 w-3.5" /></summary>
               <div className="absolute right-0 top-full z-50 mt-2 min-w-56 rounded-xl border border-slate-700 bg-slate-900 p-1.5 shadow-2xl">
                 <button type="button" onClick={(event) => { setTemaDashboard((tema) => tema === "claro" ? "black" : "claro"); event.currentTarget.closest("details")?.removeAttribute("open"); }} className="flex w-full items-center gap-2 rounded-lg px-3 py-2 text-left text-xs text-slate-200 hover:bg-slate-800"><span className="h-3 w-3 rounded-full border border-orange-300 bg-orange-500" />{temaDashboard === "black" ? "Alternar para tema claro" : "Alternar para modo escuro"}</button>
                 <button type="button" onClick={(event) => { setVisualizacaoExpandida((v) => !v); event.currentTarget.closest("details")?.removeAttribute("open"); }} className="flex w-full items-center gap-2 rounded-lg px-3 py-2 text-left text-xs text-slate-200 hover:bg-slate-800">{visualizacaoExpandida ? <Eye className="h-4 w-4 text-orange-300" /> : <Tv className="h-4 w-4 text-orange-300" />}{visualizacaoExpandida ? "Sair da visualização ampliada" : "Expandir visualizações"}</button>
@@ -1782,7 +1783,7 @@ export default function Home({ onLogout, emailAutenticado, isAdmin = false }: { 
         </div>
 
         {/* Resumo compacto de filtros ativos */}
-        <div className="max-w-[1700px] mx-auto mt-2 pt-2 border-t border-slate-800/80 flex flex-wrap items-center justify-between text-[11px] text-slate-400 gap-2">
+        <div className="hidden sm:flex max-w-[1700px] mx-auto mt-2 pt-2 border-t border-slate-800/80 flex-wrap items-center justify-between text-[11px] text-slate-400 gap-2">
           <div className="flex flex-wrap items-center gap-x-3 gap-y-1">
             <span>Fonte: <strong className="text-slate-200">{nomeArquivoBase}</strong></span>
             <span>•</span>
@@ -1821,7 +1822,7 @@ export default function Home({ onLogout, emailAutenticado, isAdmin = false }: { 
         />
 
         {/* Área Central Principal */}
-        <main className={`printable-content min-w-0 ${visualizacaoExpandida ? "visualizacao-ampliada fixed inset-0 z-50 bg-[#0E1117] overflow-y-auto" : "flex-1"} p-4 md:p-6 overflow-x-hidden`}>
+        <main className={`printable-content min-w-0 ${visualizacaoExpandida ? "visualizacao-ampliada fixed inset-0 z-50 bg-[#0E1117] overflow-y-auto" : "flex-1"} px-3 py-4 sm:p-4 md:p-6 overflow-x-hidden`}>
           {visualizacaoExpandida && <div className="sticky top-0 z-20 flex justify-end pb-3"><button type="button" onClick={() => setVisualizacaoExpandida(false)} className="flex items-center gap-2 rounded-lg border border-orange-500/40 bg-slate-900 px-3 py-2 text-xs font-semibold text-orange-300 shadow-lg hover:bg-slate-800"><Eye className="h-4 w-4" /> Sair da visualização ampliada</button></div>}
           {/* Navegação agrupada: reduz a poluição sem esconder nenhuma funcionalidade. */}
           <div className="no-print mb-5 space-y-2">
