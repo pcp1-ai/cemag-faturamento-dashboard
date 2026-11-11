@@ -5,8 +5,7 @@ import { getCurrentAnalyticBase, getSharedFile, listAnalyticRows, replaceAnalyti
 import { getSessionCookieOptions } from "./_core/cookies";
 import { systemRouter } from "./_core/systemRouter";
 import { adminProcedure, protectedProcedure, publicProcedure, router } from "./_core/trpc";
-import { storagePut } from "./storage";
-import { storageGetSignedUrl } from "./storage";
+import { storageCreateUploadTarget, storageGetSignedUrl, storagePut } from "./storage";
 import { obterFatoresExternos } from "./externalFactors";
 import { invokeLLM } from "./_core/llm";
 import * as XLSX from "xlsx";
@@ -472,6 +471,31 @@ export const appRouter = router({
           analyticBase,
           analyticError,
         };
+      }),
+    prepareFileUpload: adminProcedure
+      .input(z.object({ kind: z.enum(["base", "metas"]), fileName: z.string().min(1).max(255) }))
+      .mutation(async ({ input }) => storageCreateUploadTarget(`cemag/${input.kind}/${Date.now()}-${safeFileName(input.fileName)}`)),
+    completeFileUpload: adminProcedure
+      .input(z.object({ kind: z.enum(["base", "metas"]), fileName: z.string().min(1).max(255), contentType: z.string().min(1).max(160), storageKey: z.string().min(1).max(1024), sizeBytes: z.number().int().positive().max(50 * 1024 * 1024) }))
+      .mutation(async ({ input, ctx }) => {
+        const signedUrl = await storageGetSignedUrl(input.storageKey);
+        const response = await fetch(signedUrl);
+        if (!response.ok) throw new Error(`NÃ£o foi possÃ­vel validar o arquivo enviado (${response.status}).`);
+        const bytes = Buffer.from(await response.arrayBuffer());
+        if (!bytes.length || bytes.length > 50 * 1024 * 1024) throw new Error("Arquivo vazio ou acima do limite de 50 MB.");
+        if (bytes.length !== input.sizeBytes) throw new Error("O tamanho do arquivo recebido nÃ£o corresponde ao arquivo enviado.");
+        await upsertSharedFile({ kind: input.kind, fileName: input.fileName, storageKey: input.storageKey, contentType: input.contentType, sizeBytes: bytes.length });
+        let analyticBase: Awaited<ReturnType<typeof reconstruirBaseAnalitica>> | null = null;
+        let analyticError: string | null = null;
+        if (input.kind === "base") {
+          try {
+            analyticBase = await reconstruirBaseAnalitica(bytes, input.storageKey, input.fileName);
+          } catch (error) {
+            analyticError = error instanceof Error ? error.message : "NÃ£o foi possÃ­vel gerar a base analÃ­tica.";
+            console.error("[AnalyticBase] Falha ao reconstruir base analÃ­tica:", error);
+          }
+        }
+        return { success: true as const, kind: input.kind, fileName: input.fileName, sizeBytes: bytes.length, url: `/manus-storage/${input.storageKey}`, updatedBy: ctx.user.email, analyticBase, analyticError };
       }),
   }),
 });

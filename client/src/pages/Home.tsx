@@ -109,10 +109,6 @@ function bytesToBase64(bytes: Uint8Array): string {
   return btoa(binary);
 }
 
-function arrayBufferToBase64(buffer: ArrayBuffer): string {
-  return bytesToBase64(new Uint8Array(buffer));
-}
-
 function textToBase64(text: string): string {
   return bytesToBase64(new TextEncoder().encode(text));
 }
@@ -294,6 +290,8 @@ export default function Home({ onLogout, emailAutenticado, isAdmin = false }: { 
     refetchOnWindowFocus: false,
   });
   const uploadCentralMutation = trpc.cemag.uploadFile.useMutation();
+  const prepareCentralUploadMutation = trpc.cemag.prepareFileUpload.useMutation();
+  const completeCentralUploadMutation = trpc.cemag.completeFileUpload.useMutation();
   const [loading, setLoading] = useState<boolean>(true);
   const [erroCarregamento, setErroCarregamento] = useState<string | null>(null);
   const [mensagemUpload, setMensagemUpload] = useState<{ tipo: "sucesso" | "aviso" | "erro"; texto: string } | null>(null);
@@ -597,14 +595,21 @@ export default function Home({ onLogout, emailAutenticado, isAdmin = false }: { 
     const reader = new FileReader();
     setMensagemUpload({ tipo: "aviso", texto: `Lendo ${file.name}...` });
 
-    const publicarBaseCentral = async (contentBase64: string) => {
+    const publicarBaseCentral = async () => {
       if (!isAdmin) return;
       try {
-        const resultado = await uploadCentralMutation.mutateAsync({
+        if (file.size > 50 * 1024 * 1024) throw new Error("Arquivo excede o limite de 50 MB.");
+        const contentType = file.type || (nome.endsWith(".xlsx") ? "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet" : nome.endsWith(".xls") ? "application/vnd.ms-excel" : "text/csv");
+        setMensagemUpload({ tipo: "aviso", texto: `Enviando ${file.name} para publicação...` });
+        const destino = await prepareCentralUploadMutation.mutateAsync({ kind: "base", fileName: file.name });
+        const upload = await fetch(destino.url, { method: "PUT", headers: { "Content-Type": contentType }, body: file });
+        if (!upload.ok) throw new Error(`Falha ao enviar arquivo ao armazenamento (${upload.status}).`);
+        const resultado = await completeCentralUploadMutation.mutateAsync({
           kind: "base",
           fileName: file.name,
-          contentType: file.type || (nome.endsWith(".xlsx") ? "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet" : "text/csv"),
-          contentBase64,
+          contentType,
+          storageKey: destino.key,
+          sizeBytes: file.size,
         });
         await arquivosCentrais.refetch();
         const analitica = resultado.analyticBase;
@@ -619,11 +624,11 @@ export default function Home({ onLogout, emailAutenticado, isAdmin = false }: { 
       }
     };
 
-    const concluirUpload = (linhas: any[], contentBase64: string) => {
+    const concluirUpload = (linhas: any[]) => {
       setBaseOriginal(linhas);
       setNomeArquivoBase(file.name);
       setMensagemUpload({ tipo: "sucesso", texto: `${file.name} carregado com sucesso: ${linhas.length.toLocaleString("pt-BR")} registros encontrados.` });
-      void publicarBaseCentral(contentBase64);
+      void publicarBaseCentral();
       void salvarBasePersistente(linhas, file.name)
         .catch(() => undefined);
     };
@@ -637,7 +642,7 @@ export default function Home({ onLogout, emailAutenticado, isAdmin = false }: { 
           const sheet = workbook.Sheets[firstSheet];
           const json = XLSX.utils.sheet_to_json(sheet);
           if (json && json.length) {
-            concluirUpload(json, arrayBufferToBase64(e.target?.result as ArrayBuffer));
+            concluirUpload(json);
           } else setMensagemUpload({ tipo: "erro", texto: "O arquivo Excel não contém registros válidos." });
         } catch (err: any) {
           setMensagemUpload({ tipo: "erro", texto: "Erro ao ler arquivo Excel: " + err.message });
@@ -650,7 +655,7 @@ export default function Home({ onLogout, emailAutenticado, isAdmin = false }: { 
           const text = e.target?.result as string;
           const parsed = Papa.parse(text, { header: true, skipEmptyLines: true });
           if (parsed.data && parsed.data.length) {
-            concluirUpload(parsed.data, textToBase64(text));
+            concluirUpload(parsed.data);
           } else setMensagemUpload({ tipo: "erro", texto: "O arquivo CSV não contém registros válidos." });
         } catch (err: any) {
           setMensagemUpload({ tipo: "erro", texto: "Erro ao processar CSV: " + err.message });
