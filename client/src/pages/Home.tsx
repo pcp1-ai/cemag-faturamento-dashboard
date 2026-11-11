@@ -1133,8 +1133,13 @@ export default function Home({ onLogout, emailAutenticado, isAdmin = false }: { 
   }, [previsaoMensal]);
 
   const diagnosticoBase = useMemo(() => {
-    const dataMin = meta?.data_min as Date | undefined;
-    const dataMax = meta?.data_max as Date | undefined;
+    const { dataMin, dataMax } = dadosFiltrados.reduce<{ dataMin?: Date; dataMax?: Date }>((range, item) => {
+      const date = item.data_emissao;
+      if (!(date instanceof Date) || Number.isNaN(date.getTime())) return range;
+      if (!range.dataMin || date < range.dataMin) range.dataMin = date;
+      if (!range.dataMax || date > range.dataMax) range.dataMax = date;
+      return range;
+    }, {});
     const mesesEsperados: string[] = [];
     if (dataMin && dataMax) {
       const cursor = new Date(dataMin.getFullYear(), dataMin.getMonth(), 1);
@@ -1144,21 +1149,21 @@ export default function Home({ onLogout, emailAutenticado, isAdmin = false }: { 
         cursor.setMonth(cursor.getMonth() + 1);
       }
     }
-    const mesesComVenda = new Set(dados.map((d) => d.ano_mes));
+    const mesesComVenda = new Set(dadosFiltrados.map((d) => d.ano_mes));
     const mesesSemVenda = mesesEsperados.filter((mes) => !mesesComVenda.has(mes));
-    const anual = agregar(dados, ["ano"]).sort((a, b) => a.ano - b.ano);
+    const anual = agregar(dadosFiltrados, ["ano"]).sort((a, b) => a.ano - b.ano);
     return {
       mesesEsperados,
       mesesSemVenda,
       anual,
-      qtdNaoPositiva: dados.filter((d) => d.quantidade <= 0).length,
-      faturamentoNaoPositivo: dados.filter((d) => d.faturamento <= 0).length,
-      ufNaoIdentificada: dados.filter((d) => !d.uf || d.uf === "Não identificado").length,
-      cidadeNaoIdentificada: dados.filter((d) => !d.cidade || d.cidade === "Não identificado").length,
-      produtoNaoInformado: dados.filter((d) => !d.produto || d.produto === "Não informado").length,
-      clienteNaoInformado: dados.filter((d) => !d.cliente || d.cliente === "Não informado").length,
+      qtdNaoPositiva: dadosFiltrados.filter((d) => d.quantidade <= 0).length,
+      faturamentoNaoPositivo: dadosFiltrados.filter((d) => d.faturamento <= 0).length,
+      ufNaoIdentificada: dadosFiltrados.filter((d) => !d.uf || d.uf === "Não identificado").length,
+      cidadeNaoIdentificada: dadosFiltrados.filter((d) => !d.cidade || d.cidade === "Não identificado").length,
+      produtoNaoInformado: dadosFiltrados.filter((d) => !d.produto || d.produto === "Não informado").length,
+      clienteNaoInformado: dadosFiltrados.filter((d) => !d.cliente || d.cliente === "Não informado").length,
     };
-  }, [dados, meta]);
+  }, [dadosFiltrados]);
 
   const classificacaoFiltrada = useMemo(() => {
     const mapa = new Map<string, { tipo_produto: string; linhas: number; quantidade: number; faturamento: number; pedidos: Set<string>; clientes: Set<string>; produtos: Set<string>; categorias: Set<string> }>();
@@ -1683,6 +1688,40 @@ export default function Home({ onLogout, emailAutenticado, isAdmin = false }: { 
     return sugestoes.slice(0, 5);
   }, [abaAtiva, filtros.dataFim, filtros.dataInicio, filtros.tiposProduto]);
 
+  const filtrosVisiveis = useMemo(() => {
+    const selections: Array<[string, string[]]> = [
+      ["Período", [`${filtros.dataInicio ? new Date(`${filtros.dataInicio}T12:00:00`).toLocaleDateString("pt-BR") : "início"} – ${filtros.dataFim ? new Date(`${filtros.dataFim}T12:00:00`).toLocaleDateString("pt-BR") : "hoje"}`]],
+      ["Forma de venda", filtros.considerarTodasFormas ? ["Todas"] : filtros.tiposVendaSelecionados.length ? filtros.tiposVendaSelecionados : ["Nenhuma selecionada"]],
+      ["Famílias excluídas", filtros.familiasExcluidas],
+      ["Ano", filtros.anos.map(String)],
+      ["Região", filtros.regioes],
+      ["UF", filtros.ufs],
+      ["Cidade", filtros.cidades],
+      ["Representante", filtros.representantes],
+      ["Cliente", filtros.clientes],
+      ["Cliente na base", filtros.clientesBase],
+      ["Categoria", filtros.categorias],
+      ["Descrição", filtros.descricoesGenericas],
+      ["Grupo de modelo", filtros.gruposModelo],
+      ["Família", filtros.familias],
+      ["Tipo de produto", filtros.tiposProduto],
+      ["Cor", filtros.cores],
+      ["Lista de preço", filtros.listasPreco],
+    ];
+    const chips = selections.flatMap(([label, values]) => {
+      if (!values.length) return [];
+      const visible = values.slice(0, 2).join(", ");
+      const extra = values.length > 2 ? ` +${values.length - 2}` : "";
+      return [{ label, value: `${visible}${extra}` }];
+    });
+    if (filtros.buscaProduto.trim()) chips.push({ label: "Produto", value: filtros.buscaProduto.trim() });
+    return chips;
+  }, [filtros]);
+
+  const percentualRegistrosFiltrados = meta?.linhas_validas
+    ? Math.min(100, (dadosFiltrados.length / meta.linhas_validas) * 100)
+    : 0;
+
   if (loading) {
     return (
       <div className="min-h-screen bg-[#0E1117] text-white flex flex-col items-center justify-center p-6">
@@ -1766,7 +1805,7 @@ export default function Home({ onLogout, emailAutenticado, isAdmin = false }: { 
       </header>
 
       {/* Conteúdo com Sidebar fixa na esquerda */}
-      <div className="relative flex-1 max-w-[1700px] w-full mx-auto">
+      <div className="relative flex flex-1 max-w-[1700px] w-full mx-auto">
         <SidebarFilters
           filtros={filtros}
           setFiltros={setFiltros}
@@ -1782,7 +1821,7 @@ export default function Home({ onLogout, emailAutenticado, isAdmin = false }: { 
         />
 
         {/* Área Central Principal */}
-        <main className={`printable-content ${visualizacaoExpandida ? "visualizacao-ampliada fixed inset-0 z-50 bg-[#0E1117] overflow-y-auto" : "w-full"} p-4 md:p-6 overflow-x-hidden`}>
+        <main className={`printable-content min-w-0 ${visualizacaoExpandida ? "visualizacao-ampliada fixed inset-0 z-50 bg-[#0E1117] overflow-y-auto" : "flex-1"} p-4 md:p-6 overflow-x-hidden`}>
           {visualizacaoExpandida && <div className="sticky top-0 z-20 flex justify-end pb-3"><button type="button" onClick={() => setVisualizacaoExpandida(false)} className="flex items-center gap-2 rounded-lg border border-orange-500/40 bg-slate-900 px-3 py-2 text-xs font-semibold text-orange-300 shadow-lg hover:bg-slate-800"><Eye className="h-4 w-4" /> Sair da visualização ampliada</button></div>}
           {/* Navegação agrupada: reduz a poluição sem esconder nenhuma funcionalidade. */}
           <div className="no-print mb-5 space-y-2">
@@ -1793,9 +1832,16 @@ export default function Home({ onLogout, emailAutenticado, isAdmin = false }: { 
               {GRUPOS_ABAS.find((grupo) => grupo.id === grupoAbaAtivo)?.abas.map((aba) => <button key={aba.id} type="button" onClick={() => navegarParaAba(aba.id)} className={`whitespace-nowrap rounded-md px-2.5 py-1.5 text-[11px] font-semibold transition-colors ${abaAtiva === aba.id ? "bg-orange-500/20 text-orange-300" : "text-slate-400 hover:bg-slate-800 hover:text-white"}`}>{aba.label}</button>)}
             </div>
           </div>
-          <div className="mb-5 flex flex-wrap items-start justify-between gap-4 rounded-2xl border border-slate-800 bg-slate-900/60 px-4 py-3 shadow-sm">
-            <div className="min-w-0"><div className="flex flex-wrap items-center gap-2"><h2 className="text-base font-bold text-white">{infoAba.titulo}</h2><span className="rounded-full border border-orange-500/30 bg-orange-500/10 px-2 py-0.5 text-[10px] font-semibold text-orange-300">{GRUPOS_ABAS.find((grupo) => grupo.id === grupoAbaAtivo)?.label}</span></div><p className="mt-1 max-w-3xl text-xs leading-5 text-slate-400">{infoAba.descricao}</p></div>
-            <div className="flex shrink-0 flex-wrap gap-2 text-[10px] text-slate-400"><span className="rounded-lg border border-slate-800 bg-slate-950/50 px-2.5 py-1.5"><strong className="text-slate-200">Base:</strong> {periodoBaseTexto}</span><span className="rounded-lg border border-slate-800 bg-slate-950/50 px-2.5 py-1.5"><strong className="text-slate-200">Filtro:</strong> {dadosFiltrados.length.toLocaleString("pt-BR")} linhas</span></div>
+          <div className="mb-5 rounded-2xl border border-slate-800 bg-slate-900/70 px-4 py-4 shadow-sm transition-colors duration-200">
+            <div className="flex flex-wrap items-start justify-between gap-4">
+              <div className="min-w-0"><div className="flex flex-wrap items-center gap-2"><h2 className="text-base font-bold text-white">{infoAba.titulo}</h2><span className="rounded-full border border-orange-500/30 bg-orange-500/10 px-2 py-0.5 text-[10px] font-semibold text-orange-300">{GRUPOS_ABAS.find((grupo) => grupo.id === grupoAbaAtivo)?.label}</span></div><p className="mt-1 max-w-3xl text-xs leading-5 text-slate-400">{infoAba.descricao}</p></div>
+              <div className="flex min-w-[210px] flex-col gap-1.5 text-[10px] text-slate-400 sm:items-end">
+                <div className="flex w-full items-center justify-between gap-3 sm:justify-end"><span className="inline-flex items-center gap-1.5 rounded-full border border-emerald-500/20 bg-emerald-500/10 px-2 py-1 font-semibold text-emerald-300"><span className="h-1.5 w-1.5 animate-pulse rounded-full bg-emerald-400" />Atualização ao vivo</span><span><strong className="text-white">{dadosFiltrados.length.toLocaleString("pt-BR")}</strong> de {(meta?.linhas_validas || 0).toLocaleString("pt-BR")} linhas</span></div>
+                <div className="h-1.5 w-full overflow-hidden rounded-full bg-slate-800 sm:max-w-64"><div className="h-full rounded-full bg-gradient-to-r from-orange-600 to-orange-400 transition-[width] duration-200 ease-out" style={{ width: `${percentualRegistrosFiltrados}%` }} /></div>
+                <span>Base: {periodoBaseTexto} · período filtrado: {periodoEfetivo}</span>
+              </div>
+            </div>
+            {filtrosVisiveis.length > 0 && <div className="mt-3 flex flex-wrap items-center gap-1.5 border-t border-slate-800/80 pt-3" aria-live="polite" aria-label="Filtros aplicados em tempo real"><span className="mr-1 text-[10px] font-semibold uppercase tracking-wide text-slate-500">Visão atual</span>{filtrosVisiveis.map((filtro) => <span key={filtro.label} className="max-w-full truncate rounded-full border border-slate-700/80 bg-slate-950/60 px-2.5 py-1 text-[10px] text-slate-300"><strong className="text-orange-300">{filtro.label}:</strong> {filtro.value}</span>)}</div>}
           </div>
 
           {/* Cards Executivos de Topo (visíveis em todas as abas, exceto Modo Apresentação que tem cards próprios) */}
@@ -3195,12 +3241,12 @@ export default function Home({ onLogout, emailAutenticado, isAdmin = false }: { 
                 <div className="space-y-6">
                   <div className="bg-slate-900/60 p-5 rounded-xl border border-slate-800">
                     <h2 className="text-lg font-bold text-white">Diagnóstico da Base</h2>
-                    <p className="text-xs text-slate-400 mt-1">Cobertura temporal, consistência dos dados e faturamento anual da base completa, sem os filtros comerciais.</p>
+                    <p className="text-xs text-slate-400 mt-1">Qualidade e faturamento anual calculados conforme os filtros comerciais atuais.</p>
                   </div>
                   <div className="grid grid-cols-2 md:grid-cols-4 xl:grid-cols-6 gap-3">
                     {[
-                      ["Registros originais", meta?.linhas_originais || 0, "text-slate-200"],
-                      ["Registros válidos", meta?.linhas_validas || 0, "text-emerald-300"],
+                      ["Originais da base", meta?.linhas_originais || 0, "text-slate-200"],
+                      ["Válidos na base", meta?.linhas_validas || 0, "text-emerald-300"],
                       ["Sem data", meta?.linhas_sem_data_removidas || 0, "text-amber-300"],
                       ["Meses esperados", diagnosticoBase.mesesEsperados.length, "text-sky-300"],
                       ["Meses sem venda", diagnosticoBase.mesesSemVenda.length, diagnosticoBase.mesesSemVenda.length ? "text-amber-300" : "text-emerald-300"],

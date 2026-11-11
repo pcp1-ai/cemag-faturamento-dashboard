@@ -73,6 +73,8 @@ export const SidebarFilters: React.FC<SidebarFiltersProps> = ({
 
   useEffect(() => {
     if (!isOpenMobile) return;
+    const mobileViewport = window.matchMedia("(max-width: 1023px)").matches;
+    if (!mobileViewport) return;
     const previouslyFocused = document.activeElement instanceof HTMLElement ? document.activeElement : null;
     const drawer = drawerRef.current;
     const focusable = () => drawer?.querySelectorAll<HTMLElement>(
@@ -192,29 +194,29 @@ export const SidebarFilters: React.FC<SidebarFiltersProps> = ({
         type="button"
         aria-label="Fechar painel de filtros"
         tabIndex={isOpenMobile ? 0 : -1}
-        className={`fixed inset-0 z-40 bg-transparent transition-opacity duration-200 ${isOpenMobile ? "opacity-100" : "pointer-events-none opacity-0"}`}
+        className={`fixed inset-0 z-40 bg-black/20 transition-opacity duration-200 lg:hidden ${isOpenMobile ? "opacity-100" : "pointer-events-none opacity-0"}`}
         onClick={onCloseMobile}
       />
 
       <aside
         ref={drawerRef}
         id="cemag-filter-drawer"
-        role="dialog"
-        aria-modal={isOpenMobile}
+        role="complementary"
         aria-label="Painel de filtros"
         aria-hidden={!isOpenMobile}
         inert={!isOpenMobile}
-        className={`fixed inset-y-0 left-0 z-50 flex h-dvh w-[min(88vw,360px)] flex-col overflow-hidden border-r border-slate-800 bg-[#0E131F] shadow-2xl transition-transform duration-200 ease-out ${
-          isOpenMobile ? "translate-x-0" : "-translate-x-full"
+        className={`fixed inset-y-0 left-0 z-50 flex h-dvh w-[min(88vw,360px)] flex-col overflow-hidden border-r border-slate-800 bg-[#0E131F] shadow-2xl transition-[transform,width,opacity] duration-200 ease-out lg:sticky lg:top-32 lg:bottom-auto lg:z-20 lg:h-[calc(100dvh-8rem)] lg:w-0 lg:shrink-0 lg:translate-x-0 lg:opacity-0 lg:shadow-none ${
+          isOpenMobile ? "translate-x-0 lg:w-[360px] lg:opacity-100 lg:shadow-2xl" : "-translate-x-full lg:pointer-events-none"
         }`}
       >
         {/* Topo da barra lateral */}
         <div className="p-4 border-b border-slate-800 flex items-center justify-between bg-slate-900/50">
           <div className="flex items-center gap-2">
             <Filter className="w-4 h-4 text-orange-500" />
-            <h2 className="font-bold text-sm text-white tracking-wide uppercase">
-              Painel de Filtros
-            </h2>
+            <div>
+              <h2 className="font-bold text-sm text-white tracking-wide uppercase">Painel de Filtros</h2>
+              <p className="mt-0.5 text-[10px] text-slate-400">Os resultados mudam na hora</p>
+            </div>
           </div>
           <div className="flex items-center gap-2">
             <button
