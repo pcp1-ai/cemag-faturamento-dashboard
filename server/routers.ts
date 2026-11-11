@@ -380,7 +380,7 @@ export const appRouter = router({
   cemag: router({
     sharedBase: protectedProcedure.query(async () => {
       const base = await getCurrentAnalyticBase();
-      if (!base) return null;
+      if (!base || !base.sourceStorageKey.startsWith("database:")) return null;
       return { version: base.version, fileName: base.sourceFileName, rowCount: base.rowCount, updatedAt: base.updatedAt };
     }),
     sharedBaseRows: protectedProcedure
