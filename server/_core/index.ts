@@ -1,4 +1,5 @@
-import "dotenv/config";
+import dotenv from "dotenv";
+dotenv.config({ path: [".env.local", ".env"] });
 import { createServer } from "http";
 import net from "net";
 import { serveStatic, setupVite } from "./vite";

@@ -1,5 +1,5 @@
 import React, { useEffect, useRef, useState } from "react";
-import { Upload, X, Filter, RotateCcw, Search, CheckSquare, Square } from "lucide-react";
+import { X, Filter, RotateCcw, Search, CheckSquare, Square } from "lucide-react";
 
 export interface FiltrosState {
   dataInicio: string;
@@ -44,9 +44,6 @@ interface SidebarFiltersProps {
     tiposProduto: string[];
     cores: string[];
   };
-  nomeArquivoBase: string;
-  onUploadArquivo: (file: File) => void;
-  isAdmin: boolean;
   onResetFiltros: () => void;
   linhasFiltradas: number;
   totalLinhasValidas: number;
@@ -58,16 +55,12 @@ export const SidebarFilters: React.FC<SidebarFiltersProps> = ({
   filtros,
   setFiltros,
   opcoesFiltros,
-  nomeArquivoBase,
-  onUploadArquivo,
-  isAdmin,
   onResetFiltros,
   linhasFiltradas,
   totalLinhasValidas,
   isOpenMobile,
   onCloseMobile,
 }) => {
-  const fileInputRef = useRef<HTMLInputElement>(null);
   const drawerRef = useRef<HTMLElement>(null);
   const [buscasFiltros, setBuscasFiltros] = useState<Record<string, string>>({});
 
@@ -248,71 +241,32 @@ export const SidebarFilters: React.FC<SidebarFiltersProps> = ({
         {/* Conteúdo com scroll */}
         <div className="flex-1 overflow-y-auto p-4 space-y-5 text-xs">
           {/* Seção Base de Dados */}
+          {/* Base de Dados */}
           <div className="space-y-2">
-            <label className="text-[11px] font-bold text-slate-300 uppercase tracking-wider block">
-              Base de Dados
-            </label>
-            <div className="bg-slate-900/70 border border-slate-800 rounded-lg p-2.5 space-y-2">
-              <div className="text-[11px] text-slate-300 truncate">
-                Fonte: <span className="text-amber-400 font-medium">{nomeArquivoBase}</span>
-              </div>
-              {isAdmin ? <>
-                <input
-                  ref={fileInputRef}
-                  type="file"
-                  accept=".csv,.xlsx,.xls"
-                  className="hidden"
-                  onChange={(e) => {
-                    const file = e.target.files?.[0];
-                    if (file) onUploadArquivo(file);
-                  }}
-                />
-                <button
-                  type="button"
-                  onClick={() => fileInputRef.current?.click()}
-                  className="w-full flex items-center justify-center gap-2 py-1.5 px-3 rounded bg-orange-600 hover:bg-orange-500 text-white font-medium text-xs transition-colors shadow-sm"
-                >
-                  <Upload className="w-3.5 h-3.5" />
-                  <span>Substituir Planilha</span>
-                </button>
-                <p className="text-[10px] text-slate-400 text-center">
-                  Formatos aceitos: CSV (delimitador vírgula ou ponto-e-vírgula) e Excel (.xlsx).
-                </p>
-              </> : <div className="rounded border border-slate-700 bg-slate-950/60 px-2.5 py-2 text-[10px] leading-4 text-slate-400"><strong className="text-slate-300">Modo consulta.</strong> O envio e a substituição de arquivos estão disponíveis somente para a conta administradora.</div>}
+            <label className="text-[11px] font-bold text-slate-300 uppercase tracking-wider block">Base de Dados</label>
+            <div className="bg-slate-900/70 border border-slate-800 rounded-lg p-2.5">
+              <div className="text-[11px] text-slate-300 truncate">Fonte: <span className="text-amber-400 font-medium">Google Sheets: tabelaFaturamento</span></div>
             </div>
           </div>
 
           <hr className="border-slate-800" />
 
-          {/* Período de emissão */}
+          {/* Periodo de emissao */}
           <div className="space-y-2">
-            <label className="text-[11px] font-bold text-slate-300 uppercase tracking-wider block">
-              Período de Emissão
-            </label>
+            <label className="text-[11px] font-bold text-slate-300 uppercase tracking-wider block">Periodo de Emissao</label>
             <div className="grid grid-cols-2 gap-2">
               <div>
-                <span className="text-[10px] text-slate-400 block mb-0.5">Início:</span>
-                <input
-                  type="date"
-                  value={filtros.dataInicio}
-                  onChange={(e) => setFiltros((prev) => ({ ...prev, dataInicio: e.target.value }))}
-                  className="w-full bg-slate-900 border border-slate-700 text-slate-200 rounded px-2 py-1 text-xs focus:ring-1 focus:ring-orange-500"
-                />
+                <span className="text-[10px] text-slate-400 block mb-0.5">Inicio:</span>
+                <input type="date" value={filtros.dataInicio} onChange={(e) => setFiltros((prev) => ({ ...prev, dataInicio: e.target.value }))} className="w-full bg-slate-900 border border-slate-700 text-slate-200 rounded px-2 py-1 text-xs focus:ring-1 focus:ring-orange-500" />
               </div>
               <div>
                 <span className="text-[10px] text-slate-400 block mb-0.5">Fim:</span>
-                <input
-                  type="date"
-                  value={filtros.dataFim}
-                  onChange={(e) => setFiltros((prev) => ({ ...prev, dataFim: e.target.value }))}
-                  className="w-full bg-slate-900 border border-slate-700 text-slate-200 rounded px-2 py-1 text-xs focus:ring-1 focus:ring-orange-500"
-                />
+                <input type="date" value={filtros.dataFim} onChange={(e) => setFiltros((prev) => ({ ...prev, dataFim: e.target.value }))} className="w-full bg-slate-900 border border-slate-700 text-slate-200 rounded px-2 py-1 text-xs focus:ring-1 focus:ring-orange-500" />
               </div>
             </div>
           </div>
 
           <hr className="border-slate-800" />
-
           {/* Tipo de produto */}
           <div className="space-y-2">
             <label className="text-[11px] font-bold text-slate-300 uppercase tracking-wider block">Tipo de Produto</label>

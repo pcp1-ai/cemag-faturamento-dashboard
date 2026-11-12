@@ -1,5 +1,13 @@
 import { spawnSync } from "node:child_process";
+import dotenv from "dotenv";
 import { getDatabaseMigrationState } from "../server/dbConfig";
+
+dotenv.config({ path: [".env.local", ".env"] });
+
+if (process.env.GOOGLE_SPREADSHEET_ID) {
+  console.log("[Database] Google Sheets is the configured faturamento source; skipping TiDB migrations.");
+  process.exit(0);
+}
 
 const state = getDatabaseMigrationState();
 

@@ -223,14 +223,10 @@ const MetaCheckboxFilter: React.FC<{ label: string; values: string[]; selected: 
 
 export default function Home({ onLogout, emailAutenticado, isAdmin = false }: { onLogout?: () => void; emailAutenticado?: string; isAdmin?: boolean }) {
   const trpcUtils = trpc.useUtils();
-  const enviarLoteBase = trpc.cemag.uploadBaseChunk.useMutation();
-  const publicarBase = trpc.cemag.publishSharedBase.useMutation();
-  const descartarEnvioBase = trpc.cemag.discardSharedBaseUpload.useMutation();
   const [loading, setLoading] = useState<boolean>(true);
   const [erroCarregamento, setErroCarregamento] = useState<string | null>(null);
-  const [mensagemUpload, setMensagemUpload] = useState<{ tipo: "sucesso" | "aviso" | "erro"; texto: string } | null>(null);
   const [baseOriginal, setBaseOriginal] = useState<any[]>([]);
-  const [nomeArquivoBase, setNomeArquivoBase] = useState<string>("data/tabelaFaturamento.csv");
+  const nomeArquivoBase = "Google Sheets: tabelaFaturamento";
   const [abaAtiva, setAbaAtiva] = useState<string>("visao_geral");
   const [grupoAbaAtivo, setGrupoAbaAtivo] = useState<string>("resumo");
   const [ufMapaSelecionada, setUfMapaSelecionada] = useState<string | null>(null);
@@ -301,17 +297,9 @@ export default function Home({ onLogout, emailAutenticado, isAdmin = false }: { 
             rows.push(...lote.map((item) => JSON.parse(item.payload)));
           }
           setBaseOriginal(rows);
-          setNomeArquivoBase(baseCompartilhada.fileName);
           return;
         }
-        const resp = await fetch("/data/tabelaFaturamento.csv");
-        if (!resp.ok) throw new Error("NÃ£o foi possÃ­vel carregar a base padrÃ£o /data/tabelaFaturamento.csv");
-        const text = await resp.text();
-        const parsed = Papa.parse(text, { header: true, skipEmptyLines: true });
-        if (parsed.data && parsed.data.length > 0) {
-          setBaseOriginal(parsed.data);
-          setNomeArquivoBase("tabelaFaturamento.csv");
-        } else throw new Error("Arquivo vazio");
+        throw new Error("A planilha tabelaFaturamento esta vazia. Confira a aba compartilhada com o servidor.");
       } catch (err: any) {
         setErroCarregamento(err.message || "Erro ao carregar dados iniciais.");
       } finally {
@@ -506,72 +494,6 @@ export default function Home({ onLogout, emailAutenticado, isAdmin = false }: { 
       valorMedioPedido,
     };
   }, [dadosFiltrados]);
-
-  // Handler de upload de novo arquivo
-  const handleUploadArquivo = (file: File) => {
-    if (!isAdmin) {
-      setMensagemUpload({ tipo: "aviso", texto: "Somente a conta administradora pode publicar uma nova base." });
-      return;
-    }
-    const nome = file.name.toLowerCase();
-    const reader = new FileReader();
-    setMensagemUpload({ tipo: "aviso", texto: `Lendo ${file.name}...` });
-
-    const concluirUpload = async (linhas: any[]) => {
-      if (!linhas.length) {
-        setMensagemUpload({ tipo: "erro", texto: "A planilha nÃ£o contÃ©m registros vÃ¡lidos." });
-        return;
-      }
-      const versao = crypto.randomUUID();
-      const tamanhoLote = 500;
-      try {
-        for (let inicio = 0; inicio < linhas.length; inicio += tamanhoLote) {
-          const lote = linhas.slice(inicio, inicio + tamanhoLote).map((linha, indice) => ({ rowNumber: inicio + indice + 1, payload: JSON.stringify(linha) }));
-          await enviarLoteBase.mutateAsync({ version: versao, rows: lote });
-          setMensagemUpload({ tipo: "aviso", texto: `Enviando base compartilhada: ${Math.min(inicio + lote.length, linhas.length).toLocaleString("pt-BR")} de ${linhas.length.toLocaleString("pt-BR")} registros...` });
-        }
-        await publicarBase.mutateAsync({ version: versao, fileName: file.name, rowCount: linhas.length, dimensions: Object.keys(linhas[0] || {}).slice(0, 250) });
-        setBaseOriginal(linhas);
-        setNomeArquivoBase(file.name);
-        setMensagemUpload({ tipo: "sucesso", texto: `${file.name} publicada para todos os usuÃ¡rios (${linhas.length.toLocaleString("pt-BR")} registros).` });
-        await trpcUtils.cemag.sharedBase.invalidate();
-      } catch (error: any) {
-        try { await descartarEnvioBase.mutateAsync({ version: versao }); } catch { /* o envio pode jÃ¡ ter sido publicado */ }
-        setMensagemUpload({ tipo: "erro", texto: `NÃ£o foi possÃ­vel publicar a base compartilhada: ${error?.message || "erro no servidor"}. A base anterior continua disponÃ­vel.` });
-      }
-    };
-
-    if (nome.endsWith(".xlsx") || nome.endsWith(".xls")) {
-      reader.onload = (e) => {
-        try {
-          const data = new Uint8Array(e.target?.result as ArrayBuffer);
-          const workbook = XLSX.read(data, { type: "array" });
-          const firstSheet = workbook.SheetNames[0];
-          const sheet = workbook.Sheets[firstSheet];
-          const json = XLSX.utils.sheet_to_json(sheet);
-          if (json && json.length) {
-            concluirUpload(json);
-          } else setMensagemUpload({ tipo: "erro", texto: "O arquivo Excel nÃ£o contÃ©m registros vÃ¡lidos." });
-        } catch (err: any) {
-          setMensagemUpload({ tipo: "erro", texto: "Erro ao ler arquivo Excel: " + err.message });
-        }
-      };
-      reader.readAsArrayBuffer(file);
-    } else {
-      reader.onload = (e) => {
-        try {
-          const text = e.target?.result as string;
-          const parsed = Papa.parse(text, { header: true, skipEmptyLines: true });
-          if (parsed.data && parsed.data.length) {
-            concluirUpload(parsed.data);
-          } else setMensagemUpload({ tipo: "erro", texto: "O arquivo CSV nÃ£o contÃ©m registros vÃ¡lidos." });
-        } catch (err: any) {
-          setMensagemUpload({ tipo: "erro", texto: "Erro ao processar CSV: " + err.message });
-        }
-      };
-      reader.readAsText(file);
-    }
-  };
 
   const handleResetFiltros = () => {
     if (meta?.data_min && meta?.data_max) {
@@ -1354,6 +1276,17 @@ export default function Home({ onLogout, emailAutenticado, isAdmin = false }: { 
     ? Math.min(100, (dadosFiltrados.length / meta.linhas_validas) * 100)
     : 0;
 
+  if (erroCarregamento && !baseOriginal.length) {
+    return (
+      <div className="min-h-screen bg-[#0E1117] text-white flex flex-col items-center justify-center p-6 text-center">
+        <AlertTriangle className="w-10 h-10 text-orange-500 mb-4" />
+        <h2 className="text-xl font-bold">Nao foi possivel carregar a base de faturamento</h2>
+        <p className="max-w-xl text-sm text-slate-400 mt-2">{erroCarregamento}</p>
+        <button type="button" onClick={() => window.location.reload()} className="mt-5 rounded-lg bg-orange-600 px-4 py-2 text-sm font-semibold text-white hover:bg-orange-500">Tentar novamente</button>
+      </div>
+    );
+  }
+
   if (loading) {
     return (
       <div className="min-h-screen bg-[#0E1117] text-white flex flex-col items-center justify-center p-6">
@@ -1430,11 +1363,7 @@ export default function Home({ onLogout, emailAutenticado, isAdmin = false }: { 
             <span>Linhas: <strong className="text-orange-400">{dadosFiltrados.length.toLocaleString("pt-BR")}</strong> de {meta?.linhas_validas?.toLocaleString("pt-BR")}</span>
           </div>
         </div>
-        {mensagemUpload && (
-          <div className={`max-w-[1700px] mx-auto mt-2 rounded-lg border px-3 py-2 text-xs ${mensagemUpload.tipo === "sucesso" ? "border-emerald-700/60 bg-emerald-950/40 text-emerald-200" : mensagemUpload.tipo === "erro" ? "border-red-700/60 bg-red-950/40 text-red-200" : "border-amber-700/60 bg-amber-950/40 text-amber-200"}`} role="status">
-            {mensagemUpload.texto}
-          </div>
-        )}
+
       </header>
 
       {/* ConteÃºdo com Sidebar fixa na esquerda */}
@@ -1443,9 +1372,6 @@ export default function Home({ onLogout, emailAutenticado, isAdmin = false }: { 
           filtros={filtros}
           setFiltros={setFiltros}
           opcoesFiltros={opcoesFiltros}
-          nomeArquivoBase={nomeArquivoBase}
-          onUploadArquivo={handleUploadArquivo}
-          isAdmin={isAdmin}
           onResetFiltros={handleResetFiltros}
           linhasFiltradas={dadosFiltrados.length}
           totalLinhasValidas={meta?.linhas_validas || 0}
