@@ -82,6 +82,11 @@ const CEMAG_GREEN = "#22C55E";
 const CEMAG_RED = "#EF4444";
 const CEMAG_MUTED = "#64748B";
 
+const encontrarFormaVendaPadrao = (formas: string[]) => formas.find((forma) => {
+  const chave = forma.normalize("NFKD").replace(/[\u0300-\u036f]/g, "").toUpperCase().replace(/[^A-Z0-9]/g, "");
+  return chave.includes("PRODPR") && chave.includes("CONSUMO");
+});
+
 const CAPITAIS_ESTADOS: Record<string, string> = { AC: "Rio Branco", AL: "MaceiÃ³", AP: "MacapÃ¡", AM: "Manaus", BA: "Salvador", CE: "Fortaleza", DF: "BrasÃ­lia", ES: "VitÃ³ria", GO: "GoiÃ¢nia", MA: "SÃ£o LuÃ­s", MT: "CuiabÃ¡", MS: "Campo Grande", MG: "Belo Horizonte", PA: "BelÃ©m", PB: "JoÃ£o Pessoa", PR: "Curitiba", PE: "Recife", PI: "Teresina", RJ: "Rio de Janeiro", RN: "Natal", RS: "Porto Alegre", RO: "Porto Velho", RR: "Boa Vista", SC: "FlorianÃ³polis", SP: "SÃ£o Paulo", SE: "Aracaju", TO: "Palmas" };
 const REGIOES_BRASIL = ["Norte", "Nordeste", "Centro-Oeste", "Sudeste", "Sul"];
 
@@ -386,6 +391,19 @@ export default function Home({ onLogout, emailAutenticado, isAdmin = false }: { 
     };
   }, [dados]);
 
+  useEffect(() => {
+    if (!opcoesFiltros.tiposVenda.length || filtros.considerarTodasFormas || !filtros.tiposVendaSelecionados.length) return;
+    const formasDisponiveis = new Set(opcoesFiltros.tiposVenda);
+    if (filtros.tiposVendaSelecionados.every((forma) => formasDisponiveis.has(forma))) return;
+
+    const formaPadrao = encontrarFormaVendaPadrao(opcoesFiltros.tiposVenda);
+    setFiltros((prev) => prev.considerarTodasFormas
+      ? prev
+      : formaPadrao
+        ? { ...prev, tiposVendaSelecionados: [formaPadrao] }
+        : { ...prev, considerarTodasFormas: true, tiposVendaSelecionados: [] });
+  }, [filtros.considerarTodasFormas, filtros.tiposVendaSelecionados, opcoesFiltros.tiposVenda]);
+
   // AplicaÃ§Ã£o estrita de todos os filtros
   const dadosFiltrados = useMemo(() => {
     if (!dados.length) return [];
@@ -498,11 +516,12 @@ export default function Home({ onLogout, emailAutenticado, isAdmin = false }: { 
   const handleResetFiltros = () => {
     if (meta?.data_min && meta?.data_max) {
       const minBase = meta.data_min.toISOString().slice(0, 10);
+      const formaPadrao = encontrarFormaVendaPadrao(opcoesFiltros.tiposVenda);
       setFiltros({
         dataInicio: minBase > "2022-01-01" ? minBase : "2022-01-01",
         dataFim: meta.data_max.toISOString().slice(0, 10),
-        considerarTodasFormas: false,
-        tiposVendaSelecionados: ["V ProdPrÃ³pria p Consumo"],
+        considerarTodasFormas: !formaPadrao,
+        tiposVendaSelecionados: formaPadrao ? [formaPadrao] : [],
         familiasExcluidas: [],
         anos: [],
         regioes: [],
