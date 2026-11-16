@@ -12,7 +12,12 @@ export type IndicadoresAgro = {
   ano_referencia: number | null;
   credito_investimento_brl: number | null;
   credito_status: "consultado" | "indisponivel" | "nao_consultado";
+  credito_rural_mensal: Array<{ ano_mes: string; uf: string; contratos: number | null; investimento_brl: number | null }>;
   precos_agro: Array<{ produto: string; ticker: string; valor_usd: number | null; atualizado_em: string | null }>;
+  previsao_safra_ibge: Array<{ periodo: string; territorio: string; produto: string; variavel: string; valor: number | null }>;
+  comercio_exterior_maquinas: Array<{ ano_mes: string; abrangencia?: string; fluxo: string; ncm: string; valor_fob_usd: number | null; quantidade_kg: number | null }>;
+  diesel_anp: Array<{ municipio?: string; uf?: string; territorio?: string; tipo_territorio?: string; semana: string; produto: string; preco_medio_brl_l: number | null; postos_pesquisados?: number }>;
+  conab_series: Array<{ produto: string; indicador: string; periodo: string; territorio: string; valor: number | null }>;
 };
 
 export type MercadoMaquinasAnfavea = {
@@ -25,7 +30,7 @@ export type MercadoMaquinasAnfavea = {
 };
 
 export type FonteAgroStatus = {
-  id: "ibge_pam" | "bcb_credito_rural" | "conab" | "comexstat";
+  id: "ibge_pam" | "ibge_lspa" | "bcb_credito_rural" | "conab" | "comexstat" | "anp_diesel";
   nome: string;
   status: "consultado" | "indisponivel" | "nao_consultado";
   periodicidade: string;
@@ -58,6 +63,7 @@ type BcbFocusRow = { Indicador?: string; Data?: string; Reuniao?: string; Media?
 
 type GeocodeResult = { name?: string; latitude?: number; longitude?: number; admin1?: string; country?: string };
 type SidraRow = { V?: string; D2C?: string; D3C?: string; D4C?: string };
+type SidraAgroRow = Record<string, string | undefined> & { V?: string };
 
 function parsePtDate(value: string) {
   const [day, month, year] = value.split("/").map(Number);
@@ -113,6 +119,18 @@ async function fetchText(url: string, timeoutMs = 30_000) {
   }
 }
 
+async function fetchJsonBody<T>(url: string, body: unknown, timeoutMs = 45_000): Promise<T> {
+  const controller = new AbortController();
+  const timeout = setTimeout(() => controller.abort(), timeoutMs);
+  try {
+    const response = await fetch(url, { method: "POST", signal: controller.signal, headers: { Accept: "application/json", "Content-Type": "application/json" }, body: JSON.stringify(body) });
+    if (!response.ok) throw new Error(`HTTP ${response.status}`);
+    return await response.json() as T;
+  } finally {
+    clearTimeout(timeout);
+  }
+}
+
 async function fetchBytes(url: string, timeoutMs = 45_000) {
   const controller = new AbortController();
   const timeout = setTimeout(() => controller.abort(), timeoutMs);
@@ -144,22 +162,138 @@ async function buscarCafeIbge() {
   return { ano_referencia: ano, cafe_area_colhida_ha: find("216"), cafe_producao_t: find("214"), cafe_valor_producao_mil_brl: find("215") };
 }
 
-async function verificarFonteAgro(url: string, fonte: FonteAgroStatus["fonte"], id: FonteAgroStatus["id"], nome: string, periodicidade: string, periodo_disponivel: string, observacao: string): Promise<FonteAgroStatus> {
-  try {
-    await fetchText(url, 20_000);
-    return { id, nome, status: "consultado", periodicidade, periodo_disponivel, fonte, atualizado_em: new Date().toISOString(), observacao };
-  } catch (error) {
-    return { id, nome, status: "indisponivel", periodicidade, periodo_disponivel, fonte, atualizado_em: null, observacao: `${observacao} (${error instanceof Error ? error.message : "erro de consulta"})` };
-  }
-}
-
 function fontesAgroIniciais(): FonteAgroStatus[] {
   return [
     { id: "ibge_pam", nome: "Produção agrícola municipal — IBGE/PAM", status: "nao_consultado", periodicidade: "Anual", periodo_disponivel: "Último ano publicado pelo IBGE", fonte: "IBGE/SIDRA", atualizado_em: null, observacao: "Produção, área, rendimento e valor por município, estado e região." },
+    { id: "ibge_lspa", nome: "Estimativa mensal de safra — IBGE/LSPA", status: "nao_consultado", periodicidade: "Mensal", periodo_disponivel: "Último levantamento publicado", fonte: "IBGE/SIDRA — tabela 6588", atualizado_em: null, observacao: "Estimativas mensais de área, produção e rendimento por cultura e UF; podem ser revisadas." },
     { id: "bcb_credito_rural", nome: "Crédito rural — Banco Central/SICOR", status: "nao_consultado", periodicidade: "Consulta por operação e período", periodo_disponivel: "Conforme registros publicados pelo Banco Central", fonte: "Banco Central do Brasil — SICOR/MDCR", atualizado_em: null, observacao: "Investimento, custeio, contratos e valores por localidade quando a consulta municipal está disponível." },
     { id: "conab", nome: "Safra e preços agrícolas — CONAB", status: "nao_consultado", periodicidade: "Mensal, por produto/levantamento", periodo_disponivel: "Último levantamento publicado", fonte: "CONAB", atualizado_em: null, observacao: "Safra, preços mínimos, comercialização e programas de apoio; ausência de publicação não é tratada como zero." },
     { id: "comexstat", nome: "Comércio exterior — Comex Stat", status: "nao_consultado", periodicidade: "Mensal", periodo_disponivel: "Período disponível na consulta oficial", fonte: "MDIC — Comex Stat", atualizado_em: null, observacao: "Exportações e importações por produto, UF, país e período." },
+    { id: "anp_diesel", nome: "Preço do diesel — ANP", status: "nao_consultado", periodicidade: "Semanal", periodo_disponivel: "Último arquivo publicado", fonte: "ANP — levantamento de preços", atualizado_em: null, observacao: "Preços de revenda por município/UF, como indicador indireto de custo de operação e transporte." },
   ];
+}
+
+function marcarFonte(fontes: FonteAgroStatus[], id: FonteAgroStatus["id"], status: FonteAgroStatus["status"], observacao?: string) {
+  const item = fontes.find((fonte) => fonte.id === id);
+  if (!item) return;
+  item.status = status;
+  item.atualizado_em = status === "consultado" ? new Date().toISOString() : null;
+  if (observacao) item.observacao = observacao;
+}
+
+async function buscarLspaIbge(uf?: string, regiao?: string, ufs: string[] = []): Promise<IndicadoresAgro["previsao_safra_ibge"]> {
+  const codigosUf: Record<string, string> = { RO: "11", AC: "12", AM: "13", RR: "14", PA: "15", AP: "16", TO: "17", MA: "21", PI: "22", CE: "23", RN: "24", PB: "25", PE: "26", AL: "27", SE: "28", BA: "29", MG: "31", ES: "32", RJ: "33", SP: "35", PR: "41", SC: "42", RS: "43", MS: "50", MT: "51", GO: "52", DF: "53" };
+  const codigosRegiao: Record<string, string> = { Norte: "1", Nordeste: "2", Sudeste: "3", Sul: "4", "Centro-Oeste": "5" };
+  const codigosSelecionados = [...new Set(ufs.map((item) => codigosUf[item.toUpperCase()]).filter(Boolean))];
+  const territorio = regiao && codigosRegiao[regiao] ? `n2/${codigosRegiao[regiao]}` : codigosSelecionados.length > 0 ? `n3/${codigosSelecionados.join(",")}` : uf && codigosUf[uf.toUpperCase()] ? `n3/${codigosUf[uf.toUpperCase()]}` : "n1/1";
+  const url = `https://apisidra.ibge.gov.br/values/t/6588/${territorio}/v/35,109/p/last%201/c48/all?formato=json`;
+  const rows = await fetchJson<SidraAgroRow[]>(url, 20_000);
+  return rows.slice(1).map((row) => {
+    const rawValue = String(row.V ?? "").replace(",", ".");
+    const value = Number(rawValue);
+    return { periodo: row.D3N || "Último período publicado", territorio: row.D1N || (uf ? uf.toUpperCase() : "Brasil"), produto: row.D4N || "Produto agrícola", variavel: row.D2N || "Estimativa LSPA", valor: rawValue && Number.isFinite(value) ? value : null };
+  }).filter((row) => row.valor != null);
+}
+
+async function buscarComexStatMaquinas(uf?: string, ufsAbrangencia: string[] = []): Promise<IndicadoresAgro["comercio_exterior_maquinas"]> {
+  const now = new Date();
+  const end = new Date(Date.UTC(now.getUTCFullYear(), now.getUTCMonth() - 1, 1));
+  const start = new Date(Date.UTC(end.getUTCFullYear(), end.getUTCMonth() - 35, 1));
+  const ym = (date: Date) => `${date.getUTCFullYear()}-${String(date.getUTCMonth() + 1).padStart(2, "0")}`;
+  const ufIds: Record<string, number> = { RO: 11, AC: 12, AM: 13, RR: 14, PA: 15, AP: 16, TO: 17, MA: 21, PI: 22, CE: 23, RN: 24, PB: 25, PE: 26, AL: 27, SE: 28, BA: 29, MG: 31, ES: 32, RJ: 33, SP: 35, PR: 41, SC: 42, RS: 43, MS: 50, MT: 51, GO: 52, DF: 53 };
+  const filters: Array<{ filter: string; values: Array<string | number> }> = [{ filter: "ncm", values: ["87162000", "84321000", "84322100", "84322900", "84323110", "84323190", "84323910", "84323990", "84324100", "84324200", "84328000", "84329000", "84335100", "84335990", "84339090", "84361000", "84368000", "84369900"] }];
+  const estados = [...new Set((ufsAbrangencia.length ? ufsAbrangencia : uf ? [uf] : []).map((item) => ufIds[item.toUpperCase()]).filter((value): value is number => Number.isFinite(value)))];
+  if (estados.length) filters.push({ filter: "state", values: estados });
+  const result: IndicadoresAgro["comercio_exterior_maquinas"] = [];
+  const flows = await Promise.all(["import", "export"].map(async (flow) => {
+    const data = await fetchJsonBody<{ data?: { list?: Array<Record<string, unknown>> } }>("https://api-comexstat.mdic.gov.br/general?language=pt", { flow, monthDetail: true, period: { from: ym(start), to: ym(end) }, filters, details: ["ncm"], metrics: ["metricFOB", "metricKG"] }, 30_000);
+    return { flow, rows: data.data?.list || [] };
+  }));
+  for (const { flow, rows } of flows) {
+    for (const row of rows) {
+      const year = String(row.year || row.ano || "");
+      const month = String(row.monthNumber || row.month || "").padStart(2, "0");
+      const rawPeriod = String(row.yearMonth || row.period || "");
+      const period = rawPeriod.match(/\d{4}-\d{2}/)?.[0] || (year && /^\d{2}$/.test(month) ? `${year}-${month}` : "");
+      const ncm = String(row.ncmCode || row.ncm || row.NCM || "");
+      if (!period || !ncm) continue;
+      const fob = Number(row.metricFOB ?? row.fob);
+      const kg = Number(row.metricKG ?? row.kg);
+      result.push({ ano_mes: period, fluxo: flow === "import" ? "Importação" : "Exportação", ncm, valor_fob_usd: Number.isFinite(fob) ? fob : null, quantidade_kg: Number.isFinite(kg) ? kg : null });
+    }
+  }
+  return result;
+}
+
+async function buscarDieselAnp(cidade: string, uf?: string, ufsAbrangencia: string[] = [], rotuloAbrangencia?: string): Promise<IndicadoresAgro["diesel_anp"]> {
+  const ano = new Date().getUTCFullYear();
+  const pagina = await fetchText(`https://www.gov.br/anp/pt-br/centrais-de-conteudo/dados-abertos/arquivos/shpc/dsan/${ano}`, 15_000);
+  const links = [...pagina.matchAll(/href=["']([^"']+\.csv(?:\/view)?)["']/gi)].map((match) => match[1].replace(/\/view$/, ""));
+  const link = links.reverse().find((url) => /diesel/i.test(url));
+  if (!link) throw new Error("CSV recente de diesel não encontrado no catálogo da ANP");
+  const csv = new TextDecoder("windows-1252").decode(await fetchBytes(link, 20_000));
+  const normalizar = (valor: string) => valor.normalize("NFD").replace(/[\u0300-\u036f]/g, "").toUpperCase().trim();
+  const cidadeAlvo = normalizar(cidade);
+  const ufAlvo = normalizar(uf || "");
+  const ufsAlvo = new Set(ufsAbrangencia.map(normalizar));
+  const linhas = csv.split(/\r?\n/).slice(1);
+  const grupos = new Map<string, { municipio: string; uf: string; semana: string; produto: string; soma: number; quantidade: number }>();
+  for (const linha of linhas) {
+    const c = linha.replace(/^\uFEFF/, "").split(";").map((x) => x.replace(/^"|"$/g, "").trim());
+    if (c.length < 13) continue;
+    const ufLinha = c[1] || ""; const municipio = c[2] || ""; const produto = c[10] || ""; const semana = c[11] || "";
+    if (!/DIESEL/i.test(produto) || (ufsAlvo.size === 0 && cidadeAlvo && cidadeAlvo !== "BRASIL" && normalizar(municipio) !== cidadeAlvo) || (ufsAlvo.size === 0 && ufAlvo && normalizar(ufLinha) !== ufAlvo) || (ufsAlvo.size > 0 && !ufsAlvo.has(normalizar(ufLinha)))) continue;
+    const preco = Number(String(c[12] || "").replace(/\./g, "").replace(",", "."));
+    if (!Number.isFinite(preco)) continue;
+    const agregada = ufsAlvo.size > 0;
+    const key = agregada ? `${semana}|${produto}` : `${municipio}|${ufLinha}|${semana}|${produto}`;
+    const rotulo = rotuloAbrangencia || (ufAlvo ? ufLinha : municipio);
+    const g = grupos.get(key) || { municipio: agregada ? rotulo : municipio, uf: agregada ? "" : ufLinha, semana, produto, soma: 0, quantidade: 0 };
+    g.soma += preco; g.quantidade++; grupos.set(key, g);
+  }
+  const tipoTerritorio = rotuloAbrangencia?.startsWith("Brasil") ? "Brasil" : rotuloAbrangencia?.startsWith("Estados selecionados") ? "Estados selecionados" : ufsAlvo.size > 0 ? "Regiao/UFs" : cidadeAlvo && cidadeAlvo !== "BRASIL" ? "Municipio" : ufAlvo ? "UF" : "Brasil";
+  return Array.from(grupos.values()).map((g) => ({ municipio: g.municipio, uf: g.uf, territorio: g.municipio, tipo_territorio: tipoTerritorio, semana: g.semana, produto: g.produto, preco_medio_brl_l: g.soma / g.quantidade, postos_pesquisados: g.quantidade }));
+}
+
+async function buscarConabSeries(): Promise<IndicadoresAgro["conab_series"]> {
+  const pagina = await fetchText("https://portaldeinformacoes.conab.gov.br/download-arquivos.html", 15_000);
+  const links = [...pagina.matchAll(/href=["']([^"']+)["'][^>]*>([\s\S]*?)<\/a>/gi)].map((m) => ({ url: m[1], label: m[2].replace(/<[^>]+>/g, " ").trim() }));
+  const candidatas = links.filter((item) => /safra|pre[cç]o|custo|oferta|demanda|rentabilidade/i.test(`${item.label} ${item.url}`) && /\.(?:csv|xlsx?|csv\/view|xlsx?\/view)(?:$|\?)/i.test(item.url)).slice(0, 4);
+  if (!candidatas.length) throw new Error("catálogo público CONAB não expôs planilhas de safra, preços ou custos para leitura automática");
+  const XLSX = await import("xlsx");
+  const arquivos = await Promise.all(candidatas.map(async (arquivo) => {
+    try {
+      const bytes = await fetchBytes(new URL(arquivo.url.replace(/\/view$/, ""), "https://portaldeinformacoes.conab.gov.br").toString(), 20_000);
+      const csv = /\.csv(?:$|\?)/i.test(arquivo.url);
+      const workbook = XLSX.read(csv ? new TextDecoder("windows-1252").decode(bytes) : bytes, { type: csv ? "string" : "array", raw: false });
+      const sheet = workbook.Sheets[workbook.SheetNames[0]];
+      const rows = XLSX.utils.sheet_to_json<unknown[]>(sheet, { header: 1, raw: false, defval: "" });
+      const headers = (rows[0] || []).map((value) => String(value).trim());
+      const findColumn = (pattern: RegExp) => headers.findIndex((value) => pattern.test(value));
+      const productColumn = findColumn(/produto|cultura|commodity/i);
+      const periodColumn = findColumn(/per[ií]odo|ano|safra|m[eê]s|data/i);
+      const territoryColumn = findColumn(/munic[ií]pio|estado|uf|regi[aã]o|territ[oó]rio/i);
+      const metricColumns = headers.map((header, index) => ({ header, index })).filter(({ header }) => /produ[cç][aã]o|produtividade|[aá]rea|pre[cç]o|custo|oferta|demanda|rentabilidade|valor/i.test(header));
+      const resultadoArquivo: IndicadoresAgro["conab_series"] = [];
+      for (const row of rows.slice(1).slice(-1000)) {
+        const product = String(row[productColumn >= 0 ? productColumn : 0] || "").trim();
+        if (!product) continue;
+        for (const metric of metricColumns) {
+          const raw = String(row[metric.index] ?? "").trim();
+          const value = Number(raw.replace(/\.(?=\d{3}(?:\D|$))/g, "").replace(",", "."));
+          if (!raw || !Number.isFinite(value)) continue;
+          resultadoArquivo.push({ produto: product, indicador: metric.header || arquivo.label || "Indicador CONAB", periodo: String(row[periodColumn >= 0 ? periodColumn : 1] || ""), territorio: String(row[territoryColumn >= 0 ? territoryColumn : 2] || "Brasil"), valor: value });
+        }
+      }
+      return resultadoArquivo;
+    } catch {
+      // Um arquivo pode estar temporariamente indisponível; os demais do catálogo continuam sendo lidos.
+      return [];
+    }
+  }));
+  const resultado = arquivos.flat().slice(0, 8_000);
+  if (!resultado.length) throw new Error("os arquivos CONAB localizados não retornaram tabelas com medidas numéricas reconhecíveis");
+  return resultado;
 }
 
 async function buscarIndiceOni() {
@@ -172,17 +306,31 @@ async function buscarIndiceOni() {
   });
 }
 
-async function buscarCreditoInvestimento(cidade: string, uf?: string) {
-  if (!cidade || cidade === "Brasil" || !uf) return { value: null, status: "nao_consultado" as const };
-  const ufNormalizada = uf.trim().toUpperCase();
-  const url = `https://olinda.bcb.gov.br/olinda/servico/SICOR/versao/v2/odata/RegiaoUF?$format=json&$filter=${encodeURIComponent(`nomeUF eq '${ufNormalizada}'`)}&$top=10000`;
+async function buscarCreditoInvestimento(cidade: string, uf?: string, ufsAbrangencia: string[] = [], rotuloAbrangencia?: string) {
+  const ufs = [...new Set((ufsAbrangencia.length ? ufsAbrangencia : uf ? [uf] : []).map((item) => item.trim().toUpperCase()))];
+  if (!cidade || (!ufs.length && cidade === "Brasil")) return { value: null, series: [] as IndicadoresAgro["credito_rural_mensal"], status: "nao_consultado" as const };
+  const ufNormalizada = rotuloAbrangencia || ufs.join(", ");
+  if (!ufs.length) return { value: null, series: [] as IndicadoresAgro["credito_rural_mensal"], status: "nao_consultado" as const };
+  const filtro = ufs.map((item) => `nomeUF eq '${item}'`).join(" or ");
+  const url = `https://olinda.bcb.gov.br/olinda/servico/SICOR/versao/v2/odata/RegiaoUF?$format=json&$filter=${encodeURIComponent(`(${filtro})`)}&$top=10000`;
   try {
     const data = await fetchJson<{ value?: BcbCreditoRow[] }>(url, 30_000);
-    const rows = data.value || [];
-    const total = rows.reduce((sum, row) => sum + (Number(row.VlInvestimento) || 0), 0);
-    return { value: total, status: "consultado" as const };
+    const cutoff = new Date().getUTCFullYear() - 5;
+    const mensal = new Map<string, { contratos: number; investimento_brl: number }>();
+    for (const row of data.value || []) {
+      const ano = Number(row.AnoEmissao); const mes = Number(row.MesEmissao);
+      if (!Number.isFinite(ano) || ano < cutoff || !Number.isFinite(mes) || mes < 1 || mes > 12) continue;
+      const key = `${ano}-${String(mes).padStart(2, "0")}`;
+      const item = mensal.get(key) || { contratos: 0, investimento_brl: 0 };
+      item.contratos += Number(row.QtdInvestimento) || 0;
+      item.investimento_brl += Number(row.VlInvestimento) || 0;
+      mensal.set(key, item);
+    }
+    const series = Array.from(mensal.entries()).sort(([a], [b]) => a.localeCompare(b)).map(([ano_mes, item]) => ({ ano_mes, uf: ufNormalizada, contratos: item.contratos, investimento_brl: item.investimento_brl }));
+    const total = series.reduce((sum, row) => sum + (row.investimento_brl || 0), 0);
+    return { value: total || null, series, status: series.length ? "consultado" as const : "indisponivel" as const };
   } catch {
-    return { value: null, status: "indisponivel" as const };
+    return { value: null, series: [] as IndicadoresAgro["credito_rural_mensal"], status: "indisponivel" as const };
   }
 }
 
@@ -285,7 +433,7 @@ export function agregarFatoresNacionais(resultados: FatoresExternosResult[], des
     return { modelo: primeira.modelo, temporada: primeira.temporada, periodo: primeira.periodo, chuva_total_mm: media(rows.map((row) => row.chuva_total_mm)), sinal_tercil: valor_sinal == null ? null : valor_sinal > 0 ? "Acima do normal" : valor_sinal < 0 ? "Abaixo do normal" : "Sem sinal predominante", valor_sinal, atualizado_em: new Date().toISOString() };
   });
   const base = resultados[0];
-  return { localidade: descricao, latitude: null, longitude: null, meses, previsao_chuva, expectativas_selic: base?.expectativas_selic || [], previsao_sazonal, indices_climaticos: base?.indices_climaticos || [], indicadores_agro: base?.indicadores_agro || { ptax_media_brl: null, cafe_producao_t: null, cafe_area_colhida_ha: null, cafe_valor_producao_mil_brl: null, ano_referencia: null, credito_investimento_brl: null, credito_status: "nao_consultado", precos_agro: [] }, mercado_maquinas_anfavea: base?.mercado_maquinas_anfavea || { status: "nao_consultado", tipo_dado: "VENDA VAREJO", agregacao: "mensal", series: [], fonte: "ANFAVEA — Central de Dados", atualizado_em: null }, fontes_agro: base?.fontes_agro || fontesAgroIniciais(), fontes: Array.from(new Set([...resultados.flatMap((resultado) => resultado.fontes), `Agregação: média simples de ${resultados.length} localidades selecionadas`])), avisos: [`A abrangência usa média simples das ${resultados.length} localidades selecionadas. Ela representa os pontos escolhidos, não uma média areal oficial de todo o território.`, ...avisosExtras, ...resultados.flatMap((resultado) => resultado.avisos)], atualizado_em: new Date().toISOString() };
+  return { localidade: descricao, latitude: null, longitude: null, meses, previsao_chuva, expectativas_selic: base?.expectativas_selic || [], previsao_sazonal, indices_climaticos: base?.indices_climaticos || [], indicadores_agro: base?.indicadores_agro || { ptax_media_brl: null, cafe_producao_t: null, cafe_area_colhida_ha: null, cafe_valor_producao_mil_brl: null, ano_referencia: null, credito_investimento_brl: null, credito_status: "nao_consultado", credito_rural_mensal: [], precos_agro: [], previsao_safra_ibge: [], comercio_exterior_maquinas: [], diesel_anp: [], conab_series: [] }, mercado_maquinas_anfavea: base?.mercado_maquinas_anfavea || { status: "nao_consultado", tipo_dado: "VENDA VAREJO", agregacao: "mensal", series: [], fonte: "ANFAVEA — Central de Dados", atualizado_em: null }, fontes_agro: base?.fontes_agro || fontesAgroIniciais(), fontes: Array.from(new Set([...resultados.flatMap((resultado) => resultado.fontes), `Agregação: média simples de ${resultados.length} localidades selecionadas`])), avisos: [`A abrangência usa média simples das ${resultados.length} localidades selecionadas. Ela representa os pontos escolhidos, não uma média areal oficial de todo o território.`, ...avisosExtras, ...resultados.flatMap((resultado) => resultado.avisos)], atualizado_em: new Date().toISOString() };
 }
 
 async function buscarPrevisaoSazonal(latitude: number, longitude: number) {
@@ -342,15 +490,15 @@ async function buscarCoordenadas(cidade: string, uf?: string) {
   return results.find((item) => item.country?.toLowerCase() === "brasil") || results[0] || null;
 }
 
-export async function obterFatoresExternos(input: { dataInicio: string; dataFim: string; cidade: string; uf?: string; localidades?: Array<{ cidade: string; uf?: string }>; descricaoAbrangencia?: string }, opcoes: { consultaRapida?: boolean; consultaAgregada?: boolean } = {}): Promise<FatoresExternosResult> {
+export async function obterFatoresExternos(input: { dataInicio: string; dataFim: string; cidade: string; uf?: string; localidades?: Array<{ cidade: string; uf?: string }>; descricaoAbrangencia?: string; tipoAbrangencia?: "cidade" | "clientes" | "uf" | "regiao" | "brasil"; ufsAbrangencia?: string[]; regiaoAbrangencia?: string }, opcoes: { consultaRapida?: boolean; consultaAgregada?: boolean } = {}): Promise<FatoresExternosResult> {
   if (input.localidades?.length) {
     const localidades = input.localidades.filter((localidade) => localidade.cidade && localidade.cidade !== "Brasil");
-    const resultados = await consultarEmLotes(localidades, (localidade, indice) => obterFatoresExternos({ dataInicio: input.dataInicio, dataFim: input.dataFim, cidade: localidade.cidade, uf: localidade.uf }, { consultaRapida: indice > 0, consultaAgregada: indice === 0 }));
+    const resultados = await consultarEmLotes(localidades, (localidade, indice) => obterFatoresExternos({ ...input, cidade: localidade.cidade, uf: localidade.uf }, { consultaRapida: indice > 0, consultaAgregada: indice === 0 }));
     const respostas = resultados.flatMap((item) => item.status === "fulfilled" ? [item.value] : []);
     const falhas = resultados.filter((item) => item.status === "rejected").length;
     return agregarFatoresNacionais(respostas, input.descricaoAbrangencia || "Abrangência selecionada", [`A primeira localidade recebeu consulta completa; as demais usam coleta territorial rápida para reduzir o tempo de resposta.`, ...(falhas ? [`${falhas} localidade(s) não responderam; os números representam apenas as localidades disponíveis.`] : [])]);
   }
-  if (input.cidade.trim().toLowerCase() === "brasil") {
+  if (input.cidade.trim().toLowerCase() === "brasil" && !input.localidades?.length) {
     const referencias = [["Manaus", "AM"], ["Recife", "PE"], ["Brasília", "DF"], ["São Paulo", "SP"], ["Porto Alegre", "RS"]] as const;
     const resultados = await consultarEmLotes(referencias, ([cidade, uf]: readonly [string, string], indice: number) => obterFatoresExternos({ ...input, cidade, uf }, { consultaRapida: indice > 0, consultaAgregada: indice === 0 }));
     const respostas = resultados.flatMap((item) => item.status === "fulfilled" ? [item.value] : []);
@@ -365,7 +513,7 @@ export async function obterFatoresExternos(input: { dataInicio: string; dataFim:
   const expectativas_selic: FatoresExternosResult["expectativas_selic"] = [];
   const previsao_sazonal: FatoresExternosResult["previsao_sazonal"] = [];
   const indices_climaticos: FatoresExternosResult["indices_climaticos"] = [];
-  const indicadores_agro: IndicadoresAgro = { ptax_media_brl: null, cafe_producao_t: null, cafe_area_colhida_ha: null, cafe_valor_producao_mil_brl: null, ano_referencia: null, credito_investimento_brl: null, credito_status: "nao_consultado", precos_agro: [] };
+  const indicadores_agro: IndicadoresAgro = { ptax_media_brl: null, cafe_producao_t: null, cafe_area_colhida_ha: null, cafe_valor_producao_mil_brl: null, ano_referencia: null, credito_investimento_brl: null, credito_status: "nao_consultado", credito_rural_mensal: [], precos_agro: [], previsao_safra_ibge: [], comercio_exterior_maquinas: [], diesel_anp: [], conab_series: [] };
   const fontes_agro = fontesAgroIniciais();
   let mercado_maquinas_anfavea: MercadoMaquinasAnfavea = { status: "nao_consultado", tipo_dado: "VENDA VAREJO", agregacao: "mensal", series: [], fonte: "ANFAVEA — Central de Dados", atualizado_em: null };
 
@@ -383,7 +531,7 @@ export async function obterFatoresExternos(input: { dataInicio: string; dataFim:
     }
   }
 
-  if (!opcoes.consultaRapida && !opcoes.consultaAgregada) {
+  if (!opcoes.consultaRapida) {
     mercado_maquinas_anfavea = await buscarMercadoMaquinasAnfavea();
     if (mercado_maquinas_anfavea.status === "consultado") fontes.push(mercado_maquinas_anfavea.fonte);
     else avisos.push(mercado_maquinas_anfavea.fonte);
@@ -414,16 +562,17 @@ export async function obterFatoresExternos(input: { dataInicio: string; dataFim:
   indicadores_agro.precos_agro = await buscarPrecosAgro();
   if (indicadores_agro.precos_agro.some((item) => item.valor_usd != null)) fontes.push("Yahoo Finance — futuros internacionais KC=F, ZC=F e ZS=F (USD)" );
 
-  if (!opcoes.consultaAgregada) {
-    const credito = await buscarCreditoInvestimento(input.cidade, input.uf);
+  if (!opcoes.consultaRapida) {
+    const credito = await buscarCreditoInvestimento(input.cidade, opcoes.consultaAgregada ? undefined : input.uf, opcoes.consultaAgregada ? (input.ufsAbrangencia || []) : [], opcoes.consultaAgregada ? input.descricaoAbrangencia : input.uf);
     indicadores_agro.credito_investimento_brl = credito.value;
     indicadores_agro.credito_status = credito.status;
+    indicadores_agro.credito_rural_mensal = credito.series;
     const fonteCredito = fontes_agro.find((fonte) => fonte.id === "bcb_credito_rural");
     if (fonteCredito) { fonteCredito.status = credito.status; fonteCredito.atualizado_em = credito.status === "consultado" ? new Date().toISOString() : null; }
     if (credito.status === "consultado") fontes.push("Banco Central do Brasil — SICOR/MDCR investimento");
     if (credito.status === "indisponivel") avisos.push("Crédito rural de investimento não respondeu; será mantido como indisponível até a próxima atualização.");
   } else {
-    avisos.push("Crédito rural foi omitido na abrangência agregada para evitar timeout; consulte um município para carregar o SICOR/MDCR.");
+    avisos.push("Crédito rural não consultado nesta coleta rápida.");
   }
 
   try {
@@ -442,6 +591,42 @@ export async function obterFatoresExternos(input: { dataInicio: string; dataFim:
   }
   } else {
     avisos.push(opcoes.consultaAgregada ? "Abrangência agregada prioriza Selic histórica e clima futuro; consulte um município para carregar todas as fontes agropecuárias." : "Consulta territorial rápida: PTAX, produção IBGE, commodities, crédito e Focus foram consultados apenas na referência principal.");
+  }
+
+  if (!opcoes.consultaRapida) {
+    const ufConsulta = opcoes.consultaAgregada ? undefined : input.uf;
+    const ufsConsulta = opcoes.consultaAgregada ? (input.ufsAbrangencia || []) : [];
+    const ufsLspa = opcoes.consultaAgregada && input.tipoAbrangencia === "brasil" ? [] : ufsConsulta;
+    const consultas = await Promise.allSettled([
+      buscarLspaIbge(ufConsulta, opcoes.consultaAgregada && input.tipoAbrangencia === "regiao" ? input.regiaoAbrangencia : undefined, ufsLspa),
+      buscarComexStatMaquinas(ufConsulta, opcoes.consultaAgregada && input.tipoAbrangencia === "brasil" ? [] : ufsConsulta),
+      buscarDieselAnp(opcoes.consultaAgregada ? "Brasil" : input.cidade, ufConsulta, ufsConsulta, input.descricaoAbrangencia),
+      buscarConabSeries(),
+    ]);
+    const fontesExtras = ["ibge_lspa", "comexstat", "anp_diesel", "conab"] as const;
+    consultas.forEach((consulta, index) => {
+      const id = fontesExtras[index];
+      if (consulta.status === "rejected") {
+        marcarFonte(fontes_agro, id, "indisponivel", `Consulta automática falhou: ${consulta.reason instanceof Error ? consulta.reason.message : "erro externo"}`);
+        avisos.push(`${id}: fonte externa indisponível nesta atualização.`);
+        return;
+      }
+      let rows = consulta.value as unknown[];
+      if (id === "conab" && opcoes.consultaAgregada && input.tipoAbrangencia !== "brasil") {
+        const nomesUf: Record<string, string> = { AC: "Acre", AL: "Alagoas", AP: "Amapá", AM: "Amazonas", BA: "Bahia", CE: "Ceará", DF: "Distrito Federal", ES: "Espírito Santo", GO: "Goiás", MA: "Maranhão", MT: "Mato Grosso", MS: "Mato Grosso do Sul", MG: "Minas Gerais", PA: "Pará", PB: "Paraíba", PR: "Paraná", PE: "Pernambuco", PI: "Piauí", RJ: "Rio de Janeiro", RN: "Rio Grande do Norte", RS: "Rio Grande do Sul", RO: "Rondônia", RR: "Roraima", SC: "Santa Catarina", SP: "São Paulo", SE: "Sergipe", TO: "Tocantins" };
+        const normalizar = (value: string) => value.normalize("NFD").replace(/[\u0300-\u036f]/g, "").toUpperCase().trim();
+        const territóriosPermitidos = [...(input.ufsAbrangencia || []), ...(input.ufsAbrangencia || []).map((uf) => nomesUf[uf] || ""), ...(input.regiaoAbrangencia ? [input.regiaoAbrangencia] : [])].map(normalizar);
+        rows = (rows as IndicadoresAgro["conab_series"]).filter((item) => territóriosPermitidos.includes(normalizar(item.territorio)));
+      }
+      const status = rows.length ? "consultado" : "indisponivel";
+      const motivoSemDados = id === "conab" && opcoes.consultaAgregada && input.tipoAbrangencia !== "brasil" ? "O catálogo CONAB não forneceu registros com território identificável para esta região/seleção de UFs." : "A fonte respondeu, mas não retornou registros para o recorte consultado.";
+      marcarFonte(fontes_agro, id, status, rows.length ? undefined : motivoSemDados);
+      if (id === "ibge_lspa") indicadores_agro.previsao_safra_ibge = rows as unknown as IndicadoresAgro["previsao_safra_ibge"];
+      if (id === "comexstat") indicadores_agro.comercio_exterior_maquinas = (rows as unknown as IndicadoresAgro["comercio_exterior_maquinas"]).map((row) => ({ ...row, abrangencia: input.tipoAbrangencia === "cidade" ? input.uf || "UF não identificada" : input.descricaoAbrangencia || input.uf || "Brasil" }));
+      if (id === "anp_diesel") indicadores_agro.diesel_anp = rows as unknown as IndicadoresAgro["diesel_anp"];
+      if (id === "conab") indicadores_agro.conab_series = rows as unknown as IndicadoresAgro["conab_series"];
+      if (rows.length) fontes.push(fontes_agro.find((fonte) => fonte.id === id)?.fonte || id);
+    });
   }
 
   let localidade: GeocodeResult | null = null;
@@ -475,14 +660,6 @@ export async function obterFatoresExternos(input: { dataInicio: string; dataFim:
     }
   } else {
     avisos.push("Selecione um município identificado para consultar a chuva.");
-  }
-
-  if (!opcoes.consultaRapida && !opcoes.consultaAgregada) {
-    const fontesVerificadas = await Promise.all([
-      verificarFonteAgro("https://www.conab.gov.br/precos-minimos", "CONAB", "conab", "Safra e preços agrícolas — CONAB", "Mensal, por levantamento", "Último levantamento publicado", "A página oficial respondeu; os conjuntos detalhados dependem do produto e do levantamento selecionado."),
-      verificarFonteAgro("https://comexstat.mdic.gov.br/pt/home", "MDIC — Comex Stat", "comexstat", "Comércio exterior — Comex Stat", "Mensal", "Período disponível na consulta oficial", "O portal oficial respondeu; a consulta detalhada de exportações será parametrizada por produto e UF."),
-    ]);
-    for (const fonte of fontesVerificadas) { const indice = fontes_agro.findIndex((item) => item.id === fonte.id); if (indice >= 0) fontes_agro[indice] = fonte; }
   }
 
   return {

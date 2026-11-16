@@ -141,6 +141,9 @@ export const appRouter = router({
         uf: z.string().max(2).optional(),
         localidades: z.array(z.object({ cidade: z.string().min(1).max(120), uf: z.string().max(2).optional() })).max(40).optional(),
         descricaoAbrangencia: z.string().max(180).optional(),
+        tipoAbrangencia: z.enum(["cidade", "clientes", "uf", "regiao", "brasil"]).optional(),
+        ufsAbrangencia: z.array(z.string().length(2)).max(27).optional(),
+        regiaoAbrangencia: z.string().max(40).optional(),
       }))
       .query(async ({ input }) => {
         const result = await obterFatoresExternos(input);
