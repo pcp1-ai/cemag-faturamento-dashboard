@@ -32,6 +32,8 @@ import {
   CLIENTE_INFO_OVERRIDE,
   UF_NOME,
   MESES,
+  type FatorExternoPrevisao,
+  type ModeloPrevisaoSelecionado,
   gerarPrevisaoMensal,
   validarPrevisaoMensal,
 } from "../lib/faturamento";
@@ -618,6 +620,7 @@ export default function Home({ onLogout, emailAutenticado, isAdmin = false }: { 
   // Representantes
   const [metricaRep, setMetricaRep] = useState<string>("Faturamento");
   const [metricaPrevisao, setMetricaPrevisao] = useState<string>("Faturamento");
+  const [modeloPrevisaoSelecionado, setModeloPrevisaoSelecionado] = useState<ModeloPrevisaoSelecionado>("automatico");
   const [horizontePrevisao, setHorizontePrevisao] = useState<number>(6);
   const [previsaoDataInicio, setPrevisaoDataInicio] = useState<string>("2022-01-01");
   const [previsaoDataFim, setPrevisaoDataFim] = useState<string>("");
@@ -1010,8 +1013,50 @@ export default function Home({ onLogout, emailAutenticado, isAdmin = false }: { 
     const fim = previsaoDataFim ? new Date(`${previsaoDataFim}T23:59:59`) : null;
     return dadosFiltradosSemPeriodo.filter((item) => (!inicio || item.data_emissao >= inicio) && (!fim || item.data_emissao <= fim));
   }, [dadosFiltradosSemPeriodo, previsaoDataInicio, previsaoDataFim]);
-  const previsaoMensal = useMemo(() => gerarPrevisaoMensal(dadosPrevisao, horizontePrevisao, metricaPrevisao, { incluirMesVigente: incluirMesVigentePrevisao }), [dadosPrevisao, horizontePrevisao, metricaPrevisao, incluirMesVigentePrevisao]);
-  const validacaoPrevisao = useMemo(() => validarPrevisaoMensal(dadosPrevisao, metricaPrevisao), [dadosPrevisao, metricaPrevisao]);
+  const fatoresMensaisPrevisao = useMemo<FatorExternoPrevisao[]>(() => {
+    const normalizarLocalidade = (value: string) => value.normalize("NFD").replace(/[\u0300-\u036f]/g, "").toLocaleLowerCase("pt-BR").trim();
+    const cidadesAlvo = new Set(dadosPrevisao.map((item) => item.cidade).filter(Boolean).map(normalizarLocalidade));
+    const ufsAlvo = new Set(dadosPrevisao.map((item) => item.uf).filter(Boolean));
+    const localidadeConsultada = fatoresExternosQuery.data?.localidade;
+    const ufConsultada = localidadesFatoresSelecionadas[0]?.uf;
+    const chuvaGeograficamenteAlinhada = abrangenciaFatores === "cidade" && cidadesAlvo.size === 1 && ufsAlvo.size === 1 && localidadeConsultada != null && cidadesAlvo.has(normalizarLocalidade(localidadeConsultada)) && [...ufsAlvo][0] === ufConsultada;
+    const credito = fatoresExternosQuery.data?.indicadores_agro.credito_rural_mensal || [];
+    const ufsCredito = new Set(credito.map((item) => item.uf).filter(Boolean));
+    const carteiraComUfCompleta = dadosPrevisao.length > 0 && dadosPrevisao.every((item) => Boolean(item.uf) && ufsAlvo.has(item.uf));
+    const creditoGeograficamenteAlinhado = carteiraComUfCompleta && ufsAlvo.size > 0 && [...ufsAlvo].every((uf) => ufsCredito.has(uf));
+    const creditoPorMes = new Map<string, { total: number; registros: number }>();
+    if (creditoGeograficamenteAlinhado) for (const item of credito) {
+      if (!ufsAlvo.has(item.uf) || item.investimento_brl == null || !Number.isFinite(Number(item.investimento_brl))) continue;
+      const atual = creditoPorMes.get(item.ano_mes) || { total: 0, registros: 0 };
+      atual.total += Number(item.investimento_brl);
+      atual.registros++;
+      creditoPorMes.set(item.ano_mes, atual);
+    }
+    const porMes = new Map<string, FatorExternoPrevisao>((fatoresExternosQuery.data?.meses || []).map((item) => [item.ano_mes, {
+      ano_mes: item.ano_mes,
+      selic_media_pct: item.selic_media_pct,
+      chuva_mm: chuvaGeograficamenteAlinhada ? item.chuva_mm : null,
+      credito_rural_brl: creditoPorMes.get(item.ano_mes)?.registros ? creditoPorMes.get(item.ano_mes)!.total : null,
+    }]));
+    for (const item of fatoresExternosQuery.data?.mercado_maquinas_anfavea.series || []) {
+      const maquina = item.maquina.normalize("NFD").replace(/[\u0300-\u036f]/g, "").toUpperCase().replace(/[^A-Z0-9]/g, "");
+      if (maquina !== "TOTALAGRICOLAS" || item.unidades == null) continue;
+      const mes = porMes.get(item.ano_mes) || { ano_mes: item.ano_mes };
+      if (item.tipo_dado === "VENDA ATACADO") mes.anfavea_atacado = item.unidades;
+      if (item.tipo_dado === "VENDA VAREJO") mes.anfavea_varejo = item.unidades;
+      if (item.tipo_dado === "EXPORTACAO") mes.anfavea_exportacao = item.unidades;
+      porMes.set(item.ano_mes, mes);
+    }
+    return Array.from(porMes.values()).sort((a, b) => a.ano_mes.localeCompare(b.ano_mes));
+  }, [abrangenciaFatores, dadosPrevisao, fatoresExternosQuery.data?.indicadores_agro.credito_rural_mensal, fatoresExternosQuery.data?.localidade, fatoresExternosQuery.data?.meses, fatoresExternosQuery.data?.mercado_maquinas_anfavea.series, localidadesFatoresSelecionadas]);
+  const opcoesModeloPrevisao = useMemo(() => ({ incluirMesVigente: incluirMesVigentePrevisao, modelo: modeloPrevisaoSelecionado, fatoresExternos: fatoresMensaisPrevisao }), [incluirMesVigentePrevisao, modeloPrevisaoSelecionado, fatoresMensaisPrevisao]);
+  const previsaoMensal = useMemo(() => gerarPrevisaoMensal(dadosPrevisao, horizontePrevisao, metricaPrevisao, opcoesModeloPrevisao), [dadosPrevisao, horizontePrevisao, metricaPrevisao, opcoesModeloPrevisao]);
+  const validacaoPrevisao = useMemo(() => validarPrevisaoMensal(dadosPrevisao, metricaPrevisao, opcoesModeloPrevisao), [dadosPrevisao, metricaPrevisao, opcoesModeloPrevisao]);
+  const comparacaoModelosPrevisao = useMemo(() => [
+    { nome: "Automático", ...validarPrevisaoMensal(dadosPrevisao, metricaPrevisao, { ...opcoesModeloPrevisao, modelo: "automatico" }) },
+    { nome: "Híbrido do TCC", ...validarPrevisaoMensal(dadosPrevisao, metricaPrevisao, { ...opcoesModeloPrevisao, modelo: "tcc_hibrido" }) },
+    { nome: "CEMAG adaptativo", ...validarPrevisaoMensal(dadosPrevisao, metricaPrevisao, { ...opcoesModeloPrevisao, modelo: "cemag_adaptativo" }) },
+  ], [dadosPrevisao, metricaPrevisao, opcoesModeloPrevisao]);
   const seriePrevisaoVisivel = useMemo(() => {
     if (!previsaoVisualizacaoInicio) return previsaoMensal.serie;
     return previsaoMensal.serie.filter((item) => item.ano_mes >= previsaoVisualizacaoInicio.slice(0, 7));
@@ -1028,9 +1073,9 @@ export default function Home({ onLogout, emailAutenticado, isAdmin = false }: { 
       provavel,
       otimista,
       margem_pct: margem,
-      explicacao: `Provável = tendência + sazonalidade; Conservador = provável - ${(margem * 100).toFixed(1)}%; Otimista = provável + ${(margem * 100).toFixed(1)}%. Faixa baseada no erro histórico.`,
+      explicacao: `Provável = ${modeloPrevisaoSelecionado === "tcc_hibrido" ? "combinação validada de tendência sazonal e fatores externos disponíveis" : "tendência + sazonalidade"}; Conservador = provável - ${(margem * 100).toFixed(1)}%; Otimista = provável + ${(margem * 100).toFixed(1)}%. Faixa baseada no erro histórico.`,
     };
-  }), [seriePrevisaoVisivel, metricaPrevisao]);
+  }), [seriePrevisaoVisivel, metricaPrevisao, modeloPrevisaoSelecionado]);
   const explicacoesHistorico = useMemo(() => {
     const mesesExternos = fatoresExternosQuery.data?.meses || [];
     const chuvas = mesesExternos.map((item) => Number(item.chuva_mm)).filter(Number.isFinite);
@@ -2721,21 +2766,22 @@ export default function Home({ onLogout, emailAutenticado, isAdmin = false }: { 
                   <div className="rounded-xl border border-orange-900/70 bg-orange-950/20 p-5">
                     <div className="flex flex-wrap items-start justify-between gap-4">
                       <div><h2 className="text-lg font-bold text-white">Parâmetros exclusivos da previsão</h2><p className="mt-1 max-w-3xl text-xs leading-5 text-slate-300">Esses controles alteram somente a previsão. Os filtros gerais continuam definindo a carteira comercial, mas o período abaixo é independente do período da barra lateral.</p></div>
-                      <button type="button" onClick={() => { setPrevisaoDataInicio(meta?.data_min ? (meta.data_min.toISOString().slice(0, 10) > "2022-01-01" ? meta.data_min.toISOString().slice(0, 10) : "2022-01-01") : "2022-01-01"); setPrevisaoDataFim(meta?.data_max?.toISOString().slice(0, 10) || ""); setIncluirMesVigentePrevisao(true); setPrevisaoVisualizacaoInicio(""); setMetricaPrevisao("Faturamento"); setHorizontePrevisao(6); }} className="rounded-lg border border-orange-700/70 px-3 py-2 text-xs font-semibold text-orange-200 hover:bg-orange-500/10">Restaurar padrão</button>
+                      <button type="button" onClick={() => { setPrevisaoDataInicio(meta?.data_min ? (meta.data_min.toISOString().slice(0, 10) > "2022-01-01" ? meta.data_min.toISOString().slice(0, 10) : "2022-01-01") : "2022-01-01"); setPrevisaoDataFim(meta?.data_max?.toISOString().slice(0, 10) || ""); setIncluirMesVigentePrevisao(true); setPrevisaoVisualizacaoInicio(""); setMetricaPrevisao("Faturamento"); setModeloPrevisaoSelecionado("automatico"); setHorizontePrevisao(6); }} className="rounded-lg border border-orange-700/70 px-3 py-2 text-xs font-semibold text-orange-200 hover:bg-orange-500/10">Restaurar padrão</button>
                     </div>
-                    <div className="mt-4 grid gap-4 md:grid-cols-2 xl:grid-cols-5">
+                    <div className="mt-4 grid gap-4 md:grid-cols-2 xl:grid-cols-4">
                       <label className="flex flex-col gap-1 text-xs text-slate-300"><span className="font-semibold">Data inicial do histórico</span><input type="date" value={previsaoDataInicio} onChange={(e) => setPrevisaoDataInicio(e.target.value)} className="rounded-lg border border-slate-700 bg-slate-800 px-3 py-2 text-white" /><span className="text-[10px] leading-4 text-slate-500">Primeiro dia usado para treinar o modelo.</span></label>
                       <label className="flex flex-col gap-1 text-xs text-slate-300"><span className="font-semibold">Data final do histórico</span><input type="date" value={previsaoDataFim} onChange={(e) => setPrevisaoDataFim(e.target.value)} className="rounded-lg border border-slate-700 bg-slate-800 px-3 py-2 text-white" /><span className="text-[10px] leading-4 text-slate-500">Último dia considerado antes da projeção.</span></label>
                       <label className="flex flex-col gap-1 text-xs text-slate-300"><span className="font-semibold">O que projetar</span><select value={metricaPrevisao} onChange={(e) => setMetricaPrevisao(e.target.value)} className="rounded-lg border border-slate-700 bg-slate-800 px-3 py-2 text-white">{METRICAS_PAINEL.map((metrica) => <option key={metrica} value={metrica}>{metrica}</option>)}</select><span className="text-[10px] leading-4 text-slate-500">Escolha faturamento, quantidade, pedidos ou clientes.</span></label>
+                      <label className="flex flex-col gap-1 text-xs text-slate-300"><span className="font-semibold">Modelo de previsão</span><select value={modeloPrevisaoSelecionado} onChange={(e) => setModeloPrevisaoSelecionado(e.target.value as ModeloPrevisaoSelecionado)} className="rounded-lg border border-slate-700 bg-slate-800 px-3 py-2 text-white"><option value="automatico">Automático — menor erro histórico</option><option value="cemag_adaptativo">CEMAG adaptativo</option><option value="tcc_hibrido">Híbrido inspirado no TCC</option></select><span className="text-[10px] leading-4 text-slate-500">CEMAG adapta o cálculo ao padrão das vendas; compare WAPE e MAE abaixo para esta carteira.</span></label>
                       <label className="flex flex-col gap-1 text-xs text-slate-300"><span className="font-semibold">Meses à frente</span><select value={horizontePrevisao} onChange={(e) => setHorizontePrevisao(Number(e.target.value))} className="rounded-lg border border-slate-700 bg-slate-800 px-3 py-2 text-white"><option value={3}>3 meses</option><option value={6}>6 meses</option><option value={12}>12 meses</option></select><span className="text-[10px] leading-4 text-slate-500">Quantidade de meses futuros após o último mês do histórico.</span></label>
                       <label className="flex flex-col gap-1 text-xs text-slate-300"><span className="font-semibold">Mostrar passado a partir de</span><input type="date" value={previsaoVisualizacaoInicio} min={previsaoDataInicio || undefined} onChange={(e) => setPrevisaoVisualizacaoInicio(e.target.value)} className="rounded-lg border border-slate-700 bg-slate-800 px-3 py-2 text-white" /><span className="text-[10px] leading-4 text-slate-500">Só muda o que aparece no gráfico e nas tabelas. Não muda o cálculo.</span></label>
                       <label className="flex items-start gap-2 rounded-lg border border-slate-700 bg-slate-900/60 p-3 text-xs text-slate-300"><input type="checkbox" checked={incluirMesVigentePrevisao} onChange={(e) => setIncluirMesVigentePrevisao(e.target.checked)} className="mt-0.5 accent-orange-500" /><span><strong className="block text-white">Incluir mês vigente</strong><span className="mt-1 block text-[10px] leading-4 text-slate-500">Ligado: estima o fechamento do mês atual mesmo incompleto. Desligado: usa somente meses até a data final.</span></span></label>
                     </div>
-                    <div className="mt-4 grid gap-3 md:grid-cols-4 text-[11px] leading-5"><div className="rounded-lg border border-slate-800 bg-slate-950/50 p-3"><strong className="text-orange-300">Histórico</strong><p className="text-slate-400">São necessários pelo menos 6 meses com registros. Até 24 meses recentes pesam mais na tendência.</p></div><div className="rounded-lg border border-slate-800 bg-slate-950/50 p-3"><strong className="text-sky-300">Retroativo</strong><p className="text-slate-400">Meses passados são recalculados usando apenas os meses anteriores, para medir o erro do modelo.</p></div><div className="rounded-lg border border-slate-800 bg-slate-950/50 p-3"><strong className="text-emerald-300">Futuro</strong><p className="text-slate-400">O cálculo pode usar tendência, sazonalidade do mesmo mês ou médias recentes, conforme o histórico indicar.</p></div><div className="rounded-lg border border-violet-800/60 bg-violet-950/20 p-3"><strong className="text-violet-300">Calibração automática</strong><p className="text-slate-400">O sistema compara quatro modelos e escolhe o que teve menor WAPE nos meses históricos: <span className="text-white">{previsaoMensal.metodo}</span>.</p></div></div>
+                    <div className="mt-4 grid gap-3 md:grid-cols-2 xl:grid-cols-4 text-[11px] leading-5"><div className="rounded-lg border border-slate-800 bg-slate-950/50 p-3"><strong className="text-orange-300">Histórico</strong><p className="text-slate-400">São necessários pelo menos 6 meses com registros. Até 24 meses recentes pesam mais na tendência.</p></div><div className="rounded-lg border border-slate-800 bg-slate-950/50 p-3"><strong className="text-sky-300">Retroativo</strong><p className="text-slate-400">Meses passados são recalculados usando apenas os meses anteriores, para medir o erro do modelo.</p></div><div className="rounded-lg border border-slate-800 bg-slate-950/50 p-3"><strong className="text-emerald-300">Futuro</strong><p className="text-slate-400">Os fatores externos ficam disponíveis no painel; só entram no híbrido do TCC quando têm cobertura e melhoram a validação.</p></div><div className="rounded-lg border border-violet-800/60 bg-violet-950/20 p-3"><strong className="text-violet-300">Modelo ativo</strong><p className="text-slate-400">{modeloPrevisaoSelecionado === "automatico" ? "Escolhe entre referências simples e o CEMAG adaptativo pelo menor WAPE recente." : modeloPrevisaoSelecionado === "cemag_adaptativo" ? "Usa Croston SBA quando as vendas são intermitentes; nas séries regulares combina tendência robusta amortecida e sazonalidade mediana." : "Adaptação do TCC: tendência e sazonalidade com fatores externos, se melhorarem a validação temporal."} <span className="text-white">{previsaoMensal.metodo}</span></p></div></div>
                   </div>
                   <div className="bg-slate-900/80 border border-slate-800 rounded-xl p-5">
                     <div className="flex flex-wrap items-start justify-between gap-4">
-                      <div><h3 className="text-sm font-bold text-white">Informações externas</h3><p className="text-xs text-slate-400 mt-1">Veja dados públicos de clima, juros e atividade agrícola para comparar com as vendas. Eles ajudam na análise, mas não mudam a previsão automaticamente.</p></div>
+                      <div><h3 className="text-sm font-bold text-white">Informações externas</h3><p className="text-xs text-slate-400 mt-1">Selic e ANFAVEA podem entrar com cobertura suficiente. Crédito rural exige correspondência dos estados; chuva exige cidade e UF iguais às da carteira. No modo automático, os fatores ficam como contexto.</p></div>
                       <div className="flex flex-wrap items-end gap-3 text-xs text-slate-300">
                         <label className="flex flex-col gap-1">Consultar dados de<select value={abrangenciaFatores} onChange={(e) => setAbrangenciaFatores(e.target.value)} className="min-w-[190px] bg-slate-800 border border-slate-700 text-white rounded px-2 py-1.5"><option value="cidade">Uma cidade</option><option value="clientes">Cidades dos clientes</option><option value="uf">Estados escolhidos</option><option value="regiao">Uma região</option><option value="brasil">Brasil</option></select></label>
                         {abrangenciaFatores === "cidade" && <label className="flex flex-col gap-1">Município<select value={cidadeFatoresExternos} onChange={(e) => setCidadeFatoresExternos(e.target.value)} className="min-w-[190px] max-w-[240px] bg-slate-800 border border-slate-700 text-white rounded px-2 py-1.5"><option value="">Selecione</option>{cidadesFatoresExternos.map((cidade) => <option key={cidade} value={cidade}>{cidade}</option>)}</select></label>}
@@ -2763,7 +2809,11 @@ export default function Home({ onLogout, emailAutenticado, isAdmin = false }: { 
                     <div className="bg-slate-900/80 border border-slate-800 rounded-xl p-4"><div className="text-[10px] uppercase text-slate-500">Horizonte</div><div className="text-xl font-bold text-orange-300 mt-2">{horizontePrevisao} meses</div></div>
                     <div className="bg-slate-900/80 border border-slate-800 rounded-xl p-4"><div className="text-[10px] uppercase text-slate-500">Cenários</div><div className="text-sm font-semibold text-sky-300 mt-2">Conservador · Provável · Otimista</div><div className="text-[10px] text-slate-500 mt-1">Faixa pelo erro histórico</div></div><div className="bg-slate-900/80 border border-slate-800 rounded-xl p-4"><div className="text-[10px] uppercase text-slate-500">MAPE histórico</div><div className="text-xl font-bold text-emerald-300 mt-2">{validacaoPrevisao.mape == null ? "-" : `${validacaoPrevisao.mape.toFixed(1)}%`}</div><div className="text-[10px] text-slate-500 mt-1">Erro percentual médio em {validacaoPrevisao.pontos} mês(es)</div></div><div className="bg-slate-900/80 border border-slate-800 rounded-xl p-4"><div className="text-[10px] uppercase text-slate-500">MAE</div><div className="text-xl font-bold text-sky-300 mt-2">{validacaoPrevisao.mae == null ? "-" : formatarMetrica(validacaoPrevisao.mae, metricaPrevisao)}</div><div className="text-[10px] text-slate-500 mt-1">Erro médio em unidade da métrica</div></div><div className="bg-slate-900/80 border border-slate-800 rounded-xl p-4"><div className="text-[10px] uppercase text-slate-500">WAPE</div><div className="text-xl font-bold text-violet-300 mt-2">{validacaoPrevisao.wape == null ? "-" : `${validacaoPrevisao.wape.toFixed(1)}%`}</div><div className="text-[10px] text-slate-500 mt-1">Erro absoluto total ÷ realizado total</div></div>
                   </div>
-                  {seriePrevisaoVisivel.length ? <>
+                    <div className="overflow-hidden rounded-xl border border-slate-800 bg-slate-900/80 p-4">
+                      <div className="mb-3"><h3 className="text-sm font-bold text-white">Comparação no histórico</h3><p className="mt-1 text-[11px] text-slate-400">Os três métodos são recalculados nos mesmos meses passados. WAPE menor indica menor erro relativo total nesta carteira; o resultado pode mudar com os filtros.</p></div>
+                      <div className="overflow-x-auto"><table className="w-full min-w-[520px] text-left text-xs"><thead className="text-[10px] uppercase text-slate-500"><tr><th className="pb-2">Modelo</th><th className="pb-2 text-right">WAPE</th><th className="pb-2 text-right">MAE</th><th className="pb-2 text-right">Meses avaliados</th></tr></thead><tbody className="divide-y divide-slate-800">{comparacaoModelosPrevisao.map((modelo) => <tr key={modelo.nome}><td className="py-2 font-semibold text-slate-200">{modelo.nome}</td><td className="py-2 text-right text-violet-300">{modelo.wape == null ? "—" : `${modelo.wape.toFixed(1)}%`}</td><td className="py-2 text-right text-sky-300">{modelo.mae == null ? "—" : formatarMetrica(modelo.mae, metricaPrevisao)}</td><td className="py-2 text-right text-slate-400">{modelo.pontos}</td></tr>)}</tbody></table></div>
+                    </div>
+                    {seriePrevisaoVisivel.length ? <>
                     <div className="bg-slate-900/80 border border-slate-800 p-5 rounded-xl">
                       <h3 className="text-sm font-bold text-white mb-2">Histórico e próximos {horizontePrevisao} meses — {metricaPrevisao}</h3>
                       <div className="mb-3 flex flex-wrap items-center gap-2 text-[10px]"><span className="mr-1 text-slate-500">Exibir:</span>{Object.entries(ROTULOS_SERIE_PREVISAO).map(([chave, rotulo]) => <label key={chave} className={`inline-flex cursor-pointer items-center gap-1 rounded-full border px-2 py-1 transition ${seriesPrevisaoVisiveis[chave] ? "border-orange-500/60 bg-orange-500/10 text-orange-200" : "border-slate-700 bg-slate-950/40 text-slate-500"}`}><input type="checkbox" className="accent-orange-500" checked={seriesPrevisaoVisiveis[chave] ?? false} onChange={(event) => setSeriesPrevisaoVisiveis((atuais) => ({ ...atuais, [chave]: event.target.checked }))} />{rotulo}</label>)}</div>

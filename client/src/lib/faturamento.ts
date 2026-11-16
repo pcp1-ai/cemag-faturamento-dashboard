@@ -1344,6 +1344,18 @@ export interface PrevisaoMensal {
   tipo: "Histórico" | "Previsão";
 }
 
+export type FatorExternoPrevisao = {
+  ano_mes: string;
+  selic_media_pct?: number | null;
+  chuva_mm?: number | null;
+  credito_rural_brl?: number | null;
+  anfavea_atacado?: number | null;
+  anfavea_varejo?: number | null;
+  anfavea_exportacao?: number | null;
+};
+
+export type ModeloPrevisaoSelecionado = "automatico" | "tcc_hibrido" | "cemag_adaptativo";
+
 function valorMensalPrevisao(rows: TransacaoTratada[], metrica: string): number {
   if (metrica === "Quantidade") return rows.reduce((s, d) => s + d.quantidade, 0);
   if (metrica === "Pedidos") return new Set(rows.map((d) => d.pedido)).size;
@@ -1396,7 +1408,6 @@ function selecionarPesoSazonal(chaves: string[], valores: number[], tamanhoTrein
     let erro = 0;
     let realizado = 0;
     for (let i = inicio; i < tamanhoTreino; i++) {
-      if (!valores[i]) continue;
       const mesAlvo = Number(chaves[i].split("-")[1]);
       const tendencia = previsaoTendenciaSazonal(chaves, valores, i, mesAlvo);
       const sazonal = previsaoSazonalIngenua(chaves, valores, i, mesAlvo);
@@ -1414,6 +1425,195 @@ function selecionarPesoSazonal(chaves: string[], valores: number[], tamanhoTrein
 }
 
 type ModeloPrevisao = "tendencia_sazonal" | "sazonal_ingenua" | "media_recente" | "media_ponderada";
+
+type ParametrosCemag = { modo: "intermitente" | "regular"; alpha: number; fatoresSazonais: number[] };
+
+function mediana(valores: number[]): number {
+  if (!valores.length) return 0;
+  const ordenados = [...valores].sort((a, b) => a - b);
+  const meio = Math.floor(ordenados.length / 2);
+  return ordenados.length % 2 ? ordenados[meio] : (ordenados[meio - 1] + ordenados[meio]) / 2;
+}
+
+function estimarFatoresSazonaisRobustos(chaves: string[], valores: number[], tamanhoTreino: number): number[] {
+  const treino = valores.slice(0, tamanhoTreino);
+  const janela = treino.slice(-Math.min(36, treino.length));
+  const fatores = Array.from({ length: 12 }, (_, mes) => {
+    const amostras = janela.flatMap((valor, indice) => Number(chaves[tamanhoTreino - janela.length + indice]?.split("-")[1]) === mes + 1 ? [valor] : []);
+    const nivel = mediana(janela.filter((valor) => valor > 0));
+    if (amostras.length < 2 || nivel <= 0) return 1;
+    const bruto = mediana(amostras) / nivel;
+    // Shrinkage: poucos anos não devem criar picos sazonais artificiais.
+    const confianca = Math.min(0.75, amostras.length / 4);
+    return Math.max(0.65, Math.min(1.5, 1 + (bruto - 1) * confianca));
+  });
+  const media = fatores.reduce((soma, valor) => soma + valor, 0) / fatores.length || 1;
+  return fatores.map((valor) => valor / media);
+}
+
+function estimarParametrosCemag(chaves: string[], valores: number[], tamanhoTreino: number): ParametrosCemag {
+  const inicioJanela = Math.max(0, tamanhoTreino - 24);
+  const janela = valores.slice(inicioJanela, tamanhoTreino);
+  const positivos = janela.filter((valor) => valor > 0);
+  const proporcaoZeros = janela.length ? (janela.length - positivos.length) / janela.length : 1;
+  const intermitente = janela.length >= 12 && positivos.length >= 4 && proporcaoZeros >= 0.35;
+  const fatoresSazonais = estimarFatoresSazonaisRobustos(chaves, valores, tamanhoTreino);
+  if (!intermitente) {
+    return { modo: "regular", alpha: 0.2, fatoresSazonais };
+  }
+  // Seleciona o alpha pelo WAPE em previsões de um passo, sem usar o alvo no ajuste.
+  const alphas = [0.1, 0.2, 0.3, 0.5];
+  let melhorAlpha = 0.2;
+  let melhorErro = Number.POSITIVE_INFINITY;
+  for (const alpha of alphas) {
+    let erro = 0; let realizado = 0; let pontos = 0;
+    const inicioTeste = Math.max(inicioJanela + 6, tamanhoTreino - 12);
+    for (let alvo = inicioTeste; alvo < tamanhoTreino; alvo++) {
+      const previsto = crostonSba(valores.slice(Math.max(0, alvo - 24), alvo), alpha);
+      if (previsto == null) continue;
+      erro += Math.abs(valores[alvo] - previsto);
+      realizado += Math.abs(valores[alvo]);
+      if (valores[alvo] > 0) pontos++;
+    }
+    const wape = pontos >= 2 && realizado > 0 ? erro / realizado : Number.POSITIVE_INFINITY;
+    if (wape < melhorErro) { melhorErro = wape; melhorAlpha = alpha; }
+  }
+  return { modo: "intermitente", alpha: melhorAlpha, fatoresSazonais };
+}
+
+function crostonSba(valores: number[], alpha: number): number | null {
+  const primeiroIndice = valores.findIndex((valor) => valor > 0);
+  if (primeiroIndice < 0) return 0;
+  let demanda = valores[primeiroIndice];
+  let intervalo = primeiroIndice + 1;
+  let ultimoIndice = primeiroIndice;
+  for (let i = ultimoIndice + 1; i < valores.length; i++) {
+    if (valores[i] <= 0) continue;
+    const distancia = i - ultimoIndice;
+    demanda = alpha * valores[i] + (1 - alpha) * demanda;
+    intervalo = alpha * distancia + (1 - alpha) * intervalo;
+    ultimoIndice = i;
+  }
+  return intervalo > 0 ? Math.max(0, (1 - alpha / 2) * demanda / intervalo) : 0;
+}
+
+function preverCemagAdaptativo(chaves: string[], valores: number[], tamanhoTreino: number, mesAlvo: number, parametros?: ParametrosCemag, horizontePasso = 1): number {
+  const p = parametros ?? estimarParametrosCemag(chaves, valores, tamanhoTreino);
+  if (p.modo === "intermitente") return crostonSba(valores.slice(Math.max(0, tamanhoTreino - 24), tamanhoTreino), p.alpha) ?? 0;
+  const inicio = Math.max(0, tamanhoTreino - 24);
+  const janela = valores.slice(inicio, tamanhoTreino);
+  const desazonalizados = janela.map((valor, indice) => valor / Math.max(0.65, p.fatoresSazonais[Number(chaves[inicio + indice]?.split("-")[1]) - 1] || 1));
+  const nivel = mediana(desazonalizados.slice(-12));
+  const inclinacoes: number[] = [];
+  for (let i = 0; i < desazonalizados.length; i++) for (let j = i + 1; j < desazonalizados.length; j++) inclinacoes.push((desazonalizados[j] - desazonalizados[i]) / (j - i));
+  const slope = mediana(inclinacoes);
+  const passos = Math.max(1, horizontePasso);
+  const fatorAmortecimento = 0.8;
+  const somaAmortecida = Array.from({ length: passos }, (_, indice) => slope * (indice + 1) * Math.pow(fatorAmortecimento, indice)).reduce((soma, valor) => soma + valor, 0);
+  return Math.max(0, (nivel + somaAmortecida) * (p.fatoresSazonais[mesAlvo - 1] || 1));
+}
+
+type VariavelExternaPrevisao = "selic_media_pct" | "chuva_mm" | "credito_rural_brl" | "anfavea_atacado" | "anfavea_varejo" | "anfavea_exportacao";
+
+function resolverFatoresExternos(meses: FatorExternoPrevisao[] = []) {
+  return new Map(meses.map((item) => [item.ano_mes, item]));
+}
+
+function regressaoRidge(xTreino: number[][], alvos: number[], linhaFutura: number[]): number | null {
+  if (xTreino.length < 8 || xTreino.length !== alvos.length || !linhaFutura.length || xTreino.some((row) => row.length !== linhaFutura.length)) return null;
+  const colunas = linhaFutura.length + 1;
+  // Normaliza as colunas para que escala de chuva, Selic e unidades não distorça o ajuste.
+  const linhas: number[][] = [];
+  for (let i = 0; i < xTreino.length; i++) {
+    const x = [1, ...xTreino[i]];
+    linhas.push(x);
+  }
+  // A regressão é calculada com as matrizes do conjunto de treino; nenhuma estatística usa meses futuros.
+  const mediasX = Array.from({ length: colunas }, (_, coluna) => linhas.reduce((soma, x) => soma + x[coluna], 0) / linhas.length);
+  const escalas = Array.from({ length: colunas }, (_, coluna) => coluna === 0 ? 1 : Math.sqrt(linhas.reduce((soma, x) => soma + (x[coluna] - mediasX[coluna]) ** 2, 0) / linhas.length) || 1);
+  const matriz = Array.from({ length: colunas }, () => Array(colunas + 1).fill(0));
+  for (let i = 0; i < linhas.length; i++) {
+    const x = linhas[i].map((value, coluna) => coluna === 0 ? 1 : (value - mediasX[coluna]) / escalas[coluna]);
+    for (let a = 0; a < colunas; a++) {
+      for (let b = 0; b < colunas; b++) matriz[a][b] += x[a] * x[b];
+      matriz[a][colunas] += x[a] * alvos[i];
+    }
+  }
+  for (let diagonal = 1; diagonal < colunas; diagonal++) matriz[diagonal][diagonal] += 1;
+  for (let pivo = 0; pivo < colunas; pivo++) {
+    const divisor = matriz[pivo][pivo];
+    if (Math.abs(divisor) < 1e-10) return null;
+    for (let coluna = pivo; coluna <= colunas; coluna++) matriz[pivo][coluna] /= divisor;
+    for (let linhaIdx = 0; linhaIdx < colunas; linhaIdx++) {
+      if (linhaIdx === pivo) continue;
+      const fator = matriz[linhaIdx][pivo];
+      for (let coluna = pivo; coluna <= colunas; coluna++) matriz[linhaIdx][coluna] -= fator * matriz[pivo][coluna];
+    }
+  }
+  const coeficientes = matriz.map((row) => row[colunas]);
+  const xFuturo = [1, ...linhaFutura.map((value, coluna) => (value - mediasX[coluna + 1]) / escalas[coluna + 1])];
+  return Math.max(0, xFuturo.reduce((soma, value, i) => soma + value * coeficientes[i], 0));
+}
+
+function preverComFatoresExternos(chaves: string[], valores: number[], tamanhoTreino: number, mesAlvo: number, fatores: Map<string, FatorExternoPrevisao>): number | null {
+  const variaveis: VariavelExternaPrevisao[] = ["selic_media_pct", "chuva_mm", "credito_rural_brl", "anfavea_atacado", "anfavea_varejo", "anfavea_exportacao"];
+  const treino = valores.slice(0, tamanhoTreino);
+  const variaveisUsaveis = variaveis.filter((campo) => {
+    let disponiveis = 0;
+    for (let i = 1; i < tamanhoTreino; i++) {
+      const value = fatores.get(chaves[i - 1])?.[campo];
+      if (value != null && Number.isFinite(Number(value))) disponiveis++;
+    }
+    return disponiveis >= Math.max(8, Math.ceil((tamanhoTreino - 1) * 0.55));
+  });
+  if (!variaveisUsaveis.length) return null;
+  const x: number[][] = [];
+  const y: number[] = [];
+  for (let i = 1; i < tamanhoTreino; i++) {
+    const externo = fatores.get(chaves[i - 1]);
+    const valoresX = variaveisUsaveis.map((campo) => externo?.[campo]);
+    if (valoresX.every((value) => value != null && Number.isFinite(Number(value)))) {
+      x.push(valoresX.map(Number));
+      y.push(treino[i]);
+    }
+  }
+  if (x.length < Math.max(8, variaveisUsaveis.length * 3)) return null;
+  let fatorAnterior: FatorExternoPrevisao | undefined;
+  for (let i = tamanhoTreino - 1; i >= 0 && !fatorAnterior; i--) {
+    const candidato = fatores.get(chaves[i]);
+    if (candidato && variaveisUsaveis.every((campo) => candidato[campo] != null && Number.isFinite(Number(candidato[campo])))) fatorAnterior = candidato;
+  }
+  const linhaFutura = variaveisUsaveis.map((campo) => fatorAnterior?.[campo]);
+  if (linhaFutura.some((value) => value == null || !Number.isFinite(Number(value)))) return null;
+  // O ajuste em si e seus preditores vêm do passado disponível; não há realização externa futura.
+  return regressaoRidge(x, y, linhaFutura.map(Number));
+}
+
+function preverHibridoTcc(chaves: string[], valores: number[], tamanhoTreino: number, mesAlvo: number, fatores: Map<string, FatorExternoPrevisao>) {
+  const inicio = Math.max(8, tamanhoTreino - 12);
+  let erroBase = 0; let erroExterno = 0; let realizadoComparavel = 0;
+  for (let i = inicio; i < tamanhoTreino; i++) {
+    if (!Number.isFinite(valores[i])) continue;
+    const mes = Number(chaves[i].split("-")[1]);
+    const base = preverComModelo(chaves, valores, i, mes, "tendencia_sazonal");
+    const externo = preverComFatoresExternos(chaves, valores, i, mes, fatores);
+    if (externo != null) {
+      erroBase += Math.abs(valores[i] - base);
+      erroExterno += Math.abs(valores[i] - externo);
+      realizadoComparavel += Math.abs(valores[i]);
+    }
+  }
+  const wapeBase = realizadoComparavel ? erroBase / realizadoComparavel : 1;
+  const wapeExterno = realizadoComparavel ? erroExterno / realizadoComparavel : null;
+  const previsaoBase = preverComModelo(chaves, valores, tamanhoTreino, mesAlvo, "tendencia_sazonal");
+  const previsaoExterna = preverComFatoresExternos(chaves, valores, tamanhoTreino, mesAlvo, fatores);
+  if (previsaoExterna == null || wapeExterno == null || wapeExterno > wapeBase) return { valor: previsaoBase, pesoHistorico: 0, usouFatores: false };
+  // Pesos inversos ao WAPE, limitados para não deixar poucos meses dominarem o modelo.
+  const precisaoBase = 1 / Math.max(0.05, wapeBase);
+  const precisaoExterna = 1 / Math.max(0.05, wapeExterno);
+  const pesoHistorico = Math.max(0.15, Math.min(0.75, precisaoExterna / (precisaoBase + precisaoExterna)));
+  return { valor: Math.max(0, previsaoBase * (1 - pesoHistorico) + previsaoExterna * pesoHistorico), pesoHistorico, usouFatores: true };
+}
 
 function preverComModelo(chaves: string[], valores: number[], tamanhoTreino: number, mesAlvo: number, modelo: ModeloPrevisao): number {
   if (modelo === "tendencia_sazonal") return previsaoTendenciaSazonal(chaves, valores, tamanhoTreino, mesAlvo);
@@ -1434,7 +1634,6 @@ function selecionarModelo(chaves: string[], valores: number[], tamanhoTreino: nu
     let erro = 0;
     let realizado = 0;
     for (let i = inicio; i < tamanhoTreino; i++) {
-      if (!valores[i]) continue;
       const mesAlvo = Number(chaves[i].split("-")[1]);
       erro += Math.abs(valores[i] - preverComModelo(chaves, valores, i, mesAlvo, modelo));
       realizado += Math.abs(valores[i]);
@@ -1448,7 +1647,23 @@ function selecionarModelo(chaves: string[], valores: number[], tamanhoTreino: nu
   return melhor;
 }
 
-export function gerarPrevisaoMensal(dados: TransacaoTratada[], horizonte = 6, metrica = "Faturamento", opcoes?: { incluirMesVigente?: boolean }): { serie: PrevisaoMensal[]; mape: number | null; metodo: string; historicoMeses: number; metrica: string } {
+function preverAutomatico(chaves: string[], valores: number[], tamanhoTreino: number, mesAlvo: number): number {
+  const modelo = selecionarModelo(chaves, valores, tamanhoTreino);
+  const inicio = Math.max(6, tamanhoTreino - 12);
+  let erroCemag = 0; let realizadoCemag = 0; let erroBase = 0; let realizadoBase = 0;
+  for (let alvo = inicio; alvo < tamanhoTreino; alvo++) {
+    const mes = Number(chaves[alvo].split("-")[1]);
+    erroCemag += Math.abs(valores[alvo] - preverCemagAdaptativo(chaves, valores, alvo, mes));
+    realizadoCemag += Math.abs(valores[alvo]);
+    erroBase += Math.abs(valores[alvo] - preverComModelo(chaves, valores, alvo, mes, selecionarModelo(chaves, valores, alvo)));
+    realizadoBase += Math.abs(valores[alvo]);
+  }
+  const cemagWape = realizadoCemag ? erroCemag / realizadoCemag : Number.POSITIVE_INFINITY;
+  const baseWape = realizadoBase ? erroBase / realizadoBase : Number.POSITIVE_INFINITY;
+  return cemagWape < baseWape ? preverCemagAdaptativo(chaves, valores, tamanhoTreino, mesAlvo) : preverComModelo(chaves, valores, tamanhoTreino, mesAlvo, modelo);
+}
+
+export function gerarPrevisaoMensal(dados: TransacaoTratada[], horizonte = 6, metrica = "Faturamento", opcoes?: { incluirMesVigente?: boolean; modelo?: ModeloPrevisaoSelecionado; fatoresExternos?: FatorExternoPrevisao[] }): { serie: PrevisaoMensal[]; mape: number | null; metodo: string; historicoMeses: number; metrica: string } {
   const mensal = new Map<string, number>();
   const porMes = new Map<string, TransacaoTratada[]>();
   for (const d of dados) {
@@ -1456,7 +1671,20 @@ export function gerarPrevisaoMensal(dados: TransacaoTratada[], horizonte = 6, me
     porMes.get(d.ano_mes)!.push(d);
   }
   for (const [mes, rows] of porMes) mensal.set(mes, valorMensalPrevisao(rows, metrica));
-  const chaves = Array.from(mensal.keys()).sort();
+  const observadas = Array.from(mensal.keys()).sort();
+  const chaves: string[] = [];
+  if (observadas.length) {
+    const [anoInicio, mesInicio] = observadas[0].split("-").map(Number);
+    const [anoFim, mesFim] = observadas.at(-1)!.split("-").map(Number);
+    const cursor = new Date(anoInicio, mesInicio - 1, 1);
+    const fim = new Date(anoFim, mesFim - 1, 1);
+    while (cursor <= fim) {
+      const chave = `${cursor.getFullYear()}-${String(cursor.getMonth() + 1).padStart(2, "0")}`;
+      chaves.push(chave);
+      if (!mensal.has(chave)) mensal.set(chave, 0);
+      cursor.setMonth(cursor.getMonth() + 1);
+    }
+  }
   if (chaves.length < 6) return { serie: [], mape: null, metodo: "Histórico insuficiente", historicoMeses: chaves.length, metrica };
   const incluirMesVigente = opcoes?.incluirMesVigente ?? true;
   const agora = new Date();
@@ -1466,6 +1694,9 @@ export function gerarPrevisaoMensal(dados: TransacaoTratada[], horizonte = 6, me
     mensal.set(mesAtual, 0);
   }
   const valores = chaves.map((k) => mensal.get(k) || 0);
+  const fatoresExternos = resolverFatoresExternos(opcoes?.fatoresExternos);
+  const modeloTcc = opcoes?.modelo === "tcc_hibrido";
+  const modeloCemag = opcoes?.modelo === "cemag_adaptativo";
   const mesVigente = incluirMesVigente && chaves[chaves.length - 1] === mesAtual;
   const valoresTreino = mesVigente ? valores.slice(0, -1) : valores;
   const ultimos = Math.min(24, valoresTreino.length);
@@ -1504,7 +1735,13 @@ export function gerarPrevisaoMensal(dados: TransacaoTratada[], horizonte = 6, me
     const interceptRetro = ybarRetro - slopeRetro * xbarRetro;
     const fatoresRetro: number[] = treino.filter((_, index) => Number(chaves[index].split("-")[1]) === Number(chaves[i].split("-")[1]));
     const sazonalRetro = fatoresRetro.length && mediaRetro > 0 ? (fatoresRetro.reduce((sum, value) => sum + value, 0) / fatoresRetro.length) / mediaRetro : 1;
-    const previstoRetro = preverComModelo(chaves, valores, i, Number(chaves[i].split("-")[1]), modeloSelecionado);
+    const previstoRetro = modeloTcc
+      ? preverHibridoTcc(chaves, valores, i, Number(chaves[i].split("-")[1]), fatoresExternos).valor
+      : modeloCemag
+        ? preverCemagAdaptativo(chaves, valores, i, Number(chaves[i].split("-")[1]))
+        : opcoes?.modelo === "automatico"
+          ? preverAutomatico(chaves, valores, i, Number(chaves[i].split("-")[1]))
+          : preverComModelo(chaves, valores, i, Number(chaves[i].split("-")[1]), modeloSelecionado);
     previsoes[i].previsao_retroativa = previstoRetro;
     previsoes[i].erro_retroativo = valores[i] ? ((previstoRetro - valores[i]) / valores[i]) * 100 : null;
   }
@@ -1513,7 +1750,13 @@ export function gerarPrevisaoMensal(dados: TransacaoTratada[], horizonte = 6, me
     const diasDecorridos = Math.max(1, Math.min(diasNoMes, agora.getDate()));
     const mesNumero = agora.getMonth() + 1;
     const parcialAtual = valores[valores.length - 1] || 0;
-    const tendenciaMesAtual = Math.max(0, (intercept + slope * (ultimos + 1)) * (mediasSazonais[mesNumero] || 1));
+    const tendenciaMesAtual = modeloTcc
+      ? preverHibridoTcc(chaves, valoresTreino, valoresTreino.length, mesNumero, fatoresExternos).valor
+      : modeloCemag
+        ? preverCemagAdaptativo(chaves, valoresTreino, valoresTreino.length, mesNumero)
+        : opcoes?.modelo === "automatico"
+          ? preverAutomatico(chaves, valoresTreino, valoresTreino.length, mesNumero)
+          : Math.max(0, (intercept + slope * (ultimos + 1)) * (mediasSazonais[mesNumero] || 1));
     const estimativaFechamento = parcialAtual > 0 ? Math.max(0, parcialAtual * diasNoMes / diasDecorridos) : tendenciaMesAtual;
     const referencias = dados.filter((item) => item.mes_num === mesNumero && item.ano !== agora.getFullYear());
     const totaisHistoricos = Array.from(new Set(referencias.map((item) => item.ano))).map((ano) => valorMensalPrevisao(referencias.filter((item) => item.ano === ano), metrica)).filter((value) => Number.isFinite(value));
@@ -1526,14 +1769,31 @@ export function gerarPrevisaoMensal(dados: TransacaoTratada[], horizonte = 6, me
     const dt = new Date(ultimo.getFullYear(), ultimo.getMonth() + i, 1);
     const mes = dt.getMonth() + 1;
     const base = Math.max(0, intercept + slope * (ultimos + i));
-    const valor = preverComModelo(chaves, valores, valoresTreino.length, mes, modeloSelecionado);
+    const valor = modeloTcc
+      ? preverHibridoTcc(chaves, valoresTreino, valoresTreino.length, mes, fatoresExternos).valor
+      : modeloCemag
+        ? preverCemagAdaptativo(chaves, valoresTreino, valoresTreino.length, mes, undefined, i)
+        : opcoes?.modelo === "automatico"
+          ? preverAutomatico(chaves, valoresTreino, valoresTreino.length, mes)
+          : preverComModelo(chaves, valores, valoresTreino.length, mes, modeloSelecionado);
     previsoes.push({ ano_mes: `${dt.getFullYear()}-${String(mes).padStart(2, "0")}`, mes_num: mes, realizado: null, previsao: valor, tipo: "Previsão" });
   }
-  const holdout = Math.min(3, Math.floor(valoresTreino.length / 4));
+  const hibridoComFatores = modeloTcc && horizonte > 0
+    ? preverHibridoTcc(chaves, valoresTreino, valoresTreino.length, Number(previsoes.at(-horizonte)!.ano_mes.split("-")[1]), fatoresExternos).usouFatores
+    : false;
+  const holdout = Math.min(12, Math.floor(valoresTreino.length / 4));
   let erro = 0; let n = 0;
   if (holdout >= 1) {
     for (let i = valoresTreino.length - holdout; i < valoresTreino.length; i++) {
-      if (valoresTreino[i] !== 0) { erro += Math.abs((valoresTreino[i] - valoresTreino[i - 1]) / valoresTreino[i]); n++; }
+      if (valoresTreino[i] === 0) continue;
+      const previsto = modeloTcc
+        ? preverHibridoTcc(chaves, valores, i, Number(chaves[i].split("-")[1]), fatoresExternos).valor
+        : modeloCemag
+          ? preverCemagAdaptativo(chaves, valores, i, Number(chaves[i].split("-")[1]))
+          : opcoes?.modelo === "automatico"
+            ? preverAutomatico(chaves, valores, i, Number(chaves[i].split("-")[1]))
+            : preverComModelo(chaves, valores, i, Number(chaves[i].split("-")[1]), modeloSelecionado);
+      erro += Math.abs((valoresTreino[i] - previsto) / valoresTreino[i]); n++;
     }
   }
   const mape = n ? (erro / n) * 100 : null;
@@ -1544,33 +1804,57 @@ export function gerarPrevisaoMensal(dados: TransacaoTratada[], horizonte = 6, me
     return item;
   });
   const metodoBase: Record<ModeloPrevisao, string> = { tendencia_sazonal: "tendência linear + sazonalidade mensal", sazonal_ingenua: "sazonal ingênua do mesmo mês", media_recente: "média dos 3 meses mais recentes", media_ponderada: "média ponderada dos 6 meses mais recentes" };
-  return { serie: serieComCenarios, mape, metodo: mesVigente ? `Run-rate do mês vigente + ${metodoBase[modeloSelecionado]}` : metodoBase[modeloSelecionado], historicoMeses: chaves.length, metrica };
+  const metodo = modeloTcc
+    ? hibridoComFatores ? "Híbrido inspirado no TCC: tendência/sazonalidade + fatores externos, ponderados por validação" : "Híbrido inspirado no TCC: tendência/sazonalidade (fatores externos sem cobertura suficiente)"
+    : modeloCemag
+      ? estimarParametrosCemag(chaves, valoresTreino, valoresTreino.length).modo === "intermitente"
+        ? "CEMAG adaptativo: Croston SBA para demanda intermitente"
+        : "CEMAG adaptativo: tendência robusta amortecida + sazonalidade mediana"
+      : metodoBase[modeloSelecionado];
+  return { serie: serieComCenarios, mape, metodo: mesVigente ? `Run-rate do mês vigente + ${metodo}` : metodo, historicoMeses: chaves.length, metrica };
 }
 
-export function validarPrevisaoMensal(dados: TransacaoTratada[], metrica = "Faturamento"): { mape: number | null; mae: number | null; wape: number | null; pontos: number } {
+export function validarPrevisaoMensal(dados: TransacaoTratada[], metrica = "Faturamento", opcoes?: { modelo?: ModeloPrevisaoSelecionado; fatoresExternos?: FatorExternoPrevisao[] }): { mape: number | null; mae: number | null; wape: number | null; pontos: number } {
   const porMes = new Map<string, TransacaoTratada[]>();
   for (const d of dados) {
     if (!porMes.has(d.ano_mes)) porMes.set(d.ano_mes, []);
     porMes.get(d.ano_mes)!.push(d);
   }
-  const chaves = Array.from(porMes.keys()).sort();
-  const valores = chaves.map((k) => valorMensalPrevisao(porMes.get(k)!, metrica));
-  const inicioTeste = Math.max(6, valores.length - 3);
+  const observadas = Array.from(porMes.keys()).sort();
+  const chaves: string[] = [];
+  if (observadas.length) {
+    const [anoInicio, mesInicio] = observadas[0].split("-").map(Number);
+    const [anoFim, mesFim] = observadas.at(-1)!.split("-").map(Number);
+    const cursor = new Date(anoInicio, mesInicio - 1, 1);
+    const fim = new Date(anoFim, mesFim - 1, 1);
+    while (cursor <= fim) {
+      chaves.push(`${cursor.getFullYear()}-${String(cursor.getMonth() + 1).padStart(2, "0")}`);
+      cursor.setMonth(cursor.getMonth() + 1);
+    }
+  }
+  const valores = chaves.map((k) => porMes.has(k) ? valorMensalPrevisao(porMes.get(k)!, metrica) : 0);
+  const fatoresExternos = resolverFatoresExternos(opcoes?.fatoresExternos);
+  const inicioTeste = Math.max(6, valores.length - 12);
   const errosPct: number[] = [];
   const errosAbs: number[] = [];
   let somaErroAbs = 0;
   let somaRealizadoAbs = 0;
   for (let i = inicioTeste; i < valores.length; i++) {
     const treino = valores.slice(0, i);
-    if (treino.length < 6 || valores[i] === 0) continue;
+    if (treino.length < 6) continue;
     const mesAlvo = Number(chaves[i].split("-")[1]);
-    const modelo = selecionarModelo(chaves, valores, i);
-    const previsao = preverComModelo(chaves, valores, i, mesAlvo, modelo);
+    const previsao = opcoes?.modelo === "tcc_hibrido"
+      ? preverHibridoTcc(chaves, valores, i, mesAlvo, fatoresExternos).valor
+      : opcoes?.modelo === "cemag_adaptativo"
+        ? preverCemagAdaptativo(chaves, valores, i, mesAlvo)
+        : opcoes?.modelo === "automatico"
+          ? preverAutomatico(chaves, valores, i, mesAlvo)
+          : preverComModelo(chaves, valores, i, mesAlvo, selecionarModelo(chaves, valores, i));
     const erroAbs = Math.abs(valores[i] - previsao);
     errosAbs.push(erroAbs);
-    errosPct.push(erroAbs / Math.abs(valores[i]) * 100);
+    if (valores[i] !== 0) errosPct.push(erroAbs / Math.abs(valores[i]) * 100);
     somaErroAbs += erroAbs;
     somaRealizadoAbs += Math.abs(valores[i]);
   }
-  return { mape: errosPct.length ? errosPct.reduce((a, b) => a + b, 0) / errosPct.length : null, mae: errosAbs.length ? errosAbs.reduce((a, b) => a + b, 0) / errosAbs.length : null, wape: somaRealizadoAbs ? (somaErroAbs / somaRealizadoAbs) * 100 : null, pontos: errosPct.length };
+  return { mape: errosPct.length ? errosPct.reduce((a, b) => a + b, 0) / errosPct.length : null, mae: errosAbs.length ? errosAbs.reduce((a, b) => a + b, 0) / errosAbs.length : null, wape: somaRealizadoAbs ? (somaErroAbs / somaRealizadoAbs) * 100 : null, pontos: errosAbs.length };
 }
