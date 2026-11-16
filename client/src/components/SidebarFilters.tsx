@@ -100,6 +100,12 @@ export const SidebarFilters: React.FC<SidebarFiltersProps> = ({
   const buscaDoFiltro = (key: string) => buscasFiltros[key] || "";
   const atualizarBuscaFiltro = (key: string, value: string) =>
     setBuscasFiltros((prev) => ({ ...prev, [key]: value }));
+  const filtrosAdicionaisAtivos = [
+    filtros.familiasExcluidas, filtros.anos, filtros.regioes, filtros.ufs,
+    filtros.cidades, filtros.representantes, filtros.listasPreco, filtros.clientes,
+    filtros.clientesBase, filtros.categorias, filtros.descricoesGenericas,
+    filtros.gruposModelo, filtros.familias,
+  ].reduce((total, valores) => total + valores.length, Number(Boolean(filtros.buscaProduto.trim())));
 
   const toggleArrayItem = (key: keyof FiltrosState, item: any) => {
     setFiltros((prev) => {
@@ -331,8 +337,12 @@ export const SidebarFilters: React.FC<SidebarFiltersProps> = ({
             )}
           </div>
 
-          <hr className="border-slate-800" />
-
+          <details className="rounded-xl border border-slate-800 bg-slate-900/40">
+            <summary className="flex cursor-pointer list-none items-center justify-between gap-3 p-3 text-xs font-semibold text-slate-200">
+              <span>Mais filtros</span>
+              {filtrosAdicionaisAtivos > 0 && <span className="rounded-full bg-orange-500/15 px-2 py-0.5 text-[10px] text-orange-300">{filtrosAdicionaisAtivos} ativos</span>}
+            </summary>
+            <div className="space-y-4 border-t border-slate-800 p-3">
           {/* Exclusões da análise */}
           <div className="space-y-2">
             <label className="text-[11px] font-bold text-slate-300 uppercase tracking-wider block">
@@ -408,6 +418,8 @@ export const SidebarFilters: React.FC<SidebarFiltersProps> = ({
           <div className="pt-2 pb-6 text-center text-[10px] text-slate-500">
             Multiselect vazio = todos os itens considerados.
           </div>
+            </div>
+          </details>
         </div>
       </aside>
     </>

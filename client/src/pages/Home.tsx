@@ -158,10 +158,10 @@ const SeletorMetrica: React.FC<{ value: string; onChange: (value: string) => voi
 );
 
 const GRUPOS_ABAS = [
-  { id: "resumo", label: "Resumo", icon: "🏠", abas: [{ id: "visao_geral", label: "Visão geral" }, { id: "metas", label: "Metas mensais" }, { id: "modo_apresentacao", label: "Modo apresentação" }] },
-  { id: "analises", label: "Análises comerciais", icon: "📊", abas: [{ id: "ano_ano", label: "Ano x ano" }, { id: "mes_mes", label: "Mês x mês" }, { id: "produtos", label: "Produtos e carretas" }, { id: "clientes", label: "Clientes" }, { id: "regioes", label: "Regiões" }, { id: "representantes", label: "Representantes" }, { id: "tipos", label: "Tipos e categorias" }, { id: "inteligencia", label: "Inteligência comercial" }] },
-  { id: "previsoes", label: "Previsões", icon: "📈", abas: [{ id: "previsoes", label: "Previsões" }, { id: "analise_historica", label: "Análise histórica" }, { id: "previsoes_agro", label: "Previsões Agro e fatores externos" }, { id: "central_externa", label: "Central de dados / ANFAVEA" }] },
-  { id: "dados", label: "Dados e relatórios", icon: "📁", abas: [{ id: "diagnostico", label: "Diagnóstico da base" }, { id: "base_tratada", label: "Base tratada" }, { id: "exportacoes", label: "Exportações" }] },
+  { id: "resumo", label: "Início", abas: [{ id: "visao_geral", label: "Visão geral" }, { id: "metas", label: "Metas" }, { id: "modo_apresentacao", label: "Apresentação" }] },
+  { id: "analises", label: "Vendas", abas: [{ id: "ano_ano", label: "Ano a ano" }, { id: "mes_mes", label: "Mês a mês" }, { id: "produtos", label: "Produtos" }, { id: "clientes", label: "Clientes" }, { id: "regioes", label: "Regiões" }, { id: "representantes", label: "Equipe" }, { id: "tipos", label: "Categorias" }, { id: "inteligencia", label: "Inteligência" }] },
+  { id: "previsoes", label: "Planejamento", abas: [{ id: "previsoes", label: "Previsões" }, { id: "analise_historica", label: "Histórico" }, { id: "previsoes_agro", label: "Contexto agrícola" }, { id: "central_externa", label: "Dados externos" }] },
+  { id: "dados", label: "Dados", abas: [{ id: "diagnostico", label: "Qualidade da base" }, { id: "base_tratada", label: "Base tratada" }, { id: "exportacoes", label: "Relatórios" }] },
 ] as const;
 const INFO_ABAS: Record<string, { titulo: string; descricao: string }> = {
   visao_geral: { titulo: "Visão geral", descricao: "Resumo executivo para entender rapidamente o desempenho comercial." },
@@ -240,7 +240,6 @@ export default function Home({ onLogout, emailAutenticado, isAdmin = false }: { 
   const [loading, setLoading] = useState<boolean>(true);
   const [erroCarregamento, setErroCarregamento] = useState<string | null>(null);
   const [baseOriginal, setBaseOriginal] = useState<any[]>([]);
-  const nomeArquivoBase = "Google Sheets: tabelaFaturamento";
   const [abaAtiva, setAbaAtiva] = useState<string>("visao_geral");
   const [grupoAbaAtivo, setGrupoAbaAtivo] = useState<string>("resumo");
   const [ufMapaSelecionada, setUfMapaSelecionada] = useState<string | null>(null);
@@ -620,7 +619,8 @@ export default function Home({ onLogout, emailAutenticado, isAdmin = false }: { 
   // Representantes
   const [metricaRep, setMetricaRep] = useState<string>("Faturamento");
   const [metricaPrevisao, setMetricaPrevisao] = useState<string>("Faturamento");
-  const [modeloPrevisaoSelecionado, setModeloPrevisaoSelecionado] = useState<ModeloPrevisaoSelecionado>("automatico");
+  const [abaModeloPrevisao, setAbaModeloPrevisao] = useState<ModeloPrevisaoSelecionado | "comparacao">("automatico");
+  const modeloPrevisaoSelecionado: ModeloPrevisaoSelecionado = abaModeloPrevisao === "comparacao" ? "automatico" : abaModeloPrevisao;
   const [horizontePrevisao, setHorizontePrevisao] = useState<number>(6);
   const [previsaoDataInicio, setPrevisaoDataInicio] = useState<string>("2022-01-01");
   const [previsaoDataFim, setPrevisaoDataFim] = useState<string>("");
@@ -1218,21 +1218,12 @@ export default function Home({ onLogout, emailAutenticado, isAdmin = false }: { 
     })).sort((a, b) => b.quantidade - a.quantidade || b.faturamento - a.faturamento);
   }, [dadosFiltrados]);
 
-  // Formas de venda texto para exibição
-  const formasVendaTexto = filtros.considerarTodasFormas
-    ? "Todas"
-    : filtros.tiposVendaSelecionados.join(", ") || "Nenhuma";
-  const familiasExcluidasTexto = filtros.familiasExcluidas.length
-    ? filtros.familiasExcluidas.join(", ")
-    : "Nenhuma";
-
   const formatarDataResumo = (valor: Date | string | undefined) => {
     if (!valor) return "—";
     const data = valor instanceof Date ? valor : new Date(`${valor}T00:00:00`);
     return Number.isNaN(data.getTime()) ? "—" : data.toLocaleDateString("pt-BR");
   };
   const periodoBaseTexto = `${formatarDataResumo(meta?.data_min)} a ${formatarDataResumo(meta?.data_max)}`;
-  const periodoFiltroTexto = `${formatarDataResumo(filtros.dataInicio)} a ${formatarDataResumo(filtros.dataFim)}`;
   const periodoEfetivo = useMemo(() => {
     if (!dadosFiltrados.length) return "Nenhum registro";
     const datas = dadosFiltrados.map((d) => d.data_emissao).filter(Boolean).sort((a, b) => a.getTime() - b.getTime());
@@ -1438,23 +1429,6 @@ export default function Home({ onLogout, emailAutenticado, isAdmin = false }: { 
           </div>
         </div>
 
-        {/* Resumo compacto de filtros ativos */}
-        <div className="hidden sm:flex max-w-[1700px] mx-auto mt-2 pt-2 border-t border-slate-800/80 flex-wrap items-center justify-between text-[11px] text-slate-400 gap-2">
-          <div className="flex flex-wrap items-center gap-x-3 gap-y-1">
-            <span>Fonte: <strong className="text-slate-200">{nomeArquivoBase}</strong></span>
-            <span>•</span>
-            <span>Formas de venda: <strong className="text-amber-400">{formasVendaTexto}</strong></span>
-            <span>•</span>
-            <span>Famílias excluídas: <strong className="text-slate-200">{familiasExcluidasTexto}</strong></span>
-          </div>
-          <div className="flex flex-wrap items-center gap-x-3 gap-y-1">
-            <span>Base: <strong className="text-slate-200">{periodoBaseTexto}</strong></span>
-            <span>Filtro: <strong className="text-sky-300">{periodoFiltroTexto}</strong></span>
-            <span>Resultado: <strong className="text-emerald-300">{periodoEfetivo}</strong></span>
-            <span>Linhas: <strong className="text-orange-400">{dadosFiltrados.length.toLocaleString("pt-BR")}</strong> de {meta?.linhas_validas?.toLocaleString("pt-BR")}</span>
-          </div>
-        </div>
-
       </header>
 
       {/* Conteúdo com Sidebar fixa na esquerda */}
@@ -1476,10 +1450,10 @@ export default function Home({ onLogout, emailAutenticado, isAdmin = false }: { 
           {/* Navegação agrupada: reduz a poluição sem esconder nenhuma funcionalidade. */}
           <div className="no-print mb-5 space-y-2">
             <div className="flex items-center gap-1.5 overflow-x-auto rounded-xl border border-slate-800 bg-slate-900/80 p-1.5 scrollbar-thin">
-              {GRUPOS_ABAS.map((grupo) => <button key={grupo.id} type="button" onClick={() => { setGrupoAbaAtivo(grupo.id); navegarParaAba(grupo.abas[0].id); }} className={`whitespace-nowrap rounded-lg px-3 py-2 text-xs font-bold transition-all ${grupoAbaAtivo === grupo.id ? "bg-orange-500 text-white shadow-md" : "text-slate-300 hover:bg-slate-800/80 hover:text-white"}`}>{grupo.icon} {grupo.label}</button>)}
+              {GRUPOS_ABAS.map((grupo) => <button key={grupo.id} type="button" aria-current={grupoAbaAtivo === grupo.id ? "page" : undefined} onClick={() => { setGrupoAbaAtivo(grupo.id); navegarParaAba(grupo.abas[0].id); }} className={`whitespace-nowrap rounded-lg px-4 py-2 text-sm font-semibold transition-all ${grupoAbaAtivo === grupo.id ? "bg-orange-500 text-white shadow-sm" : "text-slate-500 hover:bg-slate-800/80 hover:text-orange-700"}`}>{grupo.label}</button>)}
             </div>
             <div className="flex min-w-0 items-center gap-1 overflow-x-auto rounded-lg border border-slate-800/80 bg-slate-950/50 px-2 py-1.5 scrollbar-thin">
-              {GRUPOS_ABAS.find((grupo) => grupo.id === grupoAbaAtivo)?.abas.map((aba) => <button key={aba.id} type="button" onClick={() => navegarParaAba(aba.id)} className={`whitespace-nowrap rounded-md px-2.5 py-1.5 text-[11px] font-semibold transition-colors ${abaAtiva === aba.id ? "bg-orange-500/20 text-orange-300" : "text-slate-400 hover:bg-slate-800 hover:text-white"}`}>{aba.label}</button>)}
+              {GRUPOS_ABAS.find((grupo) => grupo.id === grupoAbaAtivo)?.abas.map((aba) => <button key={aba.id} type="button" aria-current={abaAtiva === aba.id ? "page" : undefined} onClick={() => navegarParaAba(aba.id)} className={`whitespace-nowrap rounded-md px-3 py-2 text-xs font-medium transition-colors ${abaAtiva === aba.id ? "bg-white text-orange-700 shadow-sm" : "text-slate-500 hover:bg-slate-800/70 hover:text-orange-700"}`}>{aba.label}</button>)}
             </div>
           </div>
           <section className="cemag-command-center mb-5 rounded-2xl border border-slate-800 bg-slate-900/70 px-4 py-4 shadow-sm transition-colors duration-200">
@@ -1492,11 +1466,11 @@ export default function Home({ onLogout, emailAutenticado, isAdmin = false }: { 
                 <span>Base: {periodoBaseTexto} · período filtrado: {periodoEfetivo}</span>
               </div>
             </div>
-            {filtrosVisiveis.length > 0 && <div className="mt-3 flex flex-wrap items-center gap-1.5 border-t border-slate-800/80 pt-3" aria-live="polite" aria-label="Filtros aplicados em tempo real"><span className="mr-1 text-[10px] font-semibold uppercase tracking-wide text-slate-500">Visão atual</span>{filtrosVisiveis.map((filtro) => <span key={filtro.label} className="max-w-full truncate rounded-full border border-slate-700/80 bg-slate-950/60 px-2.5 py-1 text-[10px] text-slate-300"><strong className="text-orange-300">{filtro.label}:</strong> {filtro.value}</span>)}</div>}
+            {filtrosVisiveis.length > 0 && <div className="mt-3 flex flex-wrap items-center gap-1.5 border-t border-slate-800/80 pt-3" aria-live="polite" aria-label="Filtros aplicados em tempo real"><span className="mr-1 text-[10px] font-semibold uppercase tracking-wide text-slate-500">Filtros ativos</span>{filtrosVisiveis.slice(0, 4).map((filtro) => <span key={filtro.label} className="max-w-full truncate rounded-full border border-slate-700/80 bg-slate-950/60 px-2.5 py-1 text-[10px] text-slate-300"><strong className="text-orange-300">{filtro.label}:</strong> {filtro.value}</span>)}{filtrosVisiveis.length > 4 && <span className="rounded-full bg-slate-800 px-2.5 py-1 text-[10px] text-slate-400">+{filtrosVisiveis.length - 4} filtros</span>}</div>}
           </div>
 
           {/* Cards Executivos de Topo (visíveis em todas as abas, exceto Modo Apresentação que tem cards próprios) */}
-          {abaAtiva !== "modo_apresentacao" && (
+          {abaAtiva === "visao_geral" && (
             <MetricCards
               faturamento={kpis.faturamento}
               quantidade={kpis.quantidade}
@@ -2763,23 +2737,40 @@ export default function Home({ onLogout, emailAutenticado, isAdmin = false }: { 
               {/* ========================================================= */}
               {abaAtiva === "previsoes" && (
                 <div className="space-y-6">
+                  <div>
+                    <h2 className="text-xl font-bold text-white">Previsão de vendas</h2>
+                    <p className="mt-1 text-sm text-slate-400">Escolha um modelo para ver a projeção ou compare o desempenho deles no histórico.</p>
+                    <div role="tablist" aria-label="Modelos de previsão" className="mt-4 flex flex-wrap gap-2 border-b border-slate-800 pb-3">
+                      {([
+                        ["automatico", "Automático"],
+                        ["cemag_adaptativo", "CEMAG"],
+                        ["tcc_hibrido", "Modelo do TCC"],
+                        ["comparacao", "Comparar modelos"],
+                      ] as const).map(([aba, rotulo]) => (
+                        <button key={aba} type="button" role="tab" aria-selected={abaModeloPrevisao === aba} onClick={() => setAbaModeloPrevisao(aba)} className={`rounded-lg px-4 py-2 text-sm font-semibold transition ${abaModeloPrevisao === aba ? "bg-orange-500 text-white" : "border border-slate-700 bg-slate-900 text-slate-300 hover:border-orange-500/60 hover:text-white"}`}>
+                          {rotulo}
+                        </button>
+                      ))}
+                    </div>
+                  </div>
                   <div className="rounded-xl border border-orange-900/70 bg-orange-950/20 p-5">
                     <div className="flex flex-wrap items-start justify-between gap-4">
                       <div><h2 className="text-lg font-bold text-white">Parâmetros exclusivos da previsão</h2><p className="mt-1 max-w-3xl text-xs leading-5 text-slate-300">Esses controles alteram somente a previsão. Os filtros gerais continuam definindo a carteira comercial, mas o período abaixo é independente do período da barra lateral.</p></div>
-                      <button type="button" onClick={() => { setPrevisaoDataInicio(meta?.data_min ? (meta.data_min.toISOString().slice(0, 10) > "2022-01-01" ? meta.data_min.toISOString().slice(0, 10) : "2022-01-01") : "2022-01-01"); setPrevisaoDataFim(meta?.data_max?.toISOString().slice(0, 10) || ""); setIncluirMesVigentePrevisao(true); setPrevisaoVisualizacaoInicio(""); setMetricaPrevisao("Faturamento"); setModeloPrevisaoSelecionado("automatico"); setHorizontePrevisao(6); }} className="rounded-lg border border-orange-700/70 px-3 py-2 text-xs font-semibold text-orange-200 hover:bg-orange-500/10">Restaurar padrão</button>
+                      <button type="button" onClick={() => { setPrevisaoDataInicio(meta?.data_min ? (meta.data_min.toISOString().slice(0, 10) > "2022-01-01" ? meta.data_min.toISOString().slice(0, 10) : "2022-01-01") : "2022-01-01"); setPrevisaoDataFim(meta?.data_max?.toISOString().slice(0, 10) || ""); setIncluirMesVigentePrevisao(true); setPrevisaoVisualizacaoInicio(""); setMetricaPrevisao("Faturamento"); setAbaModeloPrevisao("automatico"); setHorizontePrevisao(6); }} className="rounded-lg border border-orange-700/70 px-3 py-2 text-xs font-semibold text-orange-200 hover:bg-orange-500/10">Restaurar padrão</button>
                     </div>
                     <div className="mt-4 grid gap-4 md:grid-cols-2 xl:grid-cols-4">
                       <label className="flex flex-col gap-1 text-xs text-slate-300"><span className="font-semibold">Data inicial do histórico</span><input type="date" value={previsaoDataInicio} onChange={(e) => setPrevisaoDataInicio(e.target.value)} className="rounded-lg border border-slate-700 bg-slate-800 px-3 py-2 text-white" /><span className="text-[10px] leading-4 text-slate-500">Primeiro dia usado para treinar o modelo.</span></label>
                       <label className="flex flex-col gap-1 text-xs text-slate-300"><span className="font-semibold">Data final do histórico</span><input type="date" value={previsaoDataFim} onChange={(e) => setPrevisaoDataFim(e.target.value)} className="rounded-lg border border-slate-700 bg-slate-800 px-3 py-2 text-white" /><span className="text-[10px] leading-4 text-slate-500">Último dia considerado antes da projeção.</span></label>
                       <label className="flex flex-col gap-1 text-xs text-slate-300"><span className="font-semibold">O que projetar</span><select value={metricaPrevisao} onChange={(e) => setMetricaPrevisao(e.target.value)} className="rounded-lg border border-slate-700 bg-slate-800 px-3 py-2 text-white">{METRICAS_PAINEL.map((metrica) => <option key={metrica} value={metrica}>{metrica}</option>)}</select><span className="text-[10px] leading-4 text-slate-500">Escolha faturamento, quantidade, pedidos ou clientes.</span></label>
-                      <label className="flex flex-col gap-1 text-xs text-slate-300"><span className="font-semibold">Modelo de previsão</span><select value={modeloPrevisaoSelecionado} onChange={(e) => setModeloPrevisaoSelecionado(e.target.value as ModeloPrevisaoSelecionado)} className="rounded-lg border border-slate-700 bg-slate-800 px-3 py-2 text-white"><option value="automatico">Automático — menor erro histórico</option><option value="cemag_adaptativo">CEMAG adaptativo</option><option value="tcc_hibrido">Híbrido inspirado no TCC</option></select><span className="text-[10px] leading-4 text-slate-500">CEMAG adapta o cálculo ao padrão das vendas; compare WAPE e MAE abaixo para esta carteira.</span></label>
                       <label className="flex flex-col gap-1 text-xs text-slate-300"><span className="font-semibold">Meses à frente</span><select value={horizontePrevisao} onChange={(e) => setHorizontePrevisao(Number(e.target.value))} className="rounded-lg border border-slate-700 bg-slate-800 px-3 py-2 text-white"><option value={3}>3 meses</option><option value={6}>6 meses</option><option value={12}>12 meses</option></select><span className="text-[10px] leading-4 text-slate-500">Quantidade de meses futuros após o último mês do histórico.</span></label>
                       <label className="flex flex-col gap-1 text-xs text-slate-300"><span className="font-semibold">Mostrar passado a partir de</span><input type="date" value={previsaoVisualizacaoInicio} min={previsaoDataInicio || undefined} onChange={(e) => setPrevisaoVisualizacaoInicio(e.target.value)} className="rounded-lg border border-slate-700 bg-slate-800 px-3 py-2 text-white" /><span className="text-[10px] leading-4 text-slate-500">Só muda o que aparece no gráfico e nas tabelas. Não muda o cálculo.</span></label>
                       <label className="flex items-start gap-2 rounded-lg border border-slate-700 bg-slate-900/60 p-3 text-xs text-slate-300"><input type="checkbox" checked={incluirMesVigentePrevisao} onChange={(e) => setIncluirMesVigentePrevisao(e.target.checked)} className="mt-0.5 accent-orange-500" /><span><strong className="block text-white">Incluir mês vigente</strong><span className="mt-1 block text-[10px] leading-4 text-slate-500">Ligado: estima o fechamento do mês atual mesmo incompleto. Desligado: usa somente meses até a data final.</span></span></label>
                     </div>
-                    <div className="mt-4 grid gap-3 md:grid-cols-2 xl:grid-cols-4 text-[11px] leading-5"><div className="rounded-lg border border-slate-800 bg-slate-950/50 p-3"><strong className="text-orange-300">Histórico</strong><p className="text-slate-400">São necessários pelo menos 6 meses com registros. Até 24 meses recentes pesam mais na tendência.</p></div><div className="rounded-lg border border-slate-800 bg-slate-950/50 p-3"><strong className="text-sky-300">Retroativo</strong><p className="text-slate-400">Meses passados são recalculados usando apenas os meses anteriores, para medir o erro do modelo.</p></div><div className="rounded-lg border border-slate-800 bg-slate-950/50 p-3"><strong className="text-emerald-300">Futuro</strong><p className="text-slate-400">Os fatores externos ficam disponíveis no painel; só entram no híbrido do TCC quando têm cobertura e melhoram a validação.</p></div><div className="rounded-lg border border-violet-800/60 bg-violet-950/20 p-3"><strong className="text-violet-300">Modelo ativo</strong><p className="text-slate-400">{modeloPrevisaoSelecionado === "automatico" ? "Escolhe entre referências simples e o CEMAG adaptativo pelo menor WAPE recente." : modeloPrevisaoSelecionado === "cemag_adaptativo" ? "Usa Croston SBA quando as vendas são intermitentes; nas séries regulares combina tendência robusta amortecida e sazonalidade mediana." : "Adaptação do TCC: tendência e sazonalidade com fatores externos, se melhorarem a validação temporal."} <span className="text-white">{previsaoMensal.metodo}</span></p></div></div>
+                    {abaModeloPrevisao !== "comparacao" && <div className="mt-4 rounded-lg border border-slate-800 bg-slate-950/50 p-3 text-xs leading-5 text-slate-300"><strong className="text-orange-300">{abaModeloPrevisao === "automatico" ? "Como funciona" : abaModeloPrevisao === "cemag_adaptativo" ? "Modelo CEMAG" : "Modelo do TCC"}</strong><p className="mt-1">{abaModeloPrevisao === "automatico" ? "Seleciona a referência com menor erro recente para esta carteira." : abaModeloPrevisao === "cemag_adaptativo" ? "Adapta a previsão ao padrão das vendas: trata demanda intermitente e combina tendência com sazonalidade." : "Combina tendência e sazonalidade com fatores externos quando há dados suficientes e eles melhoram a validação."} <span className="text-white">Método atual: {previsaoMensal.metodo}.</span></p></div>}
                   </div>
-                  <div className="bg-slate-900/80 border border-slate-800 rounded-xl p-5">
+                  <details className="bg-slate-900/80 border border-slate-800 rounded-xl">
+                    <summary className="cursor-pointer list-none p-4 text-sm font-semibold text-slate-200">Dados externos e região consultada <span className="ml-2 text-xs font-normal text-slate-500">Opcional · abrir para ajustar</span></summary>
+                    <div className="border-t border-slate-800 p-5">
                     <div className="flex flex-wrap items-start justify-between gap-4">
                       <div><h3 className="text-sm font-bold text-white">Informações externas</h3><p className="text-xs text-slate-400 mt-1">Selic e ANFAVEA podem entrar com cobertura suficiente. Crédito rural exige correspondência dos estados; chuva exige cidade e UF iguais às da carteira. No modo automático, os fatores ficam como contexto.</p></div>
                       <div className="flex flex-wrap items-end gap-3 text-xs text-slate-300">
@@ -2802,17 +2793,19 @@ export default function Home({ onLogout, emailAutenticado, isAdmin = false }: { 
                       <div className="rounded-lg border border-amber-900/60 bg-amber-950/20 p-4"><h4 className="text-sm font-semibold text-amber-300">Expectativa de Selic — Boletim Focus</h4><p className="mt-1 text-[11px] text-slate-400">Medianas/médias de mercado por reunião futura. São expectativas do mercado, não uma decisão garantida do Banco Central.</p><DataTable rows={expectativasSelicFuturas} exportName="expectativas_selic_focus" columns={["data_consulta", "reuniao", "media_pct", "mediana_pct", "respondentes"]} percentPointColumns={["media_pct", "mediana_pct"]} /></div>
                     </div>}
                     {fatoresExternosQuery.data && <div className="mt-4 rounded-lg border border-sky-900/60 bg-sky-950/20 p-4"><h4 className="text-sm font-semibold text-sky-300">Previsão climática sazonal — próximos trimestres</h4><p className="mt-1 text-[11px] text-slate-400">CPTEC/INPE BAM-1.2. É uma previsão probabilística regional de três meses, não uma promessa de chuva exata no município.</p><DataTable rows={previsaoSazonal} exportName="previsao_sazonal_cptec" columns={["modelo", "temporada", "periodo", "chuva_total_mm", "sinal_tercil", "valor_sinal", "atualizado_em"]} /></div>}
-                  </div>
+                    </div>
+                  </details>
+                  {abaModeloPrevisao === "comparacao" ? <div className="overflow-hidden rounded-xl border border-slate-800 bg-slate-900/80 p-5">
+                    <div className="mb-4"><h3 className="text-base font-bold text-white">Qual modelo teve menor erro?</h3><p className="mt-1 text-sm text-slate-400">Os modelos são avaliados nos mesmos meses passados. WAPE menor significa menor erro relativo total; MAE mostra o erro médio na unidade selecionada.</p></div>
+                    <div className="overflow-x-auto"><table className="w-full min-w-[520px] text-left text-sm"><thead className="text-xs uppercase text-slate-500"><tr><th className="pb-3">Modelo</th><th className="pb-3 text-right">WAPE</th><th className="pb-3 text-right">MAE ({metricaPrevisao})</th><th className="pb-3 text-right">Meses avaliados</th></tr></thead><tbody className="divide-y divide-slate-800">{comparacaoModelosPrevisao.map((modelo) => <tr key={modelo.nome}><td className="py-3 font-semibold text-slate-200">{modelo.nome}</td><td className="py-3 text-right text-violet-300">{modelo.wape == null ? "—" : `${modelo.wape.toFixed(1)}%`}</td><td className="py-3 text-right text-sky-300">{modelo.mae == null ? "—" : formatarMetrica(modelo.mae, metricaPrevisao)}</td><td className="py-3 text-right text-slate-400">{modelo.pontos}</td></tr>)}</tbody></table></div>
+                    <p className="mt-4 rounded-lg bg-slate-950/60 p-3 text-xs text-slate-400">A comparação usa a mesma métrica e o mesmo histórico definido acima. Se não houver meses suficientes, o erro aparece como “—”.</p>
+                  </div> : <>
                   <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
                     <div className="bg-slate-900/80 border border-slate-800 rounded-xl p-4"><div className="text-[10px] uppercase text-slate-500">Métrica</div><div className="text-sm font-semibold text-orange-300 mt-2">{metricaPrevisao}</div></div>
                     <div className="bg-slate-900/80 border border-slate-800 rounded-xl p-4"><div className="text-[10px] uppercase text-slate-500">Meses históricos</div><div className="text-xl font-bold text-white mt-2">{previsaoMensal.historicoMeses}</div></div>
                     <div className="bg-slate-900/80 border border-slate-800 rounded-xl p-4"><div className="text-[10px] uppercase text-slate-500">Horizonte</div><div className="text-xl font-bold text-orange-300 mt-2">{horizontePrevisao} meses</div></div>
                     <div className="bg-slate-900/80 border border-slate-800 rounded-xl p-4"><div className="text-[10px] uppercase text-slate-500">Cenários</div><div className="text-sm font-semibold text-sky-300 mt-2">Conservador · Provável · Otimista</div><div className="text-[10px] text-slate-500 mt-1">Faixa pelo erro histórico</div></div><div className="bg-slate-900/80 border border-slate-800 rounded-xl p-4"><div className="text-[10px] uppercase text-slate-500">MAPE histórico</div><div className="text-xl font-bold text-emerald-300 mt-2">{validacaoPrevisao.mape == null ? "-" : `${validacaoPrevisao.mape.toFixed(1)}%`}</div><div className="text-[10px] text-slate-500 mt-1">Erro percentual médio em {validacaoPrevisao.pontos} mês(es)</div></div><div className="bg-slate-900/80 border border-slate-800 rounded-xl p-4"><div className="text-[10px] uppercase text-slate-500">MAE</div><div className="text-xl font-bold text-sky-300 mt-2">{validacaoPrevisao.mae == null ? "-" : formatarMetrica(validacaoPrevisao.mae, metricaPrevisao)}</div><div className="text-[10px] text-slate-500 mt-1">Erro médio em unidade da métrica</div></div><div className="bg-slate-900/80 border border-slate-800 rounded-xl p-4"><div className="text-[10px] uppercase text-slate-500">WAPE</div><div className="text-xl font-bold text-violet-300 mt-2">{validacaoPrevisao.wape == null ? "-" : `${validacaoPrevisao.wape.toFixed(1)}%`}</div><div className="text-[10px] text-slate-500 mt-1">Erro absoluto total ÷ realizado total</div></div>
                   </div>
-                    <div className="overflow-hidden rounded-xl border border-slate-800 bg-slate-900/80 p-4">
-                      <div className="mb-3"><h3 className="text-sm font-bold text-white">Comparação no histórico</h3><p className="mt-1 text-[11px] text-slate-400">Os três métodos são recalculados nos mesmos meses passados. WAPE menor indica menor erro relativo total nesta carteira; o resultado pode mudar com os filtros.</p></div>
-                      <div className="overflow-x-auto"><table className="w-full min-w-[520px] text-left text-xs"><thead className="text-[10px] uppercase text-slate-500"><tr><th className="pb-2">Modelo</th><th className="pb-2 text-right">WAPE</th><th className="pb-2 text-right">MAE</th><th className="pb-2 text-right">Meses avaliados</th></tr></thead><tbody className="divide-y divide-slate-800">{comparacaoModelosPrevisao.map((modelo) => <tr key={modelo.nome}><td className="py-2 font-semibold text-slate-200">{modelo.nome}</td><td className="py-2 text-right text-violet-300">{modelo.wape == null ? "—" : `${modelo.wape.toFixed(1)}%`}</td><td className="py-2 text-right text-sky-300">{modelo.mae == null ? "—" : formatarMetrica(modelo.mae, metricaPrevisao)}</td><td className="py-2 text-right text-slate-400">{modelo.pontos}</td></tr>)}</tbody></table></div>
-                    </div>
                     {seriePrevisaoVisivel.length ? <>
                     <div className="bg-slate-900/80 border border-slate-800 p-5 rounded-xl">
                       <h3 className="text-sm font-bold text-white mb-2">Histórico e próximos {horizontePrevisao} meses — {metricaPrevisao}</h3>
@@ -2824,6 +2817,7 @@ export default function Home({ onLogout, emailAutenticado, isAdmin = false }: { 
                     <div className="rounded-xl border border-slate-800 bg-slate-950/40 p-4 text-xs text-slate-400">A análise detalhada dos meses anteriores foi movida para a aba <strong className="text-orange-300">Análise histórica</strong>, para manter esta tela focada na previsão e nos cenários.</div>
                     <div className="bg-slate-900/80 border border-slate-800 rounded-xl p-5"><h3 className="text-sm font-bold text-white mb-3">Valores previstos e retroativos — {metricaPrevisao}</h3><DataTable rows={seriePrevisaoVisivel.filter((x) => x.previsao != null || x.previsao_retroativa != null)} columns={["ano_mes", "realizado", "conservador_retroativo", "previsao_retroativa", "otimista_retroativo", "erro_retroativo", "conservador", "previsao", "otimista", "tipo"]} percentColumns={["erro_retroativo"]} metricColumns={{ realizado: metricaPrevisao, conservador_retroativo: metricaPrevisao, previsao_retroativa: metricaPrevisao, otimista_retroativo: metricaPrevisao, conservador: metricaPrevisao, previsao: metricaPrevisao, otimista: metricaPrevisao }} /></div>
                   </> : <div className="bg-amber-500/10 border border-amber-500/30 text-amber-200 rounded-xl p-5 text-sm">Histórico insuficiente após os filtros atuais. São necessários pelo menos seis meses com registros.</div>}
+                  </>}
                 </div>
               )}
 

@@ -352,6 +352,10 @@
     color: #a8a8a3 !important;
   }
 
+  .cemag-dashboard.tema-black [class*="hover\\:text-orange-700"]:hover {
+    color: #ff8050 !important;
+  }
+
   .cemag-dashboard.tema-black input,
   .cemag-dashboard.tema-black select,
   .cemag-dashboard.tema-black textarea {
