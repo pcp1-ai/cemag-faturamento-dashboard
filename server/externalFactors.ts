@@ -24,7 +24,7 @@ export type MercadoMaquinasAnfavea = {
   status: "consultado" | "indisponivel" | "nao_consultado";
   tipo_dado: string;
   agregacao: string;
-  series: Array<{ ano_mes: string; maquina: string; unidades: number | null }>;
+  series: Array<{ ano_mes: string; tipo_dado: string; maquina: string; unidades: number | null }>;
   fonte: string;
   atualizado_em: string | null;
 };
@@ -352,38 +352,52 @@ function decodificarHtml(value: string) {
 }
 
 async function buscarMercadoMaquinasAnfavea(): Promise<MercadoMaquinasAnfavea> {
-  const indisponivel = (fonte = "ANFAVEA — Central de Dados") => ({ status: "indisponivel" as const, tipo_dado: "VENDA VAREJO", agregacao: "mensal", series: [], fonte, atualizado_em: null });
+  const tipos = [
+    { valor: "VENDA ATACADO", rotulo: "Vendas no atacado" },
+    { valor: "VENDA VAREJO", rotulo: "Vendas no varejo" },
+    { valor: "EXPORTACAO", rotulo: "Exportações" },
+  ];
+  const indisponivel = (fonte = "ANFAVEA — Central de Dados") => ({ status: "indisponivel" as const, tipo_dado: "ATACADO, VAREJO E EXPORTAÇÕES", agregacao: "mensal", series: [], fonte, atualizado_em: null });
   try {
     const pagina = await fetchText("https://anfavea.com.br/site/central-de-dados/", 30_000);
     const config = pagina.match(/var\s+anfaveaData\s*=\s*(\{.*?\});/s)?.[1];
     const nonce = config ? JSON.parse(config).nonce : null;
     if (!nonce) return indisponivel("ANFAVEA — nonce público não encontrado");
-    const form = new FormData();
-    form.append("action", "anfavea_dashboard1");
-    form.append("nonce", nonce);
-    form.append("dashboard", "dashboard3");
-    form.append("tipo_dado_maquina", "VENDA VAREJO");
-    ["TOTAL_AGRICOLAS", "TRATORES DE RODAS", "COLHEITADEIRAS DE GRAOS", "TOTAL_RODOVIARIAS", "TRATORES DE ESTEIRAS", "RETROESCAVADEIRAS", "PAS-CARREGADEIRAS", "ESCAVADEIRAS HIDRAULICAS", "MOTONIVELADORAS", "ROLOS COMPACTADORES", "MINI-CARREGADEIRAS", "MANIPULADORES TELESCOPICOS"].forEach((maquina) => form.append("maquinas[]", maquina));
-    form.append("agregacao", "mensal");
-    form.append("inicio", "2022-01");
+    const maquinas = ["TOTAL_AGRICOLAS", "TRATORES DE RODAS", "COLHEITADEIRAS DE GRAOS", "TOTAL_RODOVIARIAS", "TRATORES DE ESTEIRAS", "RETROESCAVADEIRAS", "PAS-CARREGADEIRAS", "ESCAVADEIRAS HIDRAULICAS", "MOTONIVELADORAS", "ROLOS COMPACTADORES", "MINI-CARREGADEIRAS", "MANIPULADORES TELESCOPICOS"];
     const hoje = new Date();
-    form.append("fim", `${hoje.getUTCFullYear()}-${String(hoje.getUTCMonth() + 1).padStart(2, "0")}`);
-    const resposta = await fetch("https://anfavea.com.br/site/wp-admin/admin-ajax.php", { method: "POST", body: form, headers: { Accept: "application/json", Referer: "https://anfavea.com.br/site/central-de-dados/", "User-Agent": "Mozilla/5.0 (compatible; CEMAG-Dashboard/1.0)" } });
-    if (!resposta.ok) throw new Error(`HTTP ${resposta.status}`);
-    const json = await resposta.json() as { success?: boolean; data?: { table_html?: string } };
-    if (!json.success || !json.data?.table_html) throw new Error("resposta sem tabela");
-    const html = json.data.table_html;
-    const cabecalho = [...html.matchAll(/<th[^>]*>\s*([^<]+?)\s*<\/th>/gi)].map((match) => decodificarHtml(match[1]).trim()).filter((item) => item.toUpperCase() !== "PERÍODO");
+    const fim = `${hoje.getUTCFullYear()}-${String(hoje.getUTCMonth() + 1).padStart(2, "0")}`;
     const meses: Record<string, string> = { JAN: "01", FEV: "02", MAR: "03", ABR: "04", MAI: "05", JUN: "06", JUL: "07", AGO: "08", SET: "09", OUT: "10", NOV: "11", DEZ: "12" };
     const series: MercadoMaquinasAnfavea["series"] = [];
-    for (const row of html.matchAll(/<tr[^>]*>\s*<td[^>]*>\s*<strong[^>]*>\s*([^<]+?)\s*<\/strong>\s*<\/td>([\s\S]*?)<\/tr>/gi)) {
-      const periodo = decodificarHtml(row[1]).trim().match(/(\d{4})\s*-\s*([A-ZÇ]{3})/i);
-      if (!periodo) continue;
-      const anoMes = `${periodo[1]}-${meses[periodo[2].toUpperCase()] || "01"}`;
-      const valores = [...row[2].matchAll(/data-valor-export="([\d.-]+)"/gi)].map((match) => Number(match[1]));
-      valores.forEach((valor, indice) => series.push({ ano_mes: anoMes, maquina: cabecalho[indice] || `Máquina ${indice + 1}`, unidades: Number.isFinite(valor) ? valor : null }));
+    const falhas: string[] = [];
+    for (const tipo of tipos) {
+      try {
+        const form = new FormData();
+        form.append("action", "anfavea_dashboard1");
+        form.append("nonce", nonce);
+        form.append("dashboard", "dashboard3");
+        form.append("tipo_dado_maquina", tipo.valor);
+        maquinas.forEach((maquina) => form.append("maquinas[]", maquina));
+        form.append("agregacao", "mensal");
+        form.append("inicio", "2022-01");
+        form.append("fim", fim);
+        const resposta = await fetch("https://anfavea.com.br/site/wp-admin/admin-ajax.php", { method: "POST", body: form, headers: { Accept: "application/json", Referer: "https://anfavea.com.br/site/central-de-dados/", "User-Agent": "Mozilla/5.0 (compatible; CEMAG-Dashboard/1.0)" } });
+        if (!resposta.ok) throw new Error(`HTTP ${resposta.status}`);
+        const json = await resposta.json() as { success?: boolean; data?: { table_html?: string } };
+        if (!json.success || !json.data?.table_html) throw new Error("resposta sem tabela");
+        const html = json.data.table_html;
+        const cabecalho = [...html.matchAll(/<th[^>]*>\s*([^<]+?)\s*<\/th>/gi)].map((match) => decodificarHtml(match[1]).trim()).filter((item) => item.toUpperCase() !== "PERÍODO");
+        for (const row of html.matchAll(/<tr[^>]*>\s*<td[^>]*>\s*<strong[^>]*>\s*([^<]+?)\s*<\/strong>\s*<\/td>([\s\S]*?)<\/tr>/gi)) {
+          const periodo = decodificarHtml(row[1]).trim().match(/(\d{4})\s*-\s*([A-ZÇ]{3})/i);
+          if (!periodo) continue;
+          const anoMes = `${periodo[1]}-${meses[periodo[2].toUpperCase()] || "01"}`;
+          const valores = [...row[2].matchAll(/data-valor-export="([\d.-]+)"/gi)].map((match) => Number(match[1]));
+          valores.forEach((valor, indice) => series.push({ ano_mes: anoMes, tipo_dado: tipo.valor, maquina: cabecalho[indice] || `Máquina ${indice + 1}`, unidades: Number.isFinite(valor) ? valor : null }));
+        }
+      } catch (error) {
+        falhas.push(`${tipo.rotulo}: ${error instanceof Error ? error.message : "falha na consulta"}`);
+      }
     }
-    return { status: series.length ? "consultado" : "indisponivel", tipo_dado: "VENDA VAREJO", agregacao: "mensal", series, fonte: "ANFAVEA — Central de Dados, máquinas autopropulsadas (vendas no varejo)", atualizado_em: new Date().toISOString() };
+    return { status: series.length ? "consultado" : "indisponivel", tipo_dado: "ATACADO, VAREJO E EXPORTAÇÕES", agregacao: "mensal", series, fonte: `ANFAVEA — Central de Dados, máquinas autopropulsadas${falhas.length ? `. Consultas indisponíveis: ${falhas.join("; ")}` : " (atacado, varejo e exportações)"}`, atualizado_em: new Date().toISOString() };
   } catch (error) {
     return indisponivel(`ANFAVEA indisponível: ${error instanceof Error ? error.message : "erro de consulta"}`);
   }
