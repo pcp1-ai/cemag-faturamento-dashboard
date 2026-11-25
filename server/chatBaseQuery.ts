@@ -95,6 +95,8 @@ export function queryPublishedBase(
   },
 ): ChatQueryResult {
   const q = normalizarTermoChat(question);
+  const asksLatestDispatch = /\b(ultima|ultimo|mais recente|recente)\b/.test(q)
+    && /\b(carga|carreta|saiu|sau|saida|embarque|movimentacao|vez)\b/.test(q);
   const result = (status: ChatQueryResult["status"], rows: Record<string, unknown>[], metric = "faturamento_valor", groupBy: string | null = null, filters: Record<string, string> = {}, period = "todo o período da base", limitations: string[] = []): ChatQueryResult => ({
     status, sourceVersion, period, metric, groupBy, filters, result: rows.length ? undefined : [], limitations,
   });
@@ -184,12 +186,12 @@ export function queryPublishedBase(
   const hasQuantityIntent = (!explicitMetric || explicitMetric.canonical === "quantidade_faturada") && /\b(quantidade|unidades?|volume|mais vendid[oa]s?|mais produtos?|maior quantidade|vendeu mais|venderam mais|compraram mais produtos)\b/.test(q);
   const selectedMetric = hasQuantityIntent ? quantityEntry : selectedMetricSafe || (dynamicMetricField ? { canonical: normalizarTermoChat(dynamicMetricField).replace(/\s+/g, "_"), fieldAliases: [dynamicMetricField], metricOperation: "sum" as const } : amountEntry);
   const metric = selectedMetric.canonical;
-  if (capabilities?.availableMetrics && !capabilities.availableMetrics.includes(metric)) {
+  if (!asksLatestDispatch && capabilities?.availableMetrics && !capabilities.availableMetrics.includes(metric)) {
     const metricName = CHAT_BUSINESS_DICTIONARY.find((entry) => entry.canonical === metric)?.definition || metric.replaceAll("_", " ");
     return { ...result("no_match", [], metric), limitations: [`A planilha atual não tem todas as colunas necessárias para calcular essa métrica (${metricName}).`] };
   }
   const metricField = selectedMetric.fieldAliases;
-  const rowsWithMetric = sourceRows.filter((row) => fieldValue(row, metricField) !== undefined);
+  const rowsWithMetric = asksLatestDispatch ? sourceRows : sourceRows.filter((row) => fieldValue(row, metricField) !== undefined);
   if (!rowsWithMetric.length) return { ...result("no_match", []), limitations: [`A base não contém valores preenchidos para ${hasQuantityIntent ? "quantidade faturada" : metric.replaceAll("_", " ")}.`] };
 
   const dateRows = rowsWithMetric.filter((row) => dateValue(row));
@@ -251,8 +253,6 @@ export function queryPublishedBase(
     filtered = filtered.filter((row) => normalizarTermoChat(String(row[field] ?? "")) === normalizarTermoChat(value));
     filters[field] = value;
   }
-  const asksLatestDispatch = /\b(ultima|ultimo|mais recente|recente)\b/.test(q)
-    && /\b(carga|carreta|saiu|saida|embarque|movimentacao)\b/.test(q);
   if (asksLatestDispatch) {
     const productFields = new Set(["produto", "familia", "grupo modelo", "descricao generica", "categoria produto", "tipo produto", "1o agrupamento"]);
     const matchedProduct = Array.from(matchedValues.values()).some(({ field }) => productFields.has(normalizarTermoChat(field)));
