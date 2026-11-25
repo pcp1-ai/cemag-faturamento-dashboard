@@ -35,6 +35,19 @@ function describeFilters(filters: Record<string, string>): string {
   return entries.length ? entries.map(([key, value]) => `${key}: ${value}`).join(", ") : "nenhum filtro adicional";
 }
 
+function displayGroupLabel(value: unknown, groupBy: string | null): string {
+  const label = String(value ?? "");
+  if (groupBy === "dia" && /^\d{4}-\d{2}-\d{2}$/.test(label)) {
+    const [year, month, day] = label.split("-");
+    return `${day}/${month}/${year}`;
+  }
+  if (groupBy === "mes" && /^\d{4}-\d{2}$/.test(label)) {
+    const date = new Date(`${label}-01T00:00:00Z`);
+    return date.toLocaleDateString("pt-BR", { month: "long", year: "numeric", timeZone: "UTC" });
+  }
+  return label;
+}
+
 export function formatChatResponse(query: ChatQueryResult, layer: FaturamentoAnalytics): string {
   if (query.status !== "answered") {
     return query.limitations.join(" ") || "Não encontrei uma resposta segura na base. Reformule a pergunta com período ou dimensão mais específica.";
@@ -46,13 +59,27 @@ export function formatChatResponse(query: ChatQueryResult, layer: FaturamentoAna
   const result = query.result as Record<string, any> | Record<string, any>[];
   let body: string;
 
-  if (Array.isArray(result)) {
+  if (!Array.isArray(result) && result?.tipo === "ultima_carga") {
+    const movementDate = displayGroupLabel(result.data_movimentacao, "dia");
+    const loads = Array.isArray(result.cargas) ? result.cargas as Record<string, any>[] : [];
+    const heading = result.totalCargas === 1
+      ? `Última carga localizada: saída em ${movementDate}.`
+      : `Última data de saída: ${movementDate}; ${integer.format(result.totalCargas || 0)} cargas registradas nessa data.`;
+    const details = loads.map((load) => `Pedido ${load.pedido}; carreta/produto: ${load.produto}; cliente: ${load.cliente}; quantidade: ${integer.format(load.quantidade || 0)}; faturamento: ${money.format(load.faturamento || 0)}; representante: ${load.representante}.`);
+    body = [heading, ...details].join("\n");
+  } else if (Array.isArray(result)) {
     const lines = result.slice(0, 10).map((item, index) => {
       const value = metricValue(item, query.metric);
-      const label = String(item.nome ?? `Grupo ${index + 1}`);
+      const label = displayGroupLabel(item.nome ?? `Grupo ${index + 1}`, query.groupBy);
       return `${index + 1}. ${label}: ${value === null ? "valor indisponível" : formatMetric(query.metric, value)}`;
     });
-    body = `${metricLabel} por ${query.groupBy ?? "grupo"} (${result.length} grupos exibidos):\n${lines.join("\n")}`;
+    const singularLabel = result.length === 1 ? displayGroupLabel(result[0].nome, query.groupBy) : "";
+    const singularValue = result.length === 1 ? metricValue(result[0], query.metric) : null;
+    body = result.length === 1 && query.groupBy === "dia"
+      ? `${metricLabel} em ${singularLabel}: ${singularValue === null ? "valor indisponível" : formatMetric(query.metric, singularValue)}.`
+      : result.length === 1 && query.groupBy === "mes"
+        ? `${metricLabel} no período ${singularLabel}: ${singularValue === null ? "valor indisponível" : formatMetric(query.metric, singularValue)}.`
+        : `${metricLabel} por ${query.groupBy ?? "grupo"} (${result.length} grupo(s) exibido(s)):\n${lines.join("\n")}`;
   } else {
     const value = metricValue(result, query.metric);
     body = value === null

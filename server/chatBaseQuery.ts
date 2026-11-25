@@ -40,6 +40,16 @@ function dateValue(row: Record<string, unknown>): string | null {
   return br ? `${br[3]}-${br[2].padStart(2, "0")}-${br[1].padStart(2, "0")}` : null;
 }
 
+function movementDateValue(row: Record<string, unknown>): string | null {
+  const value = fieldValue(row, ["data_movimento", "data movimentacao", "bai_movimentac"]);
+  if (value instanceof Date && !Number.isNaN(value.getTime())) return value.toISOString().slice(0, 10);
+  const text = String(value ?? "").trim();
+  const iso = text.match(/^(\d{4})[-/](\d{1,2})[-/](\d{1,2})/);
+  if (iso) return `${iso[1]}-${iso[2].padStart(2, "0")}-${iso[3].padStart(2, "0")}`;
+  const br = text.match(/^(\d{1,2})[/-](\d{1,2})[/-](\d{4})/);
+  return br ? `${br[3]}-${br[2].padStart(2, "0")}-${br[1].padStart(2, "0")}` : null;
+}
+
 function aggregate(rows: Record<string, unknown>[]) {
   const faturamentoField = CHAT_BUSINESS_DICTIONARY.find((entry) => entry.canonical === "faturamento_valor")!.fieldAliases;
   const quantityField = CHAT_BUSINESS_DICTIONARY.find((entry) => entry.canonical === "quantidade_faturada")!.fieldAliases;
@@ -132,7 +142,16 @@ export function queryPublishedBase(
   const monthNumeric = question.match(/\b(20\d{2})[-/](0?[1-9]|1[0-2])\b/);
   const dateMatch = question.match(/\b(\d{4})[-/](\d{1,2})[-/](\d{1,2})\b/) || question.match(/\b(\d{1,2})[/-](\d{1,2})[/-](\d{4})\b/);
   const exactDate = dateMatch ? (dateMatch[1].length === 4 ? `${dateMatch[1]}-${dateMatch[2].padStart(2, "0")}-${dateMatch[3].padStart(2, "0")}` : `${dateMatch[3]}-${dateMatch[2].padStart(2, "0")}-${dateMatch[1].padStart(2, "0")}`) : null;
-  const month = monthNumeric ? `${monthNumeric[1]}-${monthNumeric[2].padStart(2, "0")}` : monthName ? `${year || new Date().getUTCFullYear()}-${monthNumbers[monthName]}` : null;
+  const previousMonthRequested = /\b(mes passado|mes anterior|ultimo mes)\b/.test(q);
+  const currentMonthRequested = /\b(este mes|nesse mes|mes atual)\b/.test(q);
+  const saoPauloDateParts = Object.fromEntries(new Intl.DateTimeFormat("en-US", {
+    timeZone: "America/Sao_Paulo", year: "numeric", month: "2-digit",
+  }).formatToParts(new Date()).filter((part) => part.type !== "literal").map(({ type, value }) => [type, value]));
+  const currentYear = Number(saoPauloDateParts.year);
+  const currentMonthNumber = Number(saoPauloDateParts.month);
+  const relativeMonthDate = new Date(Date.UTC(currentYear, currentMonthNumber - (previousMonthRequested ? 2 : 1), 1));
+  const relativeMonth = `${relativeMonthDate.getUTCFullYear()}-${String(relativeMonthDate.getUTCMonth() + 1).padStart(2, "0")}`;
+  const month = monthNumeric ? `${monthNumeric[1]}-${monthNumeric[2].padStart(2, "0")}` : monthName ? `${year || currentYear}-${monthNumbers[monthName]}` : previousMonthRequested || currentMonthRequested ? relativeMonth : null;
   if (!exactDate && /\bdia\s+\d{1,2}\b/.test(q)) return { ...result("ambiguous", []), limitations: ["Informe a data completa (dia, mês e ano) para consultar esse dia."] };
   if (/\bde\s+\d{1,2}\s+de\s+[\p{L}]+/u.test(q) && !exactDate) return { ...result("ambiguous", []), limitations: ["Informe também o ano para consultar essa data."] };
   const wantsProfit = /\b(lucro|lucros|margem|rentabilidade)\b/.test(q);
@@ -232,13 +251,61 @@ export function queryPublishedBase(
     filtered = filtered.filter((row) => normalizarTermoChat(String(row[field] ?? "")) === normalizarTermoChat(value));
     filters[field] = value;
   }
+  const asksLatestDispatch = /\b(ultima|ultimo|mais recente|recente)\b/.test(q)
+    && /\b(carga|carreta|saiu|saida|embarque|movimentacao)\b/.test(q);
+  if (asksLatestDispatch) {
+    const productFields = new Set(["produto", "familia", "grupo modelo", "descricao generica", "categoria produto", "tipo produto", "1o agrupamento"]);
+    const matchedProduct = Array.from(matchedValues.values()).some(({ field }) => productFields.has(normalizarTermoChat(field)));
+    if (!matchedProduct) {
+      return { ...result("ambiguous", [], metric, "ultima_carga", filters), limitations: ["Informe o código ou o nome da carreta para localizar sua última saída."] };
+    }
+    if (!filtered.length) {
+      return { ...result("no_match", [], metric, "ultima_carga", filters), limitations: ["Não encontrei essa carreta na base com os filtros informados."] };
+    }
+    const movementRows = filtered.map((row) => ({ row, date: movementDateValue(row) })).filter((item): item is { row: Record<string, unknown>; date: string } => Boolean(item.date));
+    if (!movementRows.length) {
+      return { ...result("no_match", [], metric, "ultima_carga", filters), limitations: ["Não há datas preenchidas em BAI_MOVIMENTAC para localizar a última saída dessa carreta."] };
+    }
+    const latestDate = movementRows.reduce((latest, item) => item.date > latest ? item.date : latest, movementRows[0].date);
+    const latestRows = movementRows.filter((item) => item.date === latestDate);
+    const loads = new Map<string, { pedido: string; clientes: Set<string>; produtos: Set<string>; representantes: Set<string>; cidades: Set<string>; ufs: Set<string>; quantidade: number; faturamento: number; linhas: number }>();
+    for (const [rowIndex, { row }] of latestRows.entries()) {
+      const pedido = String(fieldValue(row, ["pedido", "numero pedido", "ordem", "documento"]) ?? "").trim();
+      const loadKey = pedido || String(fieldValue(row, ["id"]) ?? `sem-pedido-${rowIndex}`);
+      const load = loads.get(loadKey) || { pedido: pedido || "Não informado", clientes: new Set<string>(), produtos: new Set<string>(), representantes: new Set<string>(), cidades: new Set<string>(), ufs: new Set<string>(), quantidade: 0, faturamento: 0, linhas: 0 };
+      const addValue = (set: Set<string>, aliases: string[]) => { const value = String(fieldValue(row, aliases) ?? "").trim(); if (value) set.add(value); };
+      addValue(load.clientes, ["cliente_base", "cliente", "comprador"]);
+      addValue(load.produtos, ["produto", "item", "agrupamento"]);
+      addValue(load.representantes, ["representante", "vendedor"]);
+      addValue(load.cidades, ["cidade", "municipio"]);
+      addValue(load.ufs, ["uf", "estado"]);
+      load.quantidade += numberValue(fieldValue(row, ["quantidade", "qtd", "qtde"]));
+      load.faturamento += numberValue(fieldValue(row, ["faturamento", "total", "valor faturado"]));
+      load.linhas += 1;
+      loads.set(loadKey, load);
+    }
+    const cargas = Array.from(loads.values()).map((load) => ({
+      pedido: load.pedido, cliente: Array.from(load.clientes).join(", ") || "Não informado",
+      produto: Array.from(load.produtos).join(", ") || "Não informado",
+      representante: Array.from(load.representantes).join(", ") || "Não informado",
+      cidade: Array.from(load.cidades).join(", ") || "Não informado", uf: Array.from(load.ufs).join(", ") || "Não informado",
+      quantidade: load.quantidade, faturamento: load.faturamento, linhas: load.linhas,
+    })).sort((a, b) => b.faturamento - a.faturamento).slice(0, 10);
+    return { ...result("answered", [], metric, "ultima_carga", filters, latestDate), result: { tipo: "ultima_carga", data_movimentacao: latestDate, totalCargas: loads.size, cargas }, limitations: [] };
+  }
   const groupCandidates = CHAT_BUSINESS_DICTIONARY
     .filter((entry) => ["representante", "cliente", "municipio", "uf", "produto", "tipo_produto", "categoria_produto", "modelo", "familia", "regiao", "tipo_venda", "cor", "grupo_modelo", "lista_preco_uf", "descricao_generica", "pedido"].includes(entry.canonical))
     .flatMap((entry) => entry.aliases.map((alias) => ({ entry, alias: normalizarTermoChat(alias) })))
     .filter(({ alias }) => alias && (` ${q} `).includes(` por ${alias} `))
     .sort((a, b) => b.alias.length - a.alias.length);
   let groupEntry = groupCandidates[0]?.entry || CHAT_BUSINESS_DICTIONARY.find((entry) => ["representante", "cliente", "municipio", "uf", "produto", "tipo_produto", "categoria_produto", "modelo", "familia", "regiao", "tipo_venda", "cor", "grupo_modelo", "lista_preco_uf", "descricao_generica", "pedido"].includes(entry.canonical) && entry.aliases.some((alias) => (` ${q} `).includes(` ${normalizarTermoChat(alias)} `)));
-  const temporalGroup = /\b(por ano|anual|ano a ano)\b/.test(q) ? "ano" : /\b(por mes|mensal|mes a mes)\b/.test(q) ? "mes" : null;
+  const asksRankedDay = /\b(melhor dia|pior dia)\b/.test(q) || (/\bdia\b/.test(q) && /\b(maior|mais|menor|menos|pico)\b/.test(q));
+  const asksRankedMonth = /\b(mes|periodo)\b/.test(q)
+    && /\b(maior|mais|melhor|pico)\b/.test(q)
+    && /\b(qual|em qual|maior|melhor)\b/.test(q);
+  const temporalGroup = asksRankedDay || /\b(por dia|dia a dia|diario|diaria)\b/.test(q) ? "dia"
+    : asksRankedMonth || /\b(por mes|mensal|mes a mes)\b/.test(q) ? "mes"
+      : /\b(por ano|anual|ano a ano)\b/.test(q) ? "ano" : null;
   const dimensionAsked = Boolean(temporalGroup) || /\b(por|ranking|rank|melhor|maior|menor|quem|quais|qual|detalhe|detalhar|compare|comparar|mais)\b/.test(q);
   const entityMetricRequested = /\b(quantos?|quantidade|numero|total de|clientes? unicos?|clientes? diferentes?|pedidos? distintos?)\b/.test(q);
   if (groupEntry?.metricOperation === "countDistinct" && !entityMetricRequested && !/\bcompraram mais produtos\b/.test(q)) groupEntry = undefined;
@@ -266,6 +333,7 @@ export function queryPublishedBase(
 
   let data: any;
   let truncatedGroups = 0;
+  let displayedGroupLimit = 20;
   if (temporalGroup) {
     let groups = new Map<string, Record<string, unknown>[]>();
     const index = Object.keys(filters).length === 0 ? capabilities?.indexes?.[temporalGroup] : undefined;
@@ -278,15 +346,20 @@ export function queryPublishedBase(
       for (const row of filtered) {
         const date = dateValue(row);
         if (!date) continue;
-        const key = temporalGroup === "ano" ? date.slice(0, 4) : date.slice(0, 7);
+        const key = temporalGroup === "ano" ? date.slice(0, 4) : temporalGroup === "mes" ? date.slice(0, 7) : date;
         groups.set(key, [...(groups.get(key) || []), row]);
       }
     }
-    const ascending = /\b(menor|menores|menos|pior|piores)\b/.test(q);
-    const allGroups = Array.from(groups, ([nome, groupRows]) => ({ nome, ...aggregate(groupRows) }))
-      .sort((a, b) => a.nome.localeCompare(b.nome, "pt-BR"));
-    truncatedGroups = Math.max(0, allGroups.length - 20);
-    data = temporalGroup === "mes" ? allGroups.slice(-20) : allGroups.slice(0, 20);
+    const periodRanking = (temporalGroup === "dia" || temporalGroup === "mes") && /\b(melhor|maior|maximo|pico|pior|menor|minimo|mais)\b/.test(q);
+    const ascending = /\b(menor|menores|menos|pior|piores|minimo)\b/.test(q);
+    const allGroups = Array.from(groups, ([nome, groupRows]) => ({ nome, ...aggregate(groupRows) }));
+    const metricValue = (group: typeof allGroups[number]) => Number(group.metricas?.[metric] ?? (metric === "quantidade_faturada" ? group.quantidade : group.faturamento));
+    allGroups.sort(periodRanking
+      ? (a, b) => (ascending ? 1 : -1) * (metricValue(a) - metricValue(b)) || a.nome.localeCompare(b.nome, "pt-BR")
+      : (a, b) => a.nome.localeCompare(b.nome, "pt-BR"));
+    displayedGroupLimit = periodRanking ? 1 : 20;
+    truncatedGroups = Math.max(0, allGroups.length - displayedGroupLimit);
+    data = periodRanking ? allGroups.slice(0, 1) : temporalGroup === "mes" || temporalGroup === "dia" ? allGroups.slice(-20) : allGroups.slice(0, 20);
   } else if ((groupEntry || dynamicDimensionField) && groupBy) {
     const aliases = groupEntry?.fieldAliases || [dynamicDimensionField!];
     const dimensionField = Object.keys(filtered[0] || {}).find((key) => aliases.map(normalizarTermoChat).includes(normalizarTermoChat(key)));
@@ -315,7 +388,7 @@ export function queryPublishedBase(
   const limitations = [
     ...(metric === "quantidade_faturada" ? ["A quantidade corresponde às linhas faturadas e não comprova produção física."] : []),
     ...(missingRows ? [`Na base completa, ${missingRows} linha(s) válida(s) não têm valor para esta métrica; esses campos ausentes não foram tratados como zero.`] : []),
-    ...(truncatedGroups ? [`Exibindo 20 grupos; ${truncatedGroups} grupos adicionais foram omitidos.`] : []),
+    ...(truncatedGroups ? [`Exibindo ${displayedGroupLimit} grupo(s); ${truncatedGroups} grupos adicionais foram omitidos.`] : []),
   ];
   return { ...baseResult, result: data, limitations };
 }

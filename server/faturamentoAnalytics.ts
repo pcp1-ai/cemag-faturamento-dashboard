@@ -39,7 +39,7 @@ const DIMENSION_FIELDS: Record<string, string[]> = {
   representante: ["representante"], lista_preco_uf: ["lista_preco_uf"],
   descricao_generica: ["descricao_generica"], categoria_produto: ["categoria_produto"],
   tipo_venda: ["tipo_venda"], pedido: ["pedido"], familia: ["familia"], grupo_modelo: ["grupo_modelo"],
-  ano: ["ano"], mes: ["ano_mes"], trimestre: ["trimestre"], semestre: ["semestre"],
+  ano: ["ano"], mes: ["ano_mes"], dia: ["data_str"], trimestre: ["trimestre"], semestre: ["semestre"],
 };
 
 const DIMENSION_SOURCE_COLUMNS: Record<string, string[]> = {
@@ -60,6 +60,7 @@ const DIMENSION_SOURCE_COLUMNS: Record<string, string[]> = {
   grupo_modelo: ["1o. Agrupamento"],
   ano: ["BAI_MOVIMENTAC", "BAI_EMISSAO"],
   mes: ["BAI_MOVIMENTAC", "BAI_EMISSAO"],
+  dia: ["BAI_MOVIMENTAC", "BAI_EMISSAO"],
   trimestre: ["BAI_MOVIMENTAC", "BAI_EMISSAO"],
   semestre: ["BAI_MOVIMENTAC", "BAI_EMISSAO"],
 };
@@ -150,6 +151,17 @@ async function buildLayer(attempt = 0): Promise<FaturamentoAnalytics> {
       const rawValue = fields.map((field) => values[field]).find((value) => value !== undefined && value !== null && String(value).trim() !== "");
       const label = String(rawValue ?? "Não informado").trim() || "Não informado";
       (groups[label] ||= []).push(index);
+    });
+    indexes[dimension] = groups;
+  }
+  for (const dimension of ["ano", "mes", "dia"] as const) {
+    const groups: Record<string, number[]> = {};
+    rows.forEach((row, index) => {
+      const date = row.data_emissao;
+      if (!(date instanceof Date) || Number.isNaN(date.getTime())) return;
+      const isoDate = date.toISOString().slice(0, 10);
+      const key = dimension === "ano" ? isoDate.slice(0, 4) : dimension === "mes" ? isoDate.slice(0, 7) : isoDate;
+      (groups[key] ||= []).push(index);
     });
     indexes[dimension] = groups;
   }
