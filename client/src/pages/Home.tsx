@@ -240,6 +240,10 @@ export default function Home({ onLogout, emailAutenticado, isAdmin = false }: { 
   const [loading, setLoading] = useState<boolean>(true);
   const [erroCarregamento, setErroCarregamento] = useState<string | null>(null);
   const [baseOriginal, setBaseOriginal] = useState<any[]>([]);
+  const [baseVersion, setBaseVersion] = useState<string | null>(null);
+  const [baseVerificadaEm, setBaseVerificadaEm] = useState<string | null>(null);
+  const [erroAtualizacaoBase, setErroAtualizacaoBase] = useState<string | null>(null);
+  const [baseEndDate, setBaseEndDate] = useState<string | null>(null);
   const [abaAtiva, setAbaAtiva] = useState<string>("visao_geral");
   const [grupoAbaAtivo, setGrupoAbaAtivo] = useState<string>("resumo");
   const [ufMapaSelecionada, setUfMapaSelecionada] = useState<string | null>(null);
@@ -310,6 +314,9 @@ export default function Home({ onLogout, emailAutenticado, isAdmin = false }: { 
             rows.push(...lote.map((item) => JSON.parse(item.payload)));
           }
           setBaseOriginal(rows);
+          setBaseVersion(baseCompartilhada.version);
+          setBaseVerificadaEm(new Date().toISOString());
+          setErroCarregamento(null);
           return;
         }
         throw new Error("A planilha tabelaFaturamento esta vazia. Confira a aba compartilhada com o servidor.");
@@ -322,11 +329,49 @@ export default function Home({ onLogout, emailAutenticado, isAdmin = false }: { 
     carregarBaseInicial();
   }, [trpcUtils]);
 
+  // A planilha é verificada a cada cinco minutos. Os lotes são trocados juntos
+  // somente depois que todas as páginas da mesma versão forem carregadas.
+  useEffect(() => {
+    if (!baseVersion) return;
+    const currentBaseEnd = baseEndDate;
+    let verificacaoEmAndamento = false;
+    const atualizarSeNecessario = async () => {
+      if (verificacaoEmAndamento || document.visibilityState !== "visible") return;
+      verificacaoEmAndamento = true;
+      try {
+        const base = await trpcUtils.cemag.sharedBase.fetch();
+        setBaseVerificadaEm(new Date().toISOString());
+        if (!base?.version || base.version === baseVersion) return;
+        if (!base.rowCount) throw new Error("A nova versão da planilha não contém linhas; mantive os dados exibidos.");
+        const rows: any[] = [];
+        const tamanhoLote = 1000;
+        for (let offset = 0; offset < base.rowCount; offset += tamanhoLote) {
+          const lote = await trpcUtils.cemag.sharedBaseRows.fetch({ version: base.version, offset, limit: tamanhoLote });
+          rows.push(...lote.map((item) => JSON.parse(item.payload)));
+        }
+        setFiltros((current) => current.dataFim === currentBaseEnd ? { ...current, dataFim: "" } : current);
+        setBaseOriginal(rows);
+        setBaseVersion(base.version);
+        setErroAtualizacaoBase(null);
+      } catch (error: any) {
+        setErroAtualizacaoBase(error?.message || "Não foi possível atualizar a base agora.");
+      } finally {
+        verificacaoEmAndamento = false;
+      }
+    };
+    const interval = window.setInterval(atualizarSeNecessario, 5 * 60 * 1000);
+    return () => window.clearInterval(interval);
+  }, [baseVersion, baseEndDate, trpcUtils]);
+
   // Preparar os dados tratados com as regras CEMAG
   const { dados, meta } = useMemo(() => {
     if (!baseOriginal.length) return { dados: [], meta: { linhas_validas: 0 } };
     return prepararDados(baseOriginal, CLIENTE_INFO_OVERRIDE);
   }, [baseOriginal]);
+
+  useEffect(() => {
+    if (meta?.data_max) setBaseEndDate(meta.data_max.toISOString().slice(0, 10));
+  }, [meta?.data_max]);
 
   useEffect(() => {
     if (!meta?.data_min || !meta?.data_max) return;
@@ -1461,12 +1506,13 @@ export default function Home({ onLogout, emailAutenticado, isAdmin = false }: { 
             <div className="flex flex-wrap items-start justify-between gap-4">
               <div className="min-w-0"><div className="mb-2 flex items-center gap-2 text-[10px] font-bold uppercase tracking-[0.2em] text-orange-300"><span className="h-1.5 w-1.5 rounded-full bg-orange-400 shadow-[0_0_12px_#ff5a1f]" /> Inteligência comercial <span className="text-slate-600">/</span> {GRUPOS_ABAS.find((grupo) => grupo.id === grupoAbaAtivo)?.label}</div><div className="flex flex-wrap items-center gap-2"><h2 className="text-xl font-bold text-white md:text-2xl">{infoAba.titulo}</h2></div><p className="mt-1 max-w-3xl text-xs leading-5 text-slate-400">{infoAba.descricao}</p></div>
               <div className="flex min-w-[210px] flex-col gap-1.5 text-[10px] text-slate-400 sm:items-end">
-                <div className="flex w-full items-center justify-between gap-3 sm:justify-end"><span className="inline-flex items-center gap-1.5 rounded-full border border-emerald-500/20 bg-emerald-500/10 px-2 py-1 font-semibold text-emerald-300"><span className="h-1.5 w-1.5 animate-pulse rounded-full bg-emerald-400" />Atualização ao vivo</span><span><strong className="text-white">{dadosFiltrados.length.toLocaleString("pt-BR")}</strong> de {(meta?.linhas_validas || 0).toLocaleString("pt-BR")} linhas</span></div>
+                <div className="flex w-full items-center justify-between gap-3 sm:justify-end"><span className="inline-flex items-center gap-1.5 rounded-full border border-emerald-500/20 bg-emerald-500/10 px-2 py-1 font-semibold text-emerald-300"><span className="h-1.5 w-1.5 rounded-full bg-emerald-400" />Planilha verificada {baseVerificadaEm ? new Date(baseVerificadaEm).toLocaleString("pt-BR") : ""}</span><span><strong className="text-white">{dadosFiltrados.length.toLocaleString("pt-BR")}</strong> de {(meta?.linhas_validas || 0).toLocaleString("pt-BR")} linhas</span></div>
                 <div className="h-1.5 w-full overflow-hidden rounded-full bg-slate-800 sm:max-w-64"><div className="h-full rounded-full bg-gradient-to-r from-orange-600 to-orange-400 transition-[width] duration-200 ease-out" style={{ width: `${percentualRegistrosFiltrados}%` }} /></div>
                 <span>Base: {periodoBaseTexto} · período filtrado: {periodoEfetivo}</span>
               </div>
             </div>
             {filtrosVisiveis.length > 0 && <div className="mt-3 flex flex-wrap items-center gap-1.5 border-t border-slate-800/80 pt-3" aria-live="polite" aria-label="Filtros aplicados em tempo real"><span className="mr-1 text-[10px] font-semibold uppercase tracking-wide text-slate-500">Filtros ativos</span>{filtrosVisiveis.slice(0, 4).map((filtro) => <span key={filtro.label} className="max-w-full truncate rounded-full border border-slate-700/80 bg-slate-950/60 px-2.5 py-1 text-[10px] text-slate-300"><strong className="text-orange-300">{filtro.label}:</strong> {filtro.value}</span>)}{filtrosVisiveis.length > 4 && <span className="rounded-full bg-slate-800 px-2.5 py-1 text-[10px] text-slate-400">+{filtrosVisiveis.length - 4} filtros</span>}</div>}
+            {erroAtualizacaoBase && <p className="mt-3 rounded-lg border border-amber-700/50 bg-amber-950/30 px-3 py-2 text-xs text-amber-200" role="status">A planilha ainda não foi atualizada nesta tela. Os dados atuais permanecem visíveis. {erroAtualizacaoBase}</p>}
           </div>
 
           {/* Cards Executivos de Topo (visíveis em todas as abas, exceto Modo Apresentação que tem cards próprios) */}

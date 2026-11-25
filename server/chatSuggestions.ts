@@ -2,7 +2,18 @@ import type { ChatQueryResult } from "./chatBaseQuery";
 import type { ChatDictionaryEntry } from "../shared/chatDictionary";
 import { queryPublishedBase } from "./chatBaseQuery";
 
-export function buildChatSuggestions(_question: string, query: ChatQueryResult, dictionary: ChatDictionaryEntry[], rows: Record<string, unknown>[] = []): string[] {
+export function buildChatSuggestions(
+  _question: string,
+  query: ChatQueryResult,
+  dictionary: ChatDictionaryEntry[],
+  rows: Record<string, unknown>[] = [],
+  capabilities?: {
+    availableMetrics?: string[];
+    availableDimensions?: string[];
+    indexes?: Record<string, Record<string, number[]>>;
+    missingMetricRows?: Record<string, number>;
+  },
+): string[] {
   if (query.status !== "answered" || !query.result || (Array.isArray(query.result) && query.result.length === 0)) return [];
   const period = query.filters.data || query.filters.mes || query.filters.ano || query.period;
   const periodSuffix = period !== "todo o período da base" ? ` em ${period}` : "";
@@ -43,5 +54,5 @@ export function buildChatSuggestions(_question: string, query: ChatQueryResult, 
     const hasDate = ["data_emissao", "data", "date"].some((field) => fields.has(field));
     return !requestedYear || !hasDate || rows.some((row) => Object.values(row).some((value) => String(value).startsWith(requestedYear)));
   });
-  return supportedSuggestions.filter((suggestion) => queryPublishedBase(suggestion, rows, query.sourceVersion).status === "answered").slice(0, 3);
+  return supportedSuggestions.filter((suggestion) => queryPublishedBase(suggestion, rows, query.sourceVersion, capabilities).status === "answered").slice(0, 3);
 }

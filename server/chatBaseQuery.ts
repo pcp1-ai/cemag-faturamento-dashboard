@@ -73,11 +73,60 @@ function aggregate(rows: Record<string, unknown>[]) {
   };
 }
 
-export function queryPublishedBase(question: string, sourceRows: Record<string, unknown>[], sourceVersion: string): ChatQueryResult {
+export function queryPublishedBase(
+  question: string,
+  sourceRows: Record<string, unknown>[],
+  sourceVersion: string,
+  capabilities?: {
+    availableMetrics?: string[];
+    availableDimensions?: string[];
+    indexes?: Record<string, Record<string, number[]>>;
+    missingMetricRows?: Record<string, number>;
+  },
+): ChatQueryResult {
   const q = normalizarTermoChat(question);
   const result = (status: ChatQueryResult["status"], rows: Record<string, unknown>[], metric = "faturamento_valor", groupBy: string | null = null, filters: Record<string, string> = {}, period = "todo o período da base", limitations: string[] = []): ChatQueryResult => ({
     status, sourceVersion, period, metric, groupBy, filters, result: rows.length ? undefined : [], limitations,
   });
+  const comparedYears = Array.from(new Set(Array.from(question.matchAll(/\b(19\d{2}|20\d{2})\b/g), (match) => match[1])));
+  if (comparedYears.length >= 2 && /\b(compare|comparar|comparacao|comparativo|comparativos|comparando|diferen[cç]a|ano a ano|versus|vs)\b/.test(q)) {
+    const requestedMonths = Object.keys(monthNumbers).filter((month) => (` ${q} `).includes(` ${month} `));
+    if (requestedMonths.length > 1) {
+      return { ...result("ambiguous", []), limitations: ["Para comparar anos, informe o mesmo mês para os dois anos ou remova os meses da pergunta. A comparação atual não interpreta dois meses diferentes em uma única consulta."] };
+    }
+    const baseQuestion = question.replace(/\b(19\d{2}|20\d{2})\b/g, " ");
+    const comparisons = comparedYears.slice(0, 2).map((year) => ({
+      year,
+      query: queryPublishedBase(`${baseQuestion} ${year}`, sourceRows, sourceVersion, capabilities),
+    }));
+    const failed = comparisons.find(({ query }) => query.status !== "answered");
+    if (failed) return { ...failed.query, limitations: [`Não foi possível comparar os anos solicitados. ${failed.query.limitations.join(" ")}`] };
+    const metric = comparisons[0].query.metric;
+    const values = comparisons.map(({ year, query }) => {
+      const aggregate = query.result as Record<string, any>;
+      const value = aggregate?.metricas?.[metric]
+        ?? (metric === "faturamento_valor" ? aggregate?.faturamento : undefined)
+        ?? (metric === "quantidade_faturada" ? aggregate?.quantidade : undefined);
+      return { year, value: typeof value === "number" && Number.isFinite(value) ? value : null };
+    });
+    const first = values[0];
+    const second = values[1];
+    if (!first || !second || first.value === null || second.value === null) return { ...result("no_match", [], metric), limitations: ["A base não tem valores calculáveis para todos os anos solicitados."] };
+    const difference = second.value - first.value;
+    const variation = first.value === 0 ? null : difference / Math.abs(first.value);
+    const items = [first, second].map(({ year, value }) => ({ nome: year, metricas: { [metric]: value } }));
+    const differenceDisplay = ["faturamento_valor", "custo", "frete", "ticket_unitario", "faturamento_liquido_aprox", "ipi", "pis", "cofins", "icms", "iss", "ir", "inss", "ii", "impostos_principais", "tributos_dre"].includes(metric)
+      ? new Intl.NumberFormat("pt-BR", { style: "currency", currency: "BRL" }).format(difference)
+      : difference.toLocaleString("pt-BR");
+    const note = variation === null
+      ? `Variação entre ${first.year} e ${second.year}: ${differenceDisplay} (não há percentual porque o valor de referência é zero).`
+      : `Variação de ${first.year} para ${second.year}: ${differenceDisplay} (${new Intl.NumberFormat("pt-BR", { style: "percent", maximumFractionDigits: 1 }).format(variation)}).`;
+    return {
+      ...result("answered", [], metric, "ano", { anos: comparedYears.slice(0, 2).join(", ") }, `${first.year} vs ${second.year}`),
+      result: items,
+      limitations: [note],
+    };
+  }
   const year = question.match(/\b(19\d{2}|20\d{2})\b/)?.[1];
   const monthName = Object.keys(monthNumbers).find((month) => (` ${q} `).includes(` ${month} `));
   const monthNumeric = question.match(/\b(20\d{2})[-/](0?[1-9]|1[0-2])\b/);
@@ -85,7 +134,6 @@ export function queryPublishedBase(question: string, sourceRows: Record<string, 
   const exactDate = dateMatch ? (dateMatch[1].length === 4 ? `${dateMatch[1]}-${dateMatch[2].padStart(2, "0")}-${dateMatch[3].padStart(2, "0")}` : `${dateMatch[3]}-${dateMatch[2].padStart(2, "0")}-${dateMatch[1].padStart(2, "0")}`) : null;
   const month = monthNumeric ? `${monthNumeric[1]}-${monthNumeric[2].padStart(2, "0")}` : monthName ? `${year || new Date().getUTCFullYear()}-${monthNumbers[monthName]}` : null;
   if (!exactDate && /\bdia\s+\d{1,2}\b/.test(q)) return { ...result("ambiguous", []), limitations: ["Informe a data completa (dia, mês e ano) para consultar esse dia."] };
-  if (/\bde\s+\d{1,2}\s+de\s+[\p{L}]+/u.test(q) && !exactDate) return { ...result("ambiguous", []), limitations: ["Informe também o ano para consultar essa data."] };
   if (/\bde\s+\d{1,2}\s+de\s+[\p{L}]+/u.test(q) && !exactDate) return { ...result("ambiguous", []), limitations: ["Informe também o ano para consultar essa data."] };
   const wantsProfit = /\b(lucro|lucros|margem|rentabilidade)\b/.test(q);
   const profitAliases = q.includes("margem") ? ["margem"] : q.includes("rentabilidade") ? ["rentabilidade"] : ["lucro", "lucros"];
@@ -117,9 +165,13 @@ export function queryPublishedBase(question: string, sourceRows: Record<string, 
   const hasQuantityIntent = (!explicitMetric || explicitMetric.canonical === "quantidade_faturada") && /\b(quantidade|unidades?|volume|mais vendid[oa]s?|mais produtos?|maior quantidade|vendeu mais|venderam mais|compraram mais produtos)\b/.test(q);
   const selectedMetric = hasQuantityIntent ? quantityEntry : selectedMetricSafe || (dynamicMetricField ? { canonical: normalizarTermoChat(dynamicMetricField).replace(/\s+/g, "_"), fieldAliases: [dynamicMetricField], metricOperation: "sum" as const } : amountEntry);
   const metric = selectedMetric.canonical;
+  if (capabilities?.availableMetrics && !capabilities.availableMetrics.includes(metric)) {
+    const metricName = CHAT_BUSINESS_DICTIONARY.find((entry) => entry.canonical === metric)?.definition || metric.replaceAll("_", " ");
+    return { ...result("no_match", [], metric), limitations: [`A planilha atual não tem todas as colunas necessárias para calcular essa métrica (${metricName}).`] };
+  }
   const metricField = selectedMetric.fieldAliases;
   const rowsWithMetric = sourceRows.filter((row) => fieldValue(row, metricField) !== undefined);
-  if (!rowsWithMetric.length) return { ...result("no_match", []), limitations: [`A base não contém coluna reconhecida para ${hasQuantityIntent ? "quantidade faturada" : "faturamento"}.`] };
+  if (!rowsWithMetric.length) return { ...result("no_match", []), limitations: [`A base não contém valores preenchidos para ${hasQuantityIntent ? "quantidade faturada" : metric.replaceAll("_", " ")}.`] };
 
   const dateRows = rowsWithMetric.filter((row) => dateValue(row));
   let filtered = rowsWithMetric;
@@ -180,7 +232,12 @@ export function queryPublishedBase(question: string, sourceRows: Record<string, 
     filtered = filtered.filter((row) => normalizarTermoChat(String(row[field] ?? "")) === normalizarTermoChat(value));
     filters[field] = value;
   }
-  let groupEntry = CHAT_BUSINESS_DICTIONARY.find((entry) => ["representante", "cliente", "municipio", "uf", "produto", "modelo", "familia", "regiao", "tipo_venda", "cor", "grupo_modelo", "lista_preco_uf", "descricao_generica", "pedido"].includes(entry.canonical) && entry.aliases.some((alias) => (` ${q} `).includes(` ${normalizarTermoChat(alias)} `)));
+  const groupCandidates = CHAT_BUSINESS_DICTIONARY
+    .filter((entry) => ["representante", "cliente", "municipio", "uf", "produto", "tipo_produto", "categoria_produto", "modelo", "familia", "regiao", "tipo_venda", "cor", "grupo_modelo", "lista_preco_uf", "descricao_generica", "pedido"].includes(entry.canonical))
+    .flatMap((entry) => entry.aliases.map((alias) => ({ entry, alias: normalizarTermoChat(alias) })))
+    .filter(({ alias }) => alias && (` ${q} `).includes(` por ${alias} `))
+    .sort((a, b) => b.alias.length - a.alias.length);
+  let groupEntry = groupCandidates[0]?.entry || CHAT_BUSINESS_DICTIONARY.find((entry) => ["representante", "cliente", "municipio", "uf", "produto", "tipo_produto", "categoria_produto", "modelo", "familia", "regiao", "tipo_venda", "cor", "grupo_modelo", "lista_preco_uf", "descricao_generica", "pedido"].includes(entry.canonical) && entry.aliases.some((alias) => (` ${q} `).includes(` ${normalizarTermoChat(alias)} `)));
   const temporalGroup = /\b(por ano|anual|ano a ano)\b/.test(q) ? "ano" : /\b(por mes|mensal|mes a mes)\b/.test(q) ? "mes" : null;
   const dimensionAsked = Boolean(temporalGroup) || /\b(por|ranking|rank|melhor|maior|menor|quem|quais|qual|detalhe|detalhar|compare|comparar|mais)\b/.test(q);
   const entityMetricRequested = /\b(quantos?|quantidade|numero|total de|clientes? unicos?|clientes? diferentes?|pedidos? distintos?)\b/.test(q);
@@ -200,6 +257,9 @@ export function queryPublishedBase(question: string, sourceRows: Record<string, 
   if (unsupportedDimension) return { ...result("no_match", [], metric), limitations: ["A dimensão pedida não está disponível como coluna na base publicada. Informe uma dimensão existente, como representante, cliente, município, UF ou produto."] };
   const groupBy = temporalGroup || (groupEntry && dimensionAsked ? groupEntry.canonical : dynamicDimensionField ? normalizarTermoChat(dynamicDimensionField).replace(/\s+/g, "_") : null);
   if (groupBy === "lucro" || groupBy === "implemento") groupEntry = undefined;
+  if (groupBy && capabilities?.availableDimensions && !capabilities.availableDimensions.includes(groupBy)) {
+    return { ...result("no_match", [], metric, groupBy, filters), limitations: [`A dimensão "${groupBy.replaceAll("_", " ")}" não tem valores disponíveis na base atual.`] };
+  }
   const period = exactDate || month || (year ? year : "todo o período da base");
   const baseResult = result("answered", filtered, metric, groupBy || null, filters, period);
   if (!filtered.length) return { ...baseResult, status: "no_match", result: [], limitations: [`Não há linhas correspondentes ao período e aos filtros solicitados (${period}).`] };
@@ -207,12 +267,20 @@ export function queryPublishedBase(question: string, sourceRows: Record<string, 
   let data: any;
   let truncatedGroups = 0;
   if (temporalGroup) {
-    const groups = new Map<string, Record<string, unknown>[]>();
-    for (const row of filtered) {
-      const date = dateValue(row);
-      if (!date) continue;
-      const key = temporalGroup === "ano" ? date.slice(0, 4) : date.slice(0, 7);
-      groups.set(key, [...(groups.get(key) || []), row]);
+    let groups = new Map<string, Record<string, unknown>[]>();
+    const index = Object.keys(filters).length === 0 ? capabilities?.indexes?.[temporalGroup] : undefined;
+    if (index) {
+      groups = new Map(Object.entries(index).map(([name, rowIndexes]) => [
+        name,
+        rowIndexes.map((rowIndex) => sourceRows[rowIndex]).filter((row) => fieldValue(row, metricField) !== undefined),
+      ] as const).filter(([, groupRows]) => groupRows.length > 0));
+    } else {
+      for (const row of filtered) {
+        const date = dateValue(row);
+        if (!date) continue;
+        const key = temporalGroup === "ano" ? date.slice(0, 4) : date.slice(0, 7);
+        groups.set(key, [...(groups.get(key) || []), row]);
+      }
     }
     const ascending = /\b(menor|menores|menos|pior|piores)\b/.test(q);
     const allGroups = Array.from(groups, ([nome, groupRows]) => ({ nome, ...aggregate(groupRows) }))
@@ -223,10 +291,18 @@ export function queryPublishedBase(question: string, sourceRows: Record<string, 
     const aliases = groupEntry?.fieldAliases || [dynamicDimensionField!];
     const dimensionField = Object.keys(filtered[0] || {}).find((key) => aliases.map(normalizarTermoChat).includes(normalizarTermoChat(key)));
     if (!dimensionField) return { ...baseResult, status: "no_match", result: [], limitations: [`A base não possui uma coluna correspondente a ${groupEntry?.canonical || dynamicDimensionField}.`] };
-    const groups = new Map<string, Record<string, unknown>[]>();
-    for (const row of filtered) {
-      const name = String(row[dimensionField] ?? "Não informado").trim() || "Não informado";
-      groups.set(name, [...(groups.get(name) || []), row]);
+    let groups = new Map<string, Record<string, unknown>[]>();
+    const index = Object.keys(filters).length === 0 ? capabilities?.indexes?.[groupBy] : undefined;
+    if (index) {
+      groups = new Map(Object.entries(index).map(([name, rowIndexes]) => [
+        name,
+        rowIndexes.map((rowIndex) => sourceRows[rowIndex]).filter((row) => fieldValue(row, metricField) !== undefined),
+      ] as const).filter(([, groupRows]) => groupRows.length > 0));
+    } else {
+      for (const row of filtered) {
+        const name = String(row[dimensionField] ?? "Não informado").trim() || "Não informado";
+        groups.set(name, [...(groups.get(name) || []), row]);
+      }
     }
     const ascending = /\b(menor|menores|menos|pior|piores|mais baixo|mais baixa)\b/.test(q);
     const allGroups = Array.from(groups, ([nome, groupRows]) => ({ nome, ...aggregate(groupRows) }))
@@ -235,5 +311,11 @@ export function queryPublishedBase(question: string, sourceRows: Record<string, 
     data = allGroups.slice(0, 20);
   } else data = aggregate(filtered);
 
-  return { ...baseResult, result: data, limitations: ["A quantidade corresponde às linhas faturadas e não comprova produção física.", ...(truncatedGroups ? [`Exibindo 20 grupos; ${truncatedGroups} grupos adicionais foram omitidos.`] : [])] };
+  const missingRows = capabilities?.missingMetricRows?.[metric] || 0;
+  const limitations = [
+    ...(metric === "quantidade_faturada" ? ["A quantidade corresponde às linhas faturadas e não comprova produção física."] : []),
+    ...(missingRows ? [`Na base completa, ${missingRows} linha(s) válida(s) não têm valor para esta métrica; esses campos ausentes não foram tratados como zero.`] : []),
+    ...(truncatedGroups ? [`Exibindo 20 grupos; ${truncatedGroups} grupos adicionais foram omitidos.`] : []),
+  ];
+  return { ...baseResult, result: data, limitations };
 }

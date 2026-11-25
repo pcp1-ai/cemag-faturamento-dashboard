@@ -6,11 +6,12 @@ import { getSessionCookieOptions } from "./_core/cookies";
 import { systemRouter } from "./_core/systemRouter";
 import { protectedProcedure, publicProcedure, router } from "./_core/trpc";
 import { obterFatoresExternos } from "./externalFactors";
-import { invokeLLM } from "./_core/llm";
-import { CHAT_BUSINESS_DICTIONARY } from "../shared/chatDictionary";
 import { queryPublishedBase } from "./chatBaseQuery";
 import { buildChatSuggestions } from "./chatSuggestions";
 import { getGoogleSheetBase, getGoogleSheetPage, getGoogleSheetRows } from "./googleSheets";
+import { getFaturamentoAnalytics } from "./faturamentoAnalytics";
+import { formatChatResponse } from "./chatResponse";
+import { CHAT_BUSINESS_DICTIONARY } from "../shared/chatDictionary";
 
 function extrairAno(valor: unknown): number | null {
   const texto = String(valor ?? "").trim();
@@ -81,14 +82,12 @@ export const appRouter = router({
       .input(z.object({ messages: z.array(chatMessageInput).min(1).max(16) }))
       .mutation(async ({ input }) => {
         const emptySuggestions: string[] = [];
-        let base: Awaited<ReturnType<typeof getGoogleSheetBase>>;
-        let rows: Record<string, unknown>[];
+        let layer: Awaited<ReturnType<typeof getFaturamentoAnalytics>>;
         try {
-          base = await getGoogleSheetBase();
-          rows = await getGoogleSheetRows(base.version);
-          if (!rows.length) return { content: "A aba tabelaFaturamento não contém registros para consultar.", suggestions: emptySuggestions };
+          layer = await getFaturamentoAnalytics();
+          if (!layer.rows.length) return { content: "A aba tabelaFaturamento não contém registros válidos para consultar.", suggestions: emptySuggestions };
         } catch (error) {
-          console.error("[AI] Falha ao carregar a base do Google Sheets:", error);
+          console.error("[Chat] Falha ao preparar a base do Google Sheets:", error);
           return { content: "Não consegui consultar a planilha agora. Tente novamente mais tarde ou avise o administrador.", suggestions: emptySuggestions };
         }
 
@@ -96,36 +95,16 @@ export const appRouter = router({
         const previousQuestion = input.messages.slice(0, -1).reverse().find((message) => message.role === "user")?.content;
         const isContinuation = /^(?:e\s+)?(?:em|no ano|no m[eê]s|por|e para|e no)\b/i.test(latestQuestion.trim());
         const question = isContinuation && previousQuestion ? `${previousQuestion} ${latestQuestion}` : latestQuestion;
-        const query = queryPublishedBase(question, rows, base.version);
-        const suggestions = buildChatSuggestions(question, query, CHAT_BUSINESS_DICTIONARY, rows);
-        if (query.status === "ambiguous") {
-          return { content: query.limitations.join(" "), suggestions };
-        }
-        if (query.status === "no_match") {
-          return { content: query.limitations.join(" ") || "Não encontrei registros que respondam a essa pergunta na base publicada.", suggestions };
-        }
-
-        const response = await invokeLLM({
-          messages: [
-            {
-              role: "system",
-              content: [
-                "Você é o assistente de inteligência comercial da CEMAG. Responda em português do Brasil, com clareza e objetividade.",
-                "A consulta estruturada abaixo foi feita na planilha privada carregada no servidor e é a única fonte para afirmações numéricas. Não use filtros da interface nem invente campos, valores ou causas.",
-                "Use o dicionário para compreender sinônimos, sem confundir conceitos ambíguos. Faturamento é valor faturado, não lucro. Implemento é mais amplo que carreta. Quantidade faturada não comprova produção física.",
-                "Declare o período e o critério da resposta. Se a pergunta pedir algo que o resultado não contém, explique o limite sem completar por suposição.",
-                `DICIONÁRIO DE NEGÓCIOS:\n${JSON.stringify(CHAT_BUSINESS_DICTIONARY)}`,
-                `RESULTADO DA CONSULTA (versão ${base.version}):\n${JSON.stringify(query)}`,
-                "Mensagens anteriores servem apenas para entender referências da conversa; não são fonte de dados. Baseie fatos somente no resultado desta consulta.",
-              ].join("\n\n"),
-            },
-            ...input.messages,
-          ],
-          maxTokens: 700,
-        });
-        const content = response.choices[0]?.message?.content;
-        if (typeof content !== "string") throw new Error("A resposta do assistente não veio em formato de texto.");
-        return { content, suggestions };
+        const capabilities = {
+          availableMetrics: layer.availableMetrics,
+          availableDimensions: layer.dimensions,
+          indexes: layer.indexes,
+          missingMetricRows: layer.missingMetricRows,
+        };
+        const queryRows = layer.rows as unknown as Record<string, unknown>[];
+        const query = queryPublishedBase(question, queryRows, layer.sourceVersion, capabilities);
+        const suggestions = buildChatSuggestions(question, query, CHAT_BUSINESS_DICTIONARY, queryRows, capabilities);
+        return { content: formatChatResponse(query, layer), suggestions };
       }),
   }),
   cemag: router({
